@@ -112,7 +112,7 @@ def load_env(path: Path) -> dict[str, str]:
             referenced = match.group(1)
             if referenced not in values and referenced not in os.environ:
                 raise ValueError(f"{referenced} is not defined before {key.strip()}")
-            return values.get(referenced, os.environ[referenced])
+            return values[referenced] if referenced in values else os.environ[referenced]
 
         value = re.sub(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}", expand, value)
         values[key.strip()] = value
