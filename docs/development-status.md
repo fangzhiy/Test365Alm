@@ -1,10 +1,19 @@
 # Test365Alm 开发状态
 
 最后更新：2026-09-22
-当前轮次：`R02-M02-001`
-状态：`IMPLEMENTED_LOCALLY / FINAL_ACCEPTANCE_PENDING`
+当前轮次：`R02-M02-002`
+状态：`IMPLEMENTED_LOCALLY / REMOTE_CI_PENDING`
 
-本页保留 R01 的盘点事实，并在下方记录 R02 的实际工程进展。R02 只实现 M02 工程底座最小切片，不代表整个 M02、P0 或完整 ALM 产品已完成。
+本页保留 R01 和 R02-M02-001 的历史事实，并在下方记录 R02-M02-002 的实际修复进展。R02 只实现 M02 工程底座最小切片，不代表整个 M02、P0 或完整 ALM 产品已完成。
+
+## R02-M02-002 当前状态
+
+- 起始审核提交：`e10380ba1be542389575a915bc6e3fae8699d81b`；开始前重新 fetch，PR #1 仍 open，分支 `feat/r02-m02-001`，base 为 `chore/r01-status-001`，未发生合并或强制回退。
+- 代码提交：`91d4aff9fce5d792611803565645f893b3dded04`；最终进度文档和状态更新另有交付提交，不把文档 SHA 写入代码 SHA。
+- 已实现：前端请求轮次/取消/卸载清理、严格 JSON/字段/枚举校验；readiness 数据库连接与必要结构区分；真实 PostgreSQL 缺结构测试；回环监听和统一 `.env` 加载；可重复停库/恢复脚本；CI 版本和脱敏报告上传。
+- 已验证：前端 14 个测试、后端单元 9 个和真实 PostgreSQL 集成 3 个、打包应用停库/恢复、`127.0.0.1` listener、Compose 配置及规划工具（详见 `docs/progress/runs/R02-M02-002.md`）。
+- 部分未验证：故意失败迁移导致启动失败的独立故障注入未运行；远端 GitHub Actions 需推送后核对实际 run；目标 Java 21/Node 24 仅由 CI 负责，当前工作站是 Java 17/Node 26。
+- 仍未完成：登录、身份、项目权限、需求/用例/缺陷、执行 Agent、OTA/COM、电子签名、AI 以及完整 M02/P0；旧 ALM 版本/Edition/授权样本继续按 P0 输入阻塞保留。
 
 ## R02-M02-001 当前状态
 
