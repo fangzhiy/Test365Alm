@@ -32,6 +32,17 @@ class PlatformHealthControllerTest {
     }
 
     @Test
+    void readyReturns503WhenDatabaseIsConnectedButRequiredStructureIsMissing() throws Exception {
+        MockMvc mockMvc = mockMvcWith(ReadinessResult::migrationNotApplied);
+
+        mockMvc.perform(get("/health/ready"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.status").value("DOWN"))
+                .andExpect(jsonPath("$.database").value("UP"))
+                .andExpect(jsonPath("$.migration").value("NOT_APPLIED"));
+    }
+
+    @Test
     void readyRecoversWithoutRestartingController() throws Exception {
         AtomicReference<ReadinessResult> current = new AtomicReference<>(ReadinessResult.down());
         MockMvc mockMvc = mockMvcWith(current::get);

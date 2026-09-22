@@ -21,6 +21,23 @@ public class DatabaseReadinessProbe implements ReadinessChecker {
                 FROM information_schema.tables
                 WHERE table_schema = 'public' AND table_name = 'platform_metadata'
             )
+            AND (
+                SELECT COUNT(*)
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'platform_metadata'
+                  AND column_name IN ('metadata_key', 'metadata_value', 'created_at', 'updated_at')
+            ) = 4
+            AND EXISTS (
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_name = 'flyway_schema_history'
+            )
+            AND EXISTS (
+                SELECT 1
+                FROM flyway_schema_history
+                WHERE version = '1' AND success = TRUE
+            )
             """;
 
     private final DataSource dataSource;
@@ -37,7 +54,7 @@ public class DatabaseReadinessProbe implements ReadinessChecker {
     public ReadinessResult check() {
         try (Connection connection = dataSource.getConnection()) {
             if (!connection.isValid(timeoutSeconds)) {
-                return ReadinessResult.down();
+                return ReadinessResult.databaseDown();
             }
             try (PreparedStatement statement = connection.prepareStatement(MIGRATION_CHECK)) {
                 statement.setQueryTimeout(timeoutSeconds);
@@ -45,11 +62,17 @@ public class DatabaseReadinessProbe implements ReadinessChecker {
                     if (resultSet.next() && resultSet.getBoolean(1)) {
                         return ReadinessResult.up();
                     }
+                    return ReadinessResult.migrationNotApplied();
                 }
+            } catch (SQLException exception) {
+                // A connection was established, so keep database=UP while
+                // reporting that the required structure could not be checked.
+                log.warn("Readiness migration check failed: {}", exception.getClass().getSimpleName());
+                return ReadinessResult.migrationUnknown();
             }
         } catch (SQLException exception) {
             log.warn("Readiness database check failed: {}", exception.getClass().getSimpleName());
         }
-        return ReadinessResult.down();
+        return ReadinessResult.databaseDown();
     }
 }

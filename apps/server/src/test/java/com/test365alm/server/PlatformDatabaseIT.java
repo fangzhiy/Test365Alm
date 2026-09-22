@@ -66,6 +66,31 @@ class PlatformDatabaseIT {
         assertEquals("preserved-by-integration-test", value);
     }
 
+    @Test
+    void readinessDistinguishesReachableDatabaseFromMissingRequiredStructure() throws Exception {
+        // This test only mutates the isolated integration database. Restore the
+        // migration-owned table in finally so the shared test context remains usable.
+        jdbcTemplate.execute("DROP TABLE platform_metadata");
+        try {
+            HttpResponse<String> ready = request("/health/ready");
+            assertEquals(HttpStatus.SERVICE_UNAVAILABLE.value(), ready.statusCode());
+            assertTrue(ready.body().contains("\"database\":\"UP\""));
+            assertTrue(ready.body().contains("\"migration\":\"NOT_APPLIED\""));
+        } finally {
+            jdbcTemplate.execute("""
+                    CREATE TABLE platform_metadata (
+                        metadata_key TEXT PRIMARY KEY,
+                        metadata_value TEXT NOT NULL,
+                        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """);
+            jdbcTemplate.update(
+                    "INSERT INTO platform_metadata (metadata_key, metadata_value) VALUES (?, ?)",
+                    "schema-purpose", "Test365Alm platform bootstrap metadata");
+        }
+    }
+
     private HttpResponse<String> request(String path) throws Exception {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create("http://127.0.0.1:" + port + path))

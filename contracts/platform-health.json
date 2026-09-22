@@ -33,7 +33,7 @@
             }
           },
           "503": {
-            "description": "PostgreSQL or the required migration is unavailable.",
+            "description": "PostgreSQL or the required migration is unavailable; database and migration fields distinguish connection failure from an established database with unavailable structure.",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/ReadinessResponse" }
@@ -75,7 +75,11 @@
         "properties": {
           "status": { "type": "string", "enum": ["UP", "DOWN"] },
           "database": { "type": "string", "enum": ["UP", "DOWN"] },
-          "migration": { "type": "string", "enum": ["APPLIED", "UNKNOWN"] }
+          "migration": {
+            "type": "string",
+            "enum": ["APPLIED", "NOT_APPLIED", "UNKNOWN"],
+            "description": "APPLIED means the startup migration completed and the required platform metadata structure is present; NOT_APPLIED means the database is reachable but that required structure is absent; UNKNOWN means the structure could not be checked."
+          }
         },
         "additionalProperties": false
       },

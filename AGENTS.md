@@ -27,6 +27,8 @@ cd apps/server; .\mvnw.cmd -B -ntp test
 # 集成测试需先启动本轮隔离 PostgreSQL，并设置 TEST365ALM_IT_DATASOURCE_*。
 cd apps/server; .\mvnw.cmd -B -ntp -Pintegration verify '-Dbuild.commit=local-r02'
 # Linux/macOS: chmod +x ./mvnw && ./mvnw -B -ntp test
+python tools/verify_r02_readiness.py  # 构建 server jar 后，验证隔离 PostgreSQL 停止/恢复且后端不重启
+# PowerShell: . .\tools\import_dev_env.ps1  # 从已有 .env 加载同一份开发配置，不覆盖它
 ```
 
 Python 工具只使用标准库，支持 Python 3.10 及以上。新增工具必须保持离线可测试，不得默认调用 GitHub、客户环境或外部服务。
@@ -34,6 +36,8 @@ Python 工具只使用标准库，支持 Python 3.10 及以上。新增工具必
 ## 研发方向
 
 当前工程方向保留 Spring Boot 4.1.1 + Java/Maven、React 19 + TypeScript + Vite 8、PostgreSQL 17。目标运行时为 Java 21、Node 24 LTS；本机实际版本和暂时偏差记录在 R02 轮次记录及 ADR 006，不得把目标环境写成已验证。计划中的对象存储、执行节点、兼容网关和业务模块仍按 P0/P1 顺序实现；不创建伪造的服务实现或客户适配器。
+
+本机开发服务默认绑定 `127.0.0.1`；Compose 仅把 PostgreSQL 发布到回环地址。容器内绑定和宿主机端口暴露必须分开记录。
 
 ## 数据与接口约束
 
@@ -49,3 +53,4 @@ Python 工具只使用标准库，支持 Python 3.10 及以上。新增工具必
 - 始终：先读相关契约和模块手册；为新行为写可复现验证；保留未知项和差异证据。
 - 需要评审：目标 ALM 版本/Edition、外部样本授权、数据库破坏性变更、兼容声明、依赖升级和预算变更。
 - 禁止：提交秘密、使用未经授权的生产数据、把示例当黄金样本、修改原系统数据库、绕过商业许可、用规划包校验冒充业务验收。
+- 健康接口只读；不得在探测、请求处理或测试脚本中执行 migrate、repair、clean 或自动修表。故障注入仅允许针对本轮隔离测试资源。

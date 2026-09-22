@@ -1,17 +1,42 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import './App.css'
 
 type CheckState = 'loading' | 'up' | 'down' | 'unavailable'
 type VersionResponse = { productName: string; version: string; commit: string }
-type HealthResponse = { status: 'UP' | 'DOWN'; database?: string; migration?: string }
+type HealthResponse = { status: 'UP' | 'DOWN'; database?: 'UP' | 'DOWN'; migration?: 'APPLIED' | 'NOT_APPLIED' | 'UNKNOWN' }
 type HealthCardProps = { label: string; state: CheckState; detail?: string }
+type HealthCheck = { response: Response; body: HealthResponse }
 
-const requestJson = async <T,>(path: string, signal: AbortSignal): Promise<T> => {
-  const response = await fetch(path, { signal })
-  const body = (await response.json().catch(() => ({}))) as T
-  if (!response.ok) throw new Error(`HTTP ${response.status}`)
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
+const isVersionResponse = (value: unknown): value is VersionResponse => isRecord(value) && typeof value.productName === 'string' && value.productName.length > 0 && typeof value.version === 'string' && value.version.length > 0 && typeof value.commit === 'string' && value.commit.length > 0
+const isHealthResponse = (value: unknown, requireReadinessDetails: boolean): value is HealthResponse => {
+  if (!isRecord(value) || (value.status !== 'UP' && value.status !== 'DOWN')) return false
+  if (!requireReadinessDetails) return true
+  return (value.database === 'UP' || value.database === 'DOWN') && (value.migration === 'APPLIED' || value.migration === 'NOT_APPLIED' || value.migration === 'UNKNOWN')
+}
+
+const parseJson = async (response: Response): Promise<unknown> => {
+  try {
+    return await response.json()
+  } catch {
+    throw new Error('Invalid JSON response')
+  }
+}
+
+const requestVersion = async (signal: AbortSignal): Promise<VersionResponse> => {
+  const response = await fetch('/api/v1/version', { signal })
+  const body = await parseJson(response)
+  if (!response.ok || !isVersionResponse(body)) throw new Error(`Invalid version response (${response.status})`)
   return body
 }
+
+const requestHealth = async (path: string, signal: AbortSignal, requireReadinessDetails: boolean): Promise<HealthCheck> => {
+  const response = await fetch(path, { signal })
+  const body = await parseJson(response)
+  if (!isHealthResponse(body, requireReadinessDetails)) throw new Error(`Invalid health response (${response.status})`)
+  return { response, body }
+}
+
 const statusFromHealth = (response: HealthResponse): CheckState => response.status === 'UP' ? 'up' : 'down'
 
 function HealthCard({ label, state, detail }: HealthCardProps) {
@@ -26,15 +51,70 @@ function App() {
   const [readyState, setReadyState] = useState<CheckState>('loading')
   const [readyDetail, setReadyDetail] = useState('')
   const [lastChecked, setLastChecked] = useState<string | null>(null)
+  const mountedRef = useRef(false)
+  const requestRoundRef = useRef(0)
+  const controllerRef = useRef<AbortController | null>(null)
+  const timeoutRef = useRef<number | null>(null)
+
   const refresh = useCallback(async () => {
-    setVersion(null); setVersionState('loading'); setLiveState('loading'); setReadyState('loading'); setReadyDetail('')
-    const controller = new AbortController(); const timeout = window.setTimeout(() => controller.abort(), 3000)
-    const versionRequest = requestJson<VersionResponse>('/api/v1/version', controller.signal).then((response) => { setVersion(response); setVersionState('up') }).catch(() => setVersionState('unavailable'))
-    const liveRequest = requestJson<HealthResponse>('/health/live', controller.signal).then((response) => setLiveState(statusFromHealth(response))).catch(() => setLiveState('unavailable'))
-    const readyRequest = fetch('/health/ready', { signal: controller.signal }).then(async (response) => { const body = (await response.json().catch(() => ({}))) as HealthResponse; setReadyDetail(body.database ? `数据库 ${body.database} · 迁移 ${body.migration ?? '未知'}` : ''); setReadyState(response.ok ? statusFromHealth(body) : 'down') }).catch(() => setReadyState('unavailable'))
-    await Promise.all([versionRequest, liveRequest, readyRequest]); window.clearTimeout(timeout); setLastChecked(new Date().toLocaleTimeString())
+    const requestRound = requestRoundRef.current + 1
+    requestRoundRef.current = requestRound
+    if (timeoutRef.current !== null) {
+      window.clearTimeout(timeoutRef.current)
+      timeoutRef.current = null
+    }
+    controllerRef.current?.abort()
+    const controller = new AbortController()
+    controllerRef.current = controller
+    const isCurrent = () => mountedRef.current && requestRoundRef.current === requestRound
+
+    setVersion(null)
+    setVersionState('loading')
+    setLiveState('loading')
+    setReadyState('loading')
+    setReadyDetail('')
+
+    timeoutRef.current = window.setTimeout(() => controller.abort(), 3000)
+    const versionRequest = requestVersion(controller.signal)
+      .then((response) => { if (isCurrent()) { setVersion(response); setVersionState('up') } })
+      .catch(() => { if (isCurrent()) { setVersion(null); setVersionState('unavailable') } })
+    const liveRequest = requestHealth('/health/live', controller.signal, false)
+      .then(({ body }) => { if (isCurrent()) setLiveState(statusFromHealth(body)) })
+      .catch(() => { if (isCurrent()) setLiveState('unavailable') })
+    const readyRequest = requestHealth('/health/ready', controller.signal, true)
+      .then(({ response, body }) => {
+        if (!isCurrent()) return
+        setReadyDetail(`数据库 ${body.database} · 迁移 ${body.migration}`)
+        setReadyState(response.ok ? statusFromHealth(body) : 'down')
+      })
+      .catch(() => { if (isCurrent()) { setReadyDetail(''); setReadyState('unavailable') } })
+
+    await Promise.allSettled([versionRequest, liveRequest, readyRequest])
+    if (isCurrent()) {
+      if (timeoutRef.current !== null) {
+        window.clearTimeout(timeoutRef.current)
+        timeoutRef.current = null
+      }
+      controllerRef.current = null
+      setLastChecked(new Date().toLocaleTimeString())
+    }
   }, [])
-  useEffect(() => { void refresh() }, [refresh])
+
+  useEffect(() => {
+    mountedRef.current = true
+    void refresh()
+    return () => {
+      mountedRef.current = false
+      requestRoundRef.current += 1
+      controllerRef.current?.abort()
+      controllerRef.current = null
+      if (timeoutRef.current !== null) {
+        window.clearTimeout(timeoutRef.current)
+        timeoutRef.current = null
+      }
+    }
+  }, [refresh])
+
   return <main className="workbench">
     <header className="hero-header"><div><p className="eyebrow">TEST365ALM · ENGINEERING FOUNDATION</p><h1>{version?.productName ?? 'Test365Alm'} 工作台</h1><p className="lede">查看当前应用构建信息与运行状态，数据来自真实后端接口。</p></div><button className="refresh-button" type="button" onClick={() => void refresh()}>刷新状态</button></header>
     <section className="version-panel" aria-label="构建信息"><div><span className="panel-label">应用版本</span><strong>{version?.version ?? (versionState === 'loading' ? '读取中…' : '不可用')}</strong></div><div><span className="panel-label">构建提交</span><code>{version?.commit ?? (versionState === 'loading' ? '读取中…' : 'unknown')}</code></div></section>

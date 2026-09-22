@@ -4,7 +4,7 @@
 
 > **当前状态：R02 工程底座最小切片正在实施。** 健康/版本接口、受控迁移、前端状态工作台和自动化测试以实际代码与轮次记录为准；这不代表完整 ALM 产品、兼容认证或生产部署已经完成。
 
-当前开发状态以 [development-status.md](docs/development-status.md) 和 [R02 轮次记录](docs/progress/runs/R02-M02-001.md) 为准。
+当前开发状态以 [development-status.md](docs/development-status.md) 和 [R02-M02-002 轮次记录](docs/progress/runs/R02-M02-002.md) 为准；上一轮记录仍保留供追溯。
 
 ## R02 工程底座：本地启动
 
@@ -22,14 +22,14 @@
 PowerShell：
 
 ```powershell
-Copy-Item .env.example .env
+if (-not (Test-Path -LiteralPath .env)) { Copy-Item .env.example .env }
+. .\tools\import_dev_env.ps1
 docker compose --env-file .env -p test365alm-r02 up -d postgres
-$env:TEST365ALM_DATASOURCE_URL = 'jdbc:postgresql://127.0.0.1:54329/test365alm'
-$env:TEST365ALM_DATASOURCE_USERNAME = 'test365alm'
-$env:TEST365ALM_DATASOURCE_PASSWORD = 'test365alm_dev_password'
 Set-Location apps/server
 .\mvnw.cmd spring-boot:run
 ```
+
+如果 `.env` 已存在，上面的命令会保留它，不会覆盖本机配置；`import_dev_env.ps1` 将同一份配置加载给宿主机上的 Spring Boot。修改 `POSTGRES_HOST_PORT` 或凭据后，重新在启动后端的终端执行 `. .\tools\import_dev_env.ps1`，不要在命令行另写一套旧值。
 
 另开终端启动前端：
 
@@ -39,7 +39,7 @@ npm ci
 npm run dev
 ```
 
-浏览器访问 <http://localhost:5173>。Vite 开发代理只把 `/api` 和 `/health` 转发到本机后端；不配置任意来源跨域。
+浏览器访问 <http://127.0.0.1:5173>。Vite 开发代理只把 `/api` 和 `/health` 转发到本机后端；不配置任意来源跨域。
 默认后端地址为 `http://127.0.0.1:8080`；若该端口被本机其他服务占用，可在启动前端前设置 `TEST365ALM_DEV_BACKEND_URL=http://127.0.0.1:18080` 指向本轮隔离后端端口。
 
 ### 检查、停止与排障
@@ -48,13 +48,22 @@ npm run dev
 curl.exe -i http://127.0.0.1:8080/health/live
 curl.exe -i http://127.0.0.1:8080/health/ready
 curl.exe -i http://127.0.0.1:8080/api/v1/version
-docker compose --env-file .env -p test365alm ps
+Get-NetTCPConnection -State Listen -LocalPort 8080 | Select-Object LocalAddress,LocalPort,OwningProcess
+docker compose --env-file .env -p test365alm-r02 ps
 docker compose --env-file .env -p test365alm-r02 down
 ```
 
 `down` 默认保留数据库卷；不要对不明确的环境使用 `down -v`。readiness 返回 503 时先检查容器健康状态、数据源环境变量和后端日志。`.env` 仅供本机使用，真实凭据不得提交。
 
+后端的 `server.address` 默认是 `127.0.0.1`，前端 Vite 默认 host 也是 `127.0.0.1`；只有在明确启动容器网络时才通过环境变量覆盖。readiness 的 JDBC 连接校验和结构查询各自使用 `TEST365ALM_READINESS_TIMEOUT_MS` 的有界预算，不能将两段预算相加后理解为单一 HTTP 请求上限。
+
 要复现数据库故障场景，保持后端进程运行，执行 `docker compose --env-file .env -p test365alm-r02 stop postgres`，确认 live 仍为 200 且 ready 为 503；随后执行 `docker compose --env-file .env -p test365alm-r02 start postgres`，ready 应在下一次探测恢复为 200。该场景只针对本轮隔离 Compose 项目，不要对用户已有数据库使用清库或删除卷。
+
+也可以在构建后端 jar 后运行可重复的自动检查（脚本只停止并恢复 `test365alm-r02` 项目的 PostgreSQL，不删除数据卷）：
+
+```powershell
+python tools/verify_r02_readiness.py
+```
 
 ### 可复现验证命令
 
@@ -105,7 +114,7 @@ python -m unittest discover -s tools/tests -v
 
 ## GitHub 发布
 
-当前会话连接器没有新建仓库动作，未在远端创建或上传。本地准备好 Git 与 GitHub CLI，登录授权后按发布手册执行。发布器默认为预览，只有明确加 `--execute` 才创建私有仓库；不修改无关仓库，不强制推送。
+代码仓库已位于 [github.com/fangzhiy/Test365Alm](https://github.com/fangzhiy/Test365Alm)。本项目按任务分支和 Pull Request 协作；推送或 CI 的实际状态以 GitHub 页面和轮次记录为准，本地提交不代表 PR 已合并或生产已部署。不修改无关仓库，不强制推送。
 
 ```bash
 gh auth login --hostname github.com
