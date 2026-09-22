@@ -11,6 +11,7 @@ import java.net.http.HttpResponse;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.info.BuildProperties;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.HttpStatus;
@@ -29,6 +30,9 @@ class PlatformDatabaseIT {
     @Autowired
     private Flyway flyway;
 
+    @Autowired
+    private BuildProperties buildProperties;
+
     @Test
     void migratesDatabaseAndServesPlatformEndpoints() throws Exception {
         Integer metadataRows = jdbcTemplate.queryForObject(
@@ -46,7 +50,7 @@ class PlatformDatabaseIT {
         HttpResponse<String> version = request("/api/v1/version");
         assertEquals(HttpStatus.OK.value(), version.statusCode());
         assertTrue(version.body().contains("\"productName\""));
-        assertTrue(version.body().contains("\"commit\":\"local-r02-integration\""));
+        assertTrue(version.body().contains("\"commit\":\"" + buildProperties.get("buildCommit") + "\""));
     }
 
     @Test
