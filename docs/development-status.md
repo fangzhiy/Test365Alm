@@ -10,7 +10,7 @@
 
 - 起始基线：远端 `origin/chore/r01-status-001`，SHA `cff62dfed99c698a2e32bea85de17e224761eb54`；已重新 fetch，未发现更晚远端提交；工作区起始时干净。
 - 任务分支：`feat/r02-m02-001`，基于上述真实远端基线创建。
-- 已实现：Spring Boot 平台健康/版本接口、Flyway `V1__platform_metadata.sql`、开发 Compose PostgreSQL、配置示例、React 状态工作台、前后端测试、GitHub Actions 草案。
+- 已实现：Spring Boot 平台健康/版本接口、Flyway `V1__platform_metadata.sql`、开发 Compose PostgreSQL、配置示例、React 状态工作台、前后端测试、GitHub Actions workflow。
 - 已验证：本地 Docker PostgreSQL 17.11、空库迁移、迁移重跑不重复、元数据保留、后端单元与集成测试、前端 `npm ci`/lint/test/build、打包应用停库/恢复和真实浏览器状态工作台联调。
 - 本轮未实现：登录、身份、项目权限、需求/用例/缺陷/执行 Agent、OTA/COM、电子签名、AI 和所有完整业务模块。
 - 本轮不把 P0-04、P0 或 M02 标为完成；P0 输入与旧 ALM 样本仍保持原阻塞记录。
@@ -32,7 +32,7 @@
 
 ### 当前待验证/阻塞
 
-- 远端分支推送、PR 和 GitHub Actions 运行状态：本地新增 workflow 但尚未形成远端执行证据，完成后补写真实 URL/SHA。
+- 远端分支已推送，PR #1 已创建但未合并；GitHub Actions run 35709638396 已对提交 `3bcb16b5bc7a107ea2adfa526cf9f70c5361d756` 完成，planning-tools/web/server 均 success。后续文档提交会产生新的 run，需以其对应 SHA 单独核对。
 - 浏览器联调已通过隔离 in-app 浏览器 DOM 证据完成；独立截图文件未归档，控制台 error/warn 为空。
 - Java 21/Node 24 本机复跑待提供目标运行时。
 - 旧 ALM 目标版本、Edition、扩展和三类脱敏样本仍为 B01-B04/B02 未提供输入。
