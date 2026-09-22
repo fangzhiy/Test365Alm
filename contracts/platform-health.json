@@ -1,0 +1,94 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Test365Alm platform health API",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/health/live": {
+      "get": {
+        "operationId": "getLiveness",
+        "responses": {
+          "200": {
+            "description": "The application process is alive.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/LivenessResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "operationId": "getReadiness",
+        "responses": {
+          "200": {
+            "description": "Migrations completed and PostgreSQL is reachable.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ReadinessResponse" }
+              }
+            }
+          },
+          "503": {
+            "description": "PostgreSQL or the required migration is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ReadinessResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/version": {
+      "get": {
+        "operationId": "getVersion",
+        "responses": {
+          "200": {
+            "description": "Build metadata for the running application.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/VersionResponse" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "LivenessResponse": {
+        "type": "object",
+        "required": ["status"],
+        "properties": {
+          "status": { "type": "string", "const": "UP" }
+        },
+        "additionalProperties": false
+      },
+      "ReadinessResponse": {
+        "type": "object",
+        "required": ["status", "database", "migration"],
+        "properties": {
+          "status": { "type": "string", "enum": ["UP", "DOWN"] },
+          "database": { "type": "string", "enum": ["UP", "DOWN"] },
+          "migration": { "type": "string", "enum": ["APPLIED", "UNKNOWN"] }
+        },
+        "additionalProperties": false
+      },
+      "VersionResponse": {
+        "type": "object",
+        "required": ["productName", "version", "commit"],
+        "properties": {
+          "productName": { "type": "string" },
+          "version": { "type": "string" },
+          "commit": { "type": "string", "description": "unknown when no build metadata is available" }
+        },
+        "additionalProperties": false
+      }
+    }
+  }
+}

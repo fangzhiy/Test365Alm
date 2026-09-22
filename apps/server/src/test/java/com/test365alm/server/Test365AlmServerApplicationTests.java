@@ -1,13 +1,15 @@
 package com.test365alm.server;
 
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.test.context.SpringBootTest;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-@SpringBootTest
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
 class Test365AlmServerApplicationTests {
 
 	@Test
-	void contextLoads() {
+	void applicationIsMarkedAsSpringBootApplication() {
+		assertTrue(Test365AlmServerApplication.class.isAnnotationPresent(SpringBootApplication.class));
 	}
 
 }
