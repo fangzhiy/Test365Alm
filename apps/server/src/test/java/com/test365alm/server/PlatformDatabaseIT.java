@@ -40,11 +40,13 @@ class PlatformDatabaseIT {
 
         HttpResponse<String> ready = request("/health/ready");
         assertEquals(HttpStatus.OK.value(), ready.statusCode());
+        assertTrue(ready.body().contains("\"database\":\"UP\""));
         assertTrue(ready.body().contains("\"migration\":\"APPLIED\""));
 
         HttpResponse<String> version = request("/api/v1/version");
         assertEquals(HttpStatus.OK.value(), version.statusCode());
         assertTrue(version.body().contains("\"productName\""));
+        assertTrue(version.body().contains("\"commit\":\"local-r02-integration\""));
     }
 
     @Test

@@ -14,6 +14,7 @@ import org.springframework.stereotype.Component;
 @Component
 public class DatabaseReadinessProbe implements ReadinessChecker {
     private static final Logger log = LoggerFactory.getLogger(DatabaseReadinessProbe.class);
+    private static final int MAX_TIMEOUT_SECONDS = 30;
     private static final String MIGRATION_CHECK = """
             SELECT EXISTS (
                 SELECT 1
@@ -29,7 +30,8 @@ public class DatabaseReadinessProbe implements ReadinessChecker {
             DataSource dataSource,
             @Value("${test365alm.readiness.timeout-ms:2000}") long timeoutMilliseconds) {
         this.dataSource = dataSource;
-        this.timeoutSeconds = Math.max(1, (int) Math.ceil(timeoutMilliseconds / 1000.0));
+        this.timeoutSeconds = Math.min(MAX_TIMEOUT_SECONDS,
+                Math.max(1, (int) Math.ceil(timeoutMilliseconds / 1000.0)));
     }
 
     public ReadinessResult check() {
