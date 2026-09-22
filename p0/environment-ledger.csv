@@ -1,0 +1,13 @@
+record_id,category,item,current_value,status,required_evidence,owner_role,gate,notes
+D01,scope,target ALM version and patch,UNCONFIRMED,OPEN,authorized environment inventory and version screenshot,产品负责人,G0,26.1 is research reference only
+D02,scope,Edition and zero-modification client requirement,UNCONFIRMED,OPEN,signed scope decision and client list,产品负责人,G0,do not infer compatibility from REST availability
+D03,scope,installed extensions BPT and license services,UNCONFIRMED,OPEN,extension inventory with legal use evidence,领域专家,G0,include version and bitness where applicable
+D04,delivery,private deployment SaaS or dual mode,private-first assumption,OPEN,approved deployment decision and support boundary,项目负责人,G0,planning assumption is not an approved product promise
+D05,data,first pilot projects and data authorization,UNCONFIRMED,OPEN,three approved de-identified sample records,业务验收人,G0,ordinary customized and large-data samples required
+D06,compliance,retention signature and regulatory requirements,UNCONFIRMED,OPEN,applicability assessment and retention policy,安全负责人,G0/G2,signature feature does not prove regulatory compliance
+D07,people,team capacity and actual person-month cost,UNCONFIRMED,OPEN,role roster capacity and approved cost model,项目负责人,G0,planning baseline is 4万元 per person-month
+D08,legal,commercial licenses open-source and branding policy,UNCONFIRMED,OPEN,legal review and distribution decision,授权负责人,G0/G3,do not copy or bypass proprietary assets
+ENV-01,environment,server operating systems and network boundaries,UNCONFIRMED,OPEN,authorized topology and access record,架构师,G0,record isolated compatibility lab separately
+ENV-02,environment,database and authentication providers,UNCONFIRMED,OPEN,version inventory and configuration boundary,架构师,G0,do not store credentials here
+ENV-03,environment,desktop clients plugins and test engines,UNCONFIRMED,OPEN,licensed installer and version/bitness inventory,兼容负责人,G0/G3,unknown clients remain high risk
+ENV-04,environment,project counts and representative data sizes,UNCONFIRMED,OPEN,redacted count report with approval,迁移负责人,G0/G2,do not use synthetic counts as customer evidence

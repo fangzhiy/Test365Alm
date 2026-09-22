@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "p0-golden-dataset-0.1",
+  "status": "MISSING_INPUT",
+  "project": "Test365Alm",
+  "authorized": false,
+  "purpose": "P0 migration and compatibility research only",
+  "prohibited": [
+    "production credentials",
+    "access tokens",
+    "unredacted personal data",
+    "customer attachments without approval"
+  ],
+  "samples": [
+    {
+      "sampleId": "ordinary-project",
+      "profile": "ordinary",
+      "sourceSystem": "UNCONFIRMED",
+      "sourceVersion": "UNCONFIRMED",
+      "authorizationRef": null,
+      "redactionProfile": null,
+      "objectCounts": null,
+      "sha256": null,
+      "status": "AWAIT_AUTHORIZED_SAMPLE"
+    },
+    {
+      "sampleId": "customized-project",
+      "profile": "strongly-customized",
+      "sourceSystem": "UNCONFIRMED",
+      "sourceVersion": "UNCONFIRMED",
+      "authorizationRef": null,
+      "redactionProfile": null,
+      "objectCounts": null,
+      "sha256": null,
+      "status": "AWAIT_AUTHORIZED_SAMPLE"
+    },
+    {
+      "sampleId": "large-data-project",
+      "profile": "large-data",
+      "sourceSystem": "UNCONFIRMED",
+      "sourceVersion": "UNCONFIRMED",
+      "authorizationRef": null,
+      "redactionProfile": null,
+      "objectCounts": null,
+      "sha256": null,
+      "status": "AWAIT_AUTHORIZED_SAMPLE"
+    }
+  ]
+}

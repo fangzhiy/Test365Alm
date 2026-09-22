@@ -1,0 +1,19 @@
+{
+  "schema_version": "0.1-design-example",
+  "synthetic": true,
+  "source_system": "SYNTHETIC_ALM_EXAMPLE_NOT_ACTUAL_EXPORT",
+  "source_project": "EXAMPLE_PROJECT",
+  "source_type": "requirement",
+  "source_id": "EXAMPLE-REQ-1",
+  "source_revision": "1",
+  "source_time": null,
+  "source_author": null,
+  "provenance_status": "ILLUSTRATION_ONLY",
+  "payload": {
+    "title": "合成登录需求",
+    "description": "仅用于解释中间格式"
+  },
+  "relations": [],
+  "attachments": [],
+  "note": "无原系统数据时不填写虚构作者、原始时间或原始签名。"
+}

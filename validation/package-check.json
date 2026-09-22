@@ -1,0 +1,16 @@
+{
+  "ok": true,
+  "errors": [],
+  "modules": 32,
+  "work_packages": 192,
+  "module_acceptance_cases": 160,
+  "e2e_cases": 24,
+  "sprints": 78,
+  "api_catalogue_rows": 84,
+  "openapi_operations": 14,
+  "budget_total_wan": "3354.000",
+  "not_passed_product_cases": 184,
+  "product_acceptance": "NOT_EXECUTED",
+  "github_publication": "NOT_PERFORMED_BY_THIS_VALIDATOR",
+  "note": "只校验规划资产；不执行业务应用，不证明安全、性能、迁移或兼容通过。"
+}

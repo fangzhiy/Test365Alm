@@ -1,0 +1,11 @@
+﻿id,surface,behavior,target_version,sample,classification,status,evidence,owner_role
+CMP-01,项目REST,认证、字段、查询、锁与附件,UNCONFIRMED,AWAIT_AUTHORIZED_SAMPLE,not-tested,OPEN,,兼容负责人
+CMP-02,站点管理REST,项目、用户、管理权限,UNCONFIRMED,AWAIT_AUTHORIZED_SAMPLE,not-tested,OPEN,,兼容负责人
+CMP-03,OTA/COM,对象、工厂、枚举、事务、异常,UNCONFIRMED,AWAIT_AUTHORIZED_SAMPLE,not-tested,OPEN,,兼容负责人
+CMP-04,站点管理COM,真实管理程序,UNCONFIRMED,AWAIT_AUTHORIZED_SAMPLE,not-tested,OPEN,,兼容负责人
+CMP-05,VBScript,事件次序、模板及项目脚本,UNCONFIRMED,AWAIT_AUTHORIZED_SAMPLE,not-tested,OPEN,,兼容负责人
+CMP-06,原桌面客户端,指定版本、位数、协议和许可,UNCONFIRMED,AWAIT_AUTHORIZED_SAMPLE,not-tested,OPEN,,兼容负责人
+CMP-07,第三方插件,逐厂商与插件版本验证,UNCONFIRMED,AWAIT_AUTHORIZED_SAMPLE,not-tested,OPEN,,兼容负责人
+CMP-08,离线客户端,导出包、冲突、过期和同步,UNCONFIRMED,AWAIT_AUTHORIZED_SAMPLE,not-tested,OPEN,,兼容负责人
+CMP-09,BPT及扩展,组件工具链与许可,UNCONFIRMED,AWAIT_AUTHORIZED_SAMPLE,not-tested,OPEN,,兼容负责人
+CMP-10,执行引擎连接器,固定工具版本的调度和结果,UNCONFIRMED,AWAIT_AUTHORIZED_SAMPLE,not-tested,OPEN,,兼容负责人

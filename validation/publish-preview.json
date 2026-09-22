@@ -1,0 +1,15 @@
+{
+  "mode": "DRY_RUN",
+  "target": "fangzhiy/Test365Alm",
+  "visibility": "private",
+  "network_calls": 0,
+  "plan": [
+    "校验文件和预算",
+    "检查本机git/gh及已登录个人账号",
+    "确认目标仓库不可访问且返回404",
+    "建立本包main初始提交",
+    "创建新的私有仓库并推送",
+    "对比本地与远端main提交"
+  ],
+  "next": "审查文件后显式加 --execute。需要Git、GitHub CLI及合法账号权限。"
+}

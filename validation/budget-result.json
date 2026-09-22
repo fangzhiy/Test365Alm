@@ -1,0 +1,70 @@
+{
+  "status": "ASSUMPTIONS_NOT_APPROVED",
+  "unit": "万元人民币",
+  "phases": [
+    {
+      "phase": "P0",
+      "person_months": "9.0",
+      "labor": "36.0",
+      "environment": "4",
+      "external": "5",
+      "subtotal": "45.0",
+      "contingency": "9.000",
+      "total": "54.000",
+      "cumulative": "54.000"
+    },
+    {
+      "phase": "P1",
+      "person_months": "45.0",
+      "labor": "180.0",
+      "environment": "12",
+      "external": "10",
+      "subtotal": "202.0",
+      "contingency": "40.400",
+      "total": "242.400",
+      "cumulative": "296.400"
+    },
+    {
+      "phase": "P2",
+      "person_months": "192",
+      "labor": "768",
+      "environment": "36",
+      "external": "30",
+      "subtotal": "834",
+      "contingency": "166.80",
+      "total": "1000.80",
+      "cumulative": "1297.200"
+    },
+    {
+      "phase": "P3",
+      "person_months": "264",
+      "labor": "1056",
+      "environment": "60",
+      "external": "100",
+      "subtotal": "1216",
+      "contingency": "243.20",
+      "total": "1459.20",
+      "cumulative": "2756.400"
+    },
+    {
+      "phase": "P4",
+      "person_months": "108",
+      "labor": "432",
+      "environment": "36",
+      "external": "30",
+      "subtotal": "498",
+      "contingency": "99.60",
+      "total": "597.60",
+      "cumulative": "3354.000"
+    }
+  ],
+  "totals": {
+    "person_months": "618.0",
+    "labor": "2472.0",
+    "environment": "148",
+    "external": "175",
+    "subtotal": "2795.0",
+    "contingency": "559.000",
+    "total": "3354.000"
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "currency": "CNY",
+  "display_unit": "万元",
+  "status": "ASSUMPTIONS_NOT_APPROVED",
+  "person_month_cost_wan": "4",
+  "contingency_rate": "0.20",
+  "phases": [
+    {
+      "id": "P0",
+      "months": "1.5",
+      "fte": "6",
+      "environment_wan": "4",
+      "external_wan": "5",
+      "first_sprint": 1,
+      "last_sprint": 3
+    },
+    {
+      "id": "P1",
+      "months": "4.5",
+      "fte": "10",
+      "environment_wan": "12",
+      "external_wan": "10",
+      "first_sprint": 4,
+      "last_sprint": 13
+    },
+    {
+      "id": "P2",
+      "months": "12",
+      "fte": "16",
+      "environment_wan": "36",
+      "external_wan": "30",
+      "first_sprint": 14,
+      "last_sprint": 39
+    },
+    {
+      "id": "P3",
+      "months": "12",
+      "fte": "22",
+      "environment_wan": "60",
+      "external_wan": "100",
+      "first_sprint": 40,
+      "last_sprint": 65
+    },
+    {
+      "id": "P4",
+      "months": "6",
+      "fte": "18",
+      "environment_wan": "36",
+      "external_wan": "30",
+      "first_sprint": 66,
+      "last_sprint": 78
+    }
+  ],
+  "excluded": [
+    "完整自研 UFT/LoadRunner 等外部引擎",
+    "开发完成后年度长期运维支持",
+    "最终税务口径；需财务确认"
+  ]
+}

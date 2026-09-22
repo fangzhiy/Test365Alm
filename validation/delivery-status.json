@@ -1,0 +1,55 @@
+{
+  "project": "Test365Alm",
+  "delivery_version": "1.0",
+  "date": "2026-09-20",
+  "documents": {
+    "executive_docx_pages": 11,
+    "implementation_docx_pages": 93,
+    "status": "AUTHORED_AND_VISUALLY_REVIEWED"
+  },
+  "planning": {
+    "modules": 32,
+    "work_packages": 192,
+    "module_acceptance_scenarios": 160,
+    "end_to_end_scenarios": 24,
+    "two_week_sprints": 78,
+    "domain_objects": 56,
+    "api_catalogue_rows": 84,
+    "openapi_core_operations": 14
+  },
+  "validation": {
+    "planning_package_check": "PASSED",
+    "offline_utility_tests_passed": 12,
+    "business_product_acceptance": "NOT_EXECUTED",
+    "visual_review": "All 104 final rendered Word pages reviewed; no substantive clipping or overlapping identified."
+  },
+  "github": {
+    "account": "fangzhiy",
+    "requested_repository": "Test365Alm",
+    "repository_creation": "NOT_PERFORMED",
+    "file_upload": "NOT_PERFORMED",
+    "reason": "Available authenticated GitHub connector does not expose repository creation. Target read returned 404. No authenticated local GitHub CLI is available.",
+    "other_repositories_modified": false,
+    "publisher_script": "tools/publish_github.py",
+    "publisher_default": "DRY_RUN",
+    "publisher_execute_tested_against_remote": false
+  },
+  "scope_status": "ENGINEERING_PROPOSAL_PENDING_G0_APPROVAL",
+  "application_status": "NOT_IMPLEMENTED",
+  "budget": {
+    "currency": "CNY",
+    "unit": "万元",
+    "duration_months_assumed": 36,
+    "person_months_assumed": 618,
+    "total_estimate_wan": "3354.000",
+    "P0_estimate_wan": "54.000",
+    "approval": "NOT_APPROVED"
+  },
+  "limitations": [
+    "实际目标ALM版本、Edition、扩展清单、旧脚本及迁移样本仍需P0确认。",
+    "本包是实施文档、设计契约、计划资产和辅助工具，不是已开发完成的业务系统。",
+    "12项离线测试只证明辅助工具相应场景通过，不证明业务功能、迁移、兼容、安全或性能已验收。",
+    "OpenAPI只包含14个核心操作的设计子集，不是完整API实现。",
+    "发布脚本的真实远端创建与上传未在本次会话执行。"
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "schemaVersion": "0.1-design-example",
+  "synthetic": true,
+  "runId": "00000000-0000-4000-8000-000000000001",
+  "projectId": "00000000-0000-4000-8000-000000000002",
+  "test": {
+    "entityId": "00000000-0000-4000-8000-000000000003",
+    "revisionId": "00000000-0000-4000-8000-000000000004"
+  },
+  "configurationRevision": "00000000-0000-4000-8000-000000000005",
+  "baselineId": null,
+  "steps": [
+    {
+      "stepKey": "login-submit",
+      "ordinal": 1,
+      "action": "在隔离演示站点输入合成测试账号并提交",
+      "expected": "显示演示首页"
+    }
+  ],
+  "parameters": {
+    "browser": "demo-browser"
+  },
+  "resources": [],
+  "workflowRevision": "00000000-0000-4000-8000-000000000006",
+  "secretReferences": [],
+  "note": "实际哈希应按批准的canonical serialization计算；本例不伪造已签署或已执行证据。"
+}
