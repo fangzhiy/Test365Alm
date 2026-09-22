@@ -182,6 +182,8 @@ jobs:
             echo '### Readiness recovery output'
             cat readiness-recovery.txt
           } >> "$GITHUB_STEP_SUMMARY"
+          summary=$(tr '\n' ' ' < readiness-recovery.txt | cut -c1-4000)
+          echo "::error title=readiness-recovery::${summary:-no output captured}"
           exit "$status"
       - name: Upload readiness evidence
         if: always()
