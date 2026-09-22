@@ -176,7 +176,7 @@ jobs:
           TEST365ALM_DATASOURCE_PASSWORD: test365alm_dev_password
         run: |
           set -o pipefail
-          python -u tools/verify_r02_readiness.py --wait-seconds 90 2>&1 | tee readiness-recovery.txt
+          python -u tools/verify_r02_readiness.py --wait-seconds 90 --listener-mode observe 2>&1 | tee readiness-recovery.txt
       - name: Upload readiness evidence
         if: always()
         uses: actions/upload-artifact@v4

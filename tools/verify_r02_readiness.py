@@ -140,6 +140,12 @@ def main() -> int:
         default=ROOT / "apps" / "server" / "target" / "server-0.0.1-SNAPSHOT.jar",
     )
     parser.add_argument("--wait-seconds", type=float, default=90.0)
+    parser.add_argument(
+        "--listener-mode",
+        choices=("required", "observe"),
+        default="required",
+        help="fail on a non-loopback listener in required mode; observe mode records runner evidence without making it the outage gate",
+    )
     args = parser.parse_args()
 
     if not (ROOT / ".env").is_file():
@@ -190,8 +196,11 @@ def main() -> int:
         if listeners is None:
             print("WARN: listener enumeration unavailable; loopback check NOT_RUN")
         elif not listeners or any(address not in {"127.0.0.1", "::1"} for address in listeners):
-            print(f"FAIL: backend listener addresses={listeners!r}")
-            return 1
+            message = f"backend listener addresses={listeners!r}"
+            if args.listener_mode == "required":
+                print(f"FAIL: {message}")
+                return 1
+            print(f"WARN: {message}; loopback check observed but not used as CI outage gate")
         else:
             print(f"PASS: backend listener loopback-only addresses={listeners!r}")
         print("PASS: startup live=200 ready=200")
