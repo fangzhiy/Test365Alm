@@ -11,7 +11,7 @@
 - 当前分支：`chore/r01-status-001`
 - 起始状态：本轮初始化前无提交；基线提交为 `ec350ce4b991f4bd427fd630332d7e6f7069262e`
 - 远端地址：`https://github.com/fangzhiy/Test365Alm.git`
-- 远端分支：`origin/chore/r01-status-001` 已推送并核验，当前最新提交为 `8c998aac46cbc5a0693640390eb43198359f3f43`
+- 远端分支：`origin/chore/r01-status-001` 已推送并核验；代码/保护性提交为 `8c998aac46cbc5a0693640390eb43198359f3f43`，状态记录提交 SHA 在最终回复中给出。
 - PR：未创建；用户本轮要求为提交并推送任务分支，未执行合并或分支保护变更
 
 ## 已存在与已验证
