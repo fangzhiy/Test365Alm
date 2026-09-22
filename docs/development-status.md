@@ -7,11 +7,12 @@
 ## 实际仓库状态
 
 - 工作目录：`D:\code\project\test365Alm\jihua\Test365Alm_ProjectPackage\Test365Alm`
-- Git 仓库：未发现；`git rev-parse --show-toplevel` 返回失败
-- 当前分支：无
-- 起始提交：无
-- 远端地址：无
-- GitHub 目标名 `fangzhiy/Test365Alm` 仅来自规划文档，不能视为已存在或已配置远端
+- Git 仓库：已在本轮初始化；项目根为当前工作目录
+- 当前分支：`chore/r01-status-001`
+- 起始状态：本轮初始化前无提交；基线提交为 `ec350ce4b991f4bd427fd630332d7e6f7069262e`
+- 远端地址：`https://github.com/fangzhiy/Test365Alm.git`
+- 远端分支：`origin/chore/r01-status-001` 已推送并核验，当前最新提交为 `8c998aac46cbc5a0693640390eb43198359f3f43`
+- PR：未创建；用户本轮要求为提交并推送任务分支，未执行合并或分支保护变更
 
 ## 已存在与已验证
 
@@ -46,7 +47,7 @@
 
 - 旧 ALM 版本、Edition、扩展、客户端和兼容样本：`OPEN / BLOCKED (B01-B04)`。
 - 三类客户脱敏样本：`MISSING_INPUT / BLOCKED (B02)`。
-- GitHub 远端、任务分支、PR 和推送：`NOT_RUN`，因为本地没有 Git 仓库或远端配置。
+- GitHub PR、分支保护和远端 CI：`NOT_RUN`；任务分支推送已完成，但未创建 PR 或修改保护规则。
 - Java 17 是本机实际版本；Spring Boot 4.1.1 官方要求至少 Java 17。Java 21 尚未安装，不能写成已验证环境。
 - 本机 Node 为 26.0.0 Current；工程目标应使用 Node 24 LTS，Node 26 仅作为本机兼容性检查环境。
 

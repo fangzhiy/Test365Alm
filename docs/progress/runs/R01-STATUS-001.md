@@ -17,6 +17,15 @@
 - 本轮验证对应代码版本：无 Git SHA；以下结果对应本轮结束时的本地工作区快照。
 - 用户原有规划资料保留；本轮盘点前已生成的 `apps/web`、`apps/server` 和 P0 资料也保留并如实记录。
 
+## GitHub 提交与推送（后续操作）
+
+- 已在项目根初始化 Git，并配置 `origin`：`https://github.com/fangzhiy/Test365Alm.git`。
+- 已创建任务分支：`chore/r01-status-001`。
+- 基线提交：`ec350ce4b991f4bd427fd630332d7e6f7069262e`。
+- 保护性提交：`8c998aac46cbc5a0693640390eb43198359f3f43`，忽略 Git Credential Manager 诊断日志。
+- `git ls-remote --heads origin chore/r01-status-001` 已核验，远端包含保护性提交。
+- 未创建 PR、未合并、未修改分支保护；远端 CI 未运行。
+
 ## 实际完成
 
 | 项目 | 结果 | 证据 |
@@ -49,21 +58,21 @@
 - 后端模板测试：失败；`mvn test -q` 退出码 1，Spring 上下文因没有 `spring.datasource.url`/可用 DataSource 配置而失败。
 - PostgreSQL 空库迁移、readiness 正常/故障：尚未创建 Compose 和迁移配置。
 - 前端真实接口读取：尚未实现。
-- CI 远端执行、GitHub 推送、PR 和分支保护：本地无 Git 仓库/远端，无法执行。
+- CI 远端执行、PR 和分支保护：未运行；任务分支推送已完成，但没有 PR 或远端流水线证据。
 
 ### 不适用或阻塞
 
 - 旧 ALM 兼容验证：缺少授权环境、版本和样本，保持 `OPEN / BLOCKED`。
 - 客户数据迁移验证：缺少三类授权脱敏样本，保持 `MISSING_INPUT / BLOCKED`。
-- 外部审核：本轮没有提交或推送，未产生外部审核结果。
+- 外部审核：未产生；任务分支已推送，但没有 PR 或审核结果。
 
 ## 实际执行命令
 
 | 命令 | 结果 | 退出码/摘要 |
 |---|---|---|
-| `git rev-parse --show-toplevel` | 通过盘点 | 无仓库，命令失败；退出码非 0，记录为“仓库不存在” |
-| `git branch --show-current` | 通过盘点 | 无仓库，命令失败；无分支 |
-| `git remote -v` | 通过盘点 | 无仓库，命令失败；无远端 |
+| `git rev-parse --show-toplevel` | 通过盘点 | 起始检查时无仓库；后续已在项目根初始化 Git |
+| `git branch --show-current` | 通过盘点 | 起始检查时无分支；后续分支为 `chore/r01-status-001` |
+| `git remote -v` | 通过盘点 | 起始检查时无远端；后续配置 `origin` 指向用户给定地址 |
 | `node --version` / `npm --version` | 通过 | `v26.0.0` / `11.12.1` |
 | `java -version` / `mvn -version` | 通过 | Java `17.0.2` / Maven `3.9.14` |
 | `docker version` / `docker compose version` | 通过 | Docker `29.7.2` / Compose `v5.4.0` |
@@ -74,12 +83,13 @@
 | `python tools/p0_health_check.py` | 通过命令/输入未齐 | 退出码 0；P0 输入 `INPUTS_MISSING`，应用 `NOT_IMPLEMENTED` |
 | `npm run lint; npm run build`（`apps/web`） | 通过 | 退出码 0，Vite 模板构建成功 |
 | `mvn test -q`（`apps/server`） | 失败 | 退出码 1；缺少 DataSource URL/数据库配置导致 Spring 上下文启动失败 |
+| `git push -u origin chore/r01-status-001` | 通过 | 退出码 0；远端分支已创建并包含 `8c998aac46cbc5a0693640390eb43198359f3f43` |
 
 首次工具测试因新增 `node_modules` 后扫描第三方 Markdown 而失败；已增加生成目录排除规则并复跑通过。
 
 ## 风险与后续
 
-- 当前没有安全的提交/推送边界，因为目录不是 Git 仓库；后续若用户要求 GitHub 协作，需要先由用户决定仓库初始化/远端目标，或提供已有 checkout。
+- 当前已建立安全的任务分支和远端推送边界；仍未创建 PR 或修改分支保护。
 - `apps/server` 的 Initializr 模板包含依赖候选，但 HTTP 接口、数据库迁移、集成测试和 Compose 仍需下一轮完成。
 - `apps/web` 依赖目标为 Node 24 LTS；本机 Node 26 可用于兼容检查，不能替代目标运行时锁定。
 - 下一个开发任务：实现健康/版本接口、Flyway 迁移和本地 PostgreSQL Compose，再接通真实前端状态面板；完成后重新记录测试结果和代码版本。
