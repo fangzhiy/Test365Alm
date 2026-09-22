@@ -1,8 +1,41 @@
 # Test365Alm 开发状态
 
-最后更新：2026-09-22  
-当前轮次：`R01-STATUS-001`  
-状态：`INVENTORY_RECORDED / IMPLEMENTATION_NOT_STARTED`
+最后更新：2026-09-22
+当前轮次：`R02-M02-001`
+状态：`IMPLEMENTED_LOCALLY / FINAL_ACCEPTANCE_PENDING`
+
+本页保留 R01 的盘点事实，并在下方记录 R02 的实际工程进展。R02 只实现 M02 工程底座最小切片，不代表整个 M02、P0 或完整 ALM 产品已完成。
+
+## R02-M02-001 当前状态
+
+- 起始基线：远端 `origin/chore/r01-status-001`，SHA `cff62dfed99c698a2e32bea85de17e224761eb54`；已重新 fetch，未发现更晚远端提交；工作区起始时干净。
+- 任务分支：`feat/r02-m02-001`，基于上述真实远端基线创建。
+- 已实现：Spring Boot 平台健康/版本接口、Flyway `V1__platform_metadata.sql`、开发 Compose PostgreSQL、配置示例、React 状态工作台、前后端测试、GitHub Actions 草案。
+- 已验证：本地 Docker PostgreSQL 17.11、空库迁移、迁移重跑不重复、元数据保留、后端单元与集成测试、前端 `npm ci`/lint/test/build、打包应用停库/恢复和真实浏览器状态工作台联调。
+- 本轮未实现：登录、身份、项目权限、需求/用例/缺陷/执行 Agent、OTA/COM、电子签名、AI 和所有完整业务模块。
+- 本轮不把 P0-04、P0 或 M02 标为完成；P0 输入与旧 ALM 样本仍保持原阻塞记录。
+
+### 工具链与配置事实
+
+- 本机：Java `17.0.2`，Node `v26.0.0`，npm `11.12.1`，Docker Engine `29.7.2`，Compose `v5.4.0`，系统 Maven `3.9.14`。
+- 可复现命令使用 Maven Wrapper（实际下载/运行 Maven `3.9.16`）、前端 `package-lock.json`、Java 21/Node 24 CI 配置。
+- Compose 镜像为 `postgres:17.11@sha256:f4c66b820c6f974249089d3d16d86a3698eae11e8746eb6644b2271031e91232`，仅发布到 `127.0.0.1`。
+- Java 21、Node 24 未安装在当前工作站，不能写成已完成的本地目标环境验证；偏差及选型保留在 ADR-006。
+- 本地数据库配置来自被 `.gitignore` 忽略的 `.env` 和 `TEST365ALM_DATASOURCE_*`/集成测试环境变量；没有真实凭据进入提交。
+
+### 接口与迁移
+
+- 契约：`contracts/platform-health.json`；决策：`docs/adr/006-r02-runtime-and-image-lock.md`、`docs/adr/007-platform-health-contract.md`。
+- `/health/live` 不依赖数据库，数据库中断时仍返回 200。
+- `/health/ready` 对 PostgreSQL 和迁移表做有界探测；正常 200、故障 503、恢复无需重启即可再次 200。
+- `/api/v1/version` 来自 Spring Boot build metadata 或配置；没有 Git 元数据时返回 `unknown`，不伪造提交号。
+
+### 当前待验证/阻塞
+
+- 远端分支推送、PR 和 GitHub Actions 运行状态：本地新增 workflow 但尚未形成远端执行证据，完成后补写真实 URL/SHA。
+- 浏览器联调已通过隔离 in-app 浏览器 DOM 证据完成；独立截图文件未归档，控制台 error/warn 为空。
+- Java 21/Node 24 本机复跑待提供目标运行时。
+- 旧 ALM 目标版本、Edition、扩展和三类脱敏样本仍为 B01-B04/B02 未提供输入。
 
 ## 实际仓库状态
 

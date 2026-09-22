@@ -2,9 +2,75 @@
 
 企业级应用质量管理平台研发规划基线。对标原 ALM/Quality Center 产品体系；具体目标版本、Edition、扩展和旧生态兼容范围须在 P0 冻结。
 
-> **当前状态：文档与研发辅助工具已建立；业务应用尚未开发。** 所有产品任务为 PLANNED，验收为 NOT_RUN。本包没有宣称已完成 ALM 克隆、已经上线或已经通过兼容认证。
+> **当前状态：R02 工程底座最小切片正在实施。** 健康/版本接口、受控迁移、前端状态工作台和自动化测试以实际代码与轮次记录为准；这不代表完整 ALM 产品、兼容认证或生产部署已经完成。
 
-当前开发状态以 [development-status.md](docs/development-status.md) 和 [轮次记录](docs/progress/runs/R01-STATUS-001.md) 为准；`apps/web` 与 `apps/server` 目前仅是工程启动骨架。
+当前开发状态以 [development-status.md](docs/development-status.md) 和 [R02 轮次记录](docs/progress/runs/R02-M02-001.md) 为准。
+
+## R02 工程底座：本地启动
+
+本节只覆盖开发环境 PostgreSQL 和 M02 最小运行闭环，不部署生产，也不连接生产数据。目标工具链为 Java 21、Node 24 LTS；若本机版本不同，先以轮次记录中的实际验证结果为准。
+
+### 前置条件
+
+- Docker Desktop（Compose v2）
+- Java 21 和 Maven Wrapper（Windows 使用 `mvnw.cmd`，Linux/macOS 使用 `./mvnw`）
+- Node 24 LTS 与 npm
+- Python 3.10+
+
+### 启动
+
+PowerShell：
+
+```powershell
+Copy-Item .env.example .env
+docker compose --env-file .env -p test365alm-r02 up -d postgres
+$env:TEST365ALM_DATASOURCE_URL = 'jdbc:postgresql://127.0.0.1:54329/test365alm'
+$env:TEST365ALM_DATASOURCE_USERNAME = 'test365alm'
+$env:TEST365ALM_DATASOURCE_PASSWORD = 'test365alm_dev_password'
+Set-Location apps/server
+.\mvnw.cmd spring-boot:run
+```
+
+另开终端启动前端：
+
+```powershell
+Set-Location apps/web
+npm ci
+npm run dev
+```
+
+浏览器访问 <http://localhost:5173>。Vite 开发代理只把 `/api` 和 `/health` 转发到本机后端；不配置任意来源跨域。
+默认后端地址为 `http://127.0.0.1:8080`；若该端口被本机其他服务占用，可在启动前端前设置 `TEST365ALM_DEV_BACKEND_URL=http://127.0.0.1:18080` 指向本轮隔离后端端口。
+
+### 检查、停止与排障
+
+```powershell
+curl.exe -i http://127.0.0.1:8080/health/live
+curl.exe -i http://127.0.0.1:8080/health/ready
+curl.exe -i http://127.0.0.1:8080/api/v1/version
+docker compose --env-file .env -p test365alm ps
+docker compose --env-file .env -p test365alm-r02 down
+```
+
+`down` 默认保留数据库卷；不要对不明确的环境使用 `down -v`。readiness 返回 503 时先检查容器健康状态、数据源环境变量和后端日志。`.env` 仅供本机使用，真实凭据不得提交。
+
+要复现数据库故障场景，保持后端进程运行，执行 `docker compose --env-file .env -p test365alm-r02 stop postgres`，确认 live 仍为 200 且 ready 为 503；随后执行 `docker compose --env-file .env -p test365alm-r02 start postgres`，ready 应在下一次探测恢复为 200。该场景只针对本轮隔离 Compose 项目，不要对用户已有数据库使用清库或删除卷。
+
+### 可复现验证命令
+
+```bash
+python -m unittest discover -s tools/tests -v
+python tools/validate_package.py
+python tools/p0_health_check.py
+cd apps/web && npm ci && npm run lint && npm run test:run && npm run build
+cd ../server && ./mvnw -B -ntp test
+TEST365ALM_IT_DATASOURCE_URL=jdbc:postgresql://127.0.0.1:54329/test365alm \
+TEST365ALM_IT_DATASOURCE_USERNAME=test365alm \
+TEST365ALM_IT_DATASOURCE_PASSWORD=test365alm_dev_password \
+./mvnw -B -ntp -Pintegration verify -Dbuild.commit=local-r02
+```
+
+Windows PowerShell 的 Maven 系统属性建议写成 `'-Dbuild.commit=local-r02'`，避免参数被 shell 解析。Linux 检出后如执行权限未保留，先运行 `chmod +x apps/server/mvnw`。
 
 ## 先阅读
 

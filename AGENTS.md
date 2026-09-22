@@ -11,7 +11,7 @@
 
 ## 项目状态
 
-- 当前目录包含规划与研发辅助工具，以及刚初始化的 `apps/web` Vite 前端和 `apps/server` Spring Boot 工程骨架；健康接口、数据库迁移和业务功能仍未实现。
+- 当前目录包含规划与研发辅助工具，以及 R02 工程底座的 `apps/web` Vite 前端和 `apps/server` Spring Boot 服务；本轮只覆盖健康/版本接口、平台元数据迁移和状态工作台，不代表业务模块完成。
 - 所有产品验收、迁移、兼容、安全和性能结论必须有真实证据。
 - `PLANNED`、`OPEN`、`BLOCKED`、`NOT_RUN` 不得被工具或文档改写成已完成。
 
@@ -22,15 +22,18 @@ python tools/validate_package.py
 python tools/calculate_budget.py
 python -m unittest discover -s tools/tests -v
 python tools/p0_health_check.py
-cd apps/web; npm ci; npm run lint; npm run build
-cd apps/server; .\mvnw.cmd test
+cd apps/web; npm ci; npm run lint; npm run test:run; npm run build
+cd apps/server; .\mvnw.cmd -B -ntp test
+# 集成测试需先启动本轮隔离 PostgreSQL，并设置 TEST365ALM_IT_DATASOURCE_*。
+cd apps/server; .\mvnw.cmd -B -ntp -Pintegration verify '-Dbuild.commit=local-r02'
+# Linux/macOS: chmod +x ./mvnw && ./mvnw -B -ntp test
 ```
 
 Python 工具只使用标准库，支持 Python 3.10 及以上。新增工具必须保持离线可测试，不得默认调用 GitHub、客户环境或外部服务。
 
 ## 研发方向
 
-当前工程基线候选为 Spring Boot 4.1.1 + Java 17 + Maven、React 19 + TypeScript + Vite 8、PostgreSQL 17。官方兼容性已核对，但最终锁定、构建和数据库验证必须以本轮实际结果为准。计划中的对象存储、执行节点、兼容网关和业务模块仍按 P0/P1 顺序实现；不创建伪造的服务实现或客户适配器。
+当前工程方向保留 Spring Boot 4.1.1 + Java/Maven、React 19 + TypeScript + Vite 8、PostgreSQL 17。目标运行时为 Java 21、Node 24 LTS；本机实际版本和暂时偏差记录在 R02 轮次记录及 ADR 006，不得把目标环境写成已验证。计划中的对象存储、执行节点、兼容网关和业务模块仍按 P0/P1 顺序实现；不创建伪造的服务实现或客户适配器。
 
 ## 数据与接口约束
 
