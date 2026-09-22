@@ -10,11 +10,11 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 import time
 from pathlib import Path
-import re
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
@@ -48,6 +48,25 @@ def wait_for(base_url: str, path: str, expected: set[int], deadline: float) -> t
 
 def run_compose(project: str, *args: str) -> None:
     subprocess.run(compose_args(project, *args), cwd=ROOT, check=True, stdout=subprocess.DEVNULL)
+
+
+def listening_addresses(port: int) -> list[str]:
+    command = ["netstat", "-ano"] if os.name == "nt" else ["ss", "-ltn"]
+    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    addresses: list[str] = []
+    for line in result.stdout.splitlines():
+        fields = line.split()
+        if os.name == "nt":
+            if len(fields) < 4 or fields[0].upper() != "TCP" or fields[3].upper() != "LISTENING":
+                continue
+            local = fields[1]
+        else:
+            if len(fields) < 4 or fields[0] != "LISTEN":
+                continue
+            local = fields[3]
+        if local.rsplit(":", 1)[-1] == str(port):
+            addresses.append(local.rsplit(":", 1)[0].strip("[]"))
+    return addresses
 
 
 def load_env(path: Path) -> dict[str, str]:
@@ -138,6 +157,11 @@ def main() -> int:
         if live != 200 or ready != 200:
             print(f"FAIL: startup live={live!r} ready={ready!r}")
             return 1
+        listeners = listening_addresses(args.server_port)
+        if not listeners or any(address not in {"127.0.0.1", "::1"} for address in listeners):
+            print(f"FAIL: backend listener addresses={listeners!r}")
+            return 1
+        print(f"PASS: backend listener loopback-only addresses={listeners!r}")
         print("PASS: startup live=200 ready=200")
 
         run_compose(args.compose_project, "stop", "postgres")
