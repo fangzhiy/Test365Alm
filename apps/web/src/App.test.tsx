@@ -1,0 +1,15 @@
+import '@testing-library/jest-dom/vitest'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import App from './App'
+
+const jsonResponse = (body: unknown, status = 200) => Promise.resolve(new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }))
+const healthyResponses = () => vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => { const path = String(input); if (path.includes('/api/v1/version')) return jsonResponse({ productName: 'Test365Alm', version: '0.0.1', commit: 'abc123' }); if (path.includes('/health/live')) return jsonResponse({ status: 'UP' }); return jsonResponse({ status: 'UP', database: 'UP', migration: 'APPLIED' }) }))
+
+afterEach(() => { cleanup(); vi.unstubAllGlobals() })
+describe('Test365Alm workbench', () => {
+  it('shows real version and healthy status', async () => { healthyResponses(); render(<App />); expect(await screen.findByText('0.0.1')).toBeVisible(); expect(screen.getAllByText('正常')).toHaveLength(3); expect(screen.getByText('abc123')).toBeVisible() })
+  it('shows readiness as unavailable when the backend returns 503', async () => { vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => { const path = String(input); if (path.includes('/api/v1/version')) return jsonResponse({ productName: 'Test365Alm', version: '0.0.1', commit: 'abc123' }); if (path.includes('/health/live')) return jsonResponse({ status: 'UP' }); return jsonResponse({ status: 'DOWN', database: 'DOWN', migration: 'UNKNOWN' }, 503) })); render(<App />); await waitFor(() => expect(screen.getByText('不可用')).toBeVisible()); expect(screen.getByText('数据库 DOWN · 迁移 UNKNOWN')).toBeVisible() })
+  it('shows backend unavailable and does not retain stale version data', async () => { healthyResponses(); render(<App />); expect(await screen.findByText('0.0.1')).toBeVisible(); vi.mocked(fetch).mockRejectedValue(new TypeError('network down')); fireEvent.click(screen.getByRole('button', { name: '刷新状态' })); await waitFor(() => expect(screen.getAllByText('无法连接')).toHaveLength(3)); expect(screen.queryByText('0.0.1')).not.toBeInTheDocument(); expect(screen.getByText('不可用')).toBeVisible() })
+  it('recovers after a later successful refresh', async () => { vi.stubGlobal('fetch', vi.fn().mockRejectedValueOnce(new TypeError('network down')).mockRejectedValueOnce(new TypeError('network down')).mockRejectedValueOnce(new TypeError('network down')).mockImplementation((input: RequestInfo | URL) => { const path = String(input); if (path.includes('/api/v1/version')) return jsonResponse({ productName: 'Test365Alm', version: '0.0.2', commit: 'def456' }); if (path.includes('/health/live')) return jsonResponse({ status: 'UP' }); return jsonResponse({ status: 'UP', database: 'UP', migration: 'APPLIED' }) })); render(<App />); await waitFor(() => expect(screen.getAllByText('无法连接')).toHaveLength(3)); fireEvent.click(screen.getByRole('button', { name: '刷新状态' })); expect(await screen.findByText('0.0.2')).toBeVisible(); expect(screen.getAllByText('正常')).toHaveLength(3) })
+})

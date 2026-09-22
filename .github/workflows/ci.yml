@@ -1,0 +1,78 @@
+name: Test365Alm CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  planning-tools:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run planning tool tests
+        run: python -m unittest discover -s tools/tests -v
+      - name: Validate planning package
+        run: python tools/validate_package.py
+      - name: Run P0 health check
+        run: python tools/p0_health_check.py
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run test:run
+      - run: npm run build
+
+  server:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17.11@sha256:f4c66b820c6f974249089d3d16d86a3698eae11e8746eb6644b2271031e91232
+        env:
+          POSTGRES_DB: test365alm
+          POSTGRES_USER: test365alm
+          POSTGRES_PASSWORD: test365alm_dev_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test365alm -d test365alm"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 12
+    defaults:
+      run:
+        working-directory: apps/server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Ensure Maven Wrapper is executable
+        run: chmod +x mvnw
+      - name: Run server unit tests
+        run: ./mvnw -B -ntp test
+      - name: Run PostgreSQL integration tests and build
+        env:
+          TEST365ALM_IT_DATASOURCE_URL: jdbc:postgresql://127.0.0.1:5432/test365alm
+          TEST365ALM_IT_DATASOURCE_USERNAME: test365alm
+          TEST365ALM_IT_DATASOURCE_PASSWORD: test365alm_dev_password
+        run: ./mvnw -B -ntp -Pintegration verify "-Dbuild.commit=${GITHUB_SHA}"
