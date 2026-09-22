@@ -137,6 +137,21 @@ describe('Test365Alm workbench', () => {
     vi.useRealTimers()
   })
 
+  it('marks the current refresh unavailable when the request timeout expires', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('fetch', vi.fn((_input: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new DOMException('timed out', 'AbortError')))
+    })))
+    render(<App />)
+    await act(async () => {
+      vi.advanceTimersByTime(3000)
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(screen.getAllByText('无法连接')).toHaveLength(3)
+    vi.useRealTimers()
+  })
+
   it('remains correct when mounted under StrictMode', async () => {
     healthyResponses()
     render(<StrictMode><App /></StrictMode>)
