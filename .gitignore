@@ -18,3 +18,5 @@ dist/
 private-data/
 raw-migration/
 local-evidence/
+# Git Credential Manager may create diagnostics containing sensitive metadata
+gcm-diagnose.log
