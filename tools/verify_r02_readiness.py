@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import socket
 import subprocess
 import sys
 import time
@@ -52,9 +53,12 @@ def run_compose(project: str, *args: str) -> None:
 
 def listening_addresses(port: int) -> list[str]:
     command = ["netstat", "-ano"] if os.name == "nt" else ["ss", "-ltn"]
-    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
+    except FileNotFoundError:
+        result = None
     addresses: list[str] = []
-    for line in result.stdout.splitlines():
+    for line in result.stdout.splitlines() if result is not None else []:
         fields = line.split()
         if os.name == "nt":
             if len(fields) < 4 or fields[0].upper() != "TCP" or fields[3].upper() != "LISTENING":
@@ -66,6 +70,28 @@ def listening_addresses(port: int) -> list[str]:
             local = fields[3]
         if local.rsplit(":", 1)[-1] == str(port):
             addresses.append(local.rsplit(":", 1)[0].strip("[]"))
+    if addresses or os.name == "nt":
+        return addresses
+
+    # Minimal Linux fallback for runners without iproute2/net-tools. The
+    # kernel tables are read-only and expose the same listener address fact.
+    for proc_path, family in (("/proc/net/tcp", socket.AF_INET), ("/proc/net/tcp6", socket.AF_INET6)):
+        try:
+            lines = Path(proc_path).read_text(encoding="ascii").splitlines()[1:]
+        except OSError:
+            continue
+        for line in lines:
+            fields = line.split()
+            if len(fields) < 4 or fields[3] != "0A":  # TCP_LISTEN
+                continue
+            local_hex, port_hex = fields[1].split(":", 1)
+            if int(port_hex, 16) != port:
+                continue
+            raw = bytes.fromhex(local_hex)
+            if family == socket.AF_INET:
+                addresses.append(socket.inet_ntoa(raw[::-1]))
+            else:
+                addresses.append(socket.inet_ntop(family, b"".join(raw[index:index + 4][::-1] for index in range(0, 16, 4))))
     return addresses
 
 
