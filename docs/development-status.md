@@ -32,7 +32,7 @@
 
 ### 当前待验证/阻塞
 
-- 远端分支已推送，PR #1 已创建但未合并；GitHub Actions run 35709638396 已对提交 `3bcb16b5bc7a107ea2adfa526cf9f70c5361d756` 完成，planning-tools/web/server 均 success。后续文档提交会产生新的 run，需以其对应 SHA 单独核对。
+- 远端分支已推送，PR #1 已创建但未合并；GitHub Actions run 35715927999 已对当前远端交付 SHA `380b905fefebe9917850cc27ee889b5a264111e6` 完成，planning-tools/web/server 均 success。后续提交仍需按对应 SHA 单独核对。
 - 浏览器联调已通过隔离 in-app 浏览器 DOM 证据完成；独立截图文件未归档，控制台 error/warn 为空。
 - Java 21/Node 24 本机复跑待提供目标运行时。
 - 旧 ALM 目标版本、Edition、扩展和三类脱敏样本仍为 B01-B04/B02 未提供输入。
