@@ -1,10 +1,19 @@
 # Test365Alm 开发状态
 
 最后更新：2026-09-23
-当前轮次：`R02-M02-003`
+当前轮次：`R02-M02-004`
 状态：`IMPLEMENTED_LOCALLY / CI_VERIFIED`
 
-本页保留 R01、R02-M02-001 和 R02-M02-002 的历史事实，并在下方记录 R02-M02-003 的实际收口进展。R02 只实现 M02 工程底座最小切片，不代表整个 M02、P0 或完整 ALM 产品已完成。
+本页保留 R01、R02-M02-001、R02-M02-002 和 R02-M02-003 的历史事实。R02 只实现 M02 工程底座最小切片，不代表整个 M02、P0 或完整 ALM 产品已完成。
+
+## R02-M02-004 当前状态
+
+- 审核基线与起始提交：`d075187e00fe7e43776e84063b7468fe65143733`。开始前重新 fetch，PR #1 仍 open，head `feat/r02-m02-001`，base `chore/r01-status-001`；工作区原本干净。最终代码/测试提交 `4160532fb95308182ef1c8e989d33a62a5557d93` 已推送并由 `git ls-remote` 核对。
+- 已实现：两套故障脚本共用资源 guard；首次 up 前拒绝预存项目，资源以本轮 UUID、Docker context/Engine 和实际 ID 绑定；CI 兜底按 manifest 清理，失败使 job 非成功。子进程环境使用白名单并显式绑定 datasource/Flyway，加载位置限定为应用内配置。
+- 本机已验证：真实一次性对照项目保留两条哨兵数据与资源 ID；独立临时 PostgreSQL 停库/恢复和失败迁移；合成父环境覆盖未改变目标；Python 35、前端 17、后端单元 9 与集成 3 个测试通过。详见 `docs/progress/runs/R02-M02-004.md`。
+- 本轮 CI：首次代码提交 `a9a3c92` 的 Push/PR run [35842323713](https://github.com/fangzhiy/Test365Alm/actions/runs/35842323713) / [35842329475](https://github.com/fangzhiy/Test365Alm/actions/runs/35842329475) 的 planning-tools 因测试依赖本地忽略的 jar 失败；修正测试 fixture 后，最终代码提交 `4160532` 的 Push/PR run [35842756526](https://github.com/fangzhiy/Test365Alm/actions/runs/35842756526) / [35842761456](https://github.com/fangzhiy/Test365Alm/actions/runs/35842761456) 均成功，五个 job 和五类制品均存在。
+- 前轮 C02/C07 中有关项目标签即可证明资源归属、CI 直接 `down --volumes` 的子项，经本轮审核发现未充分验证；本轮实现和证据对应 D01-D05。R02-M02-003 记录保留为历史快照，不改写过去结论。
+- 旧 ALM 版本、Edition、授权样本及完整 M02/P0 仍未完成；没有合并 PR 或部署生产。
 
 ## R02-M02-003 当前状态
 
