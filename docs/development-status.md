@@ -1,8 +1,16 @@
 # Test365Alm 开发状态
 
 最后更新：2026-09-23
-当前轮次：`R02-M02-004`
-状态：`IMPLEMENTED_LOCALLY / CI_VERIFIED`
+当前轮次：`R03-M03-001`
+状态：`AUTH_SLICE_IMPLEMENTED_LOCALLY / R03_CI_PENDING`
+
+## R03-M03-001 当前状态
+
+- 起始基线：`ceba11332e71f4b2eb8ea71b133e7966bb47639e`，开始时 PR #1 仍 Open、未合并；新分支 `feat/r03-m03-001` 基于该 head，拟向 `feat/r02-m02-001` 提交依赖 PR。代码/测试提交为 `a1f6e89c9a8f384538087af661d5d690e7130daf`。
+- 已实现：隔离本地 Keycloak 26.4.4 OIDC Authorization Code + PKCE S256、Spring Security BFF 会话、`principal` V2 Flyway 迁移、独立迁移/运行账户、`GET /api/v1/me`、`GET /api/v1/csrf`、CSRF 保护的本地退出、前端身份状态面板和真实浏览器 E2E。原 R02 健康/版本与工作台保留。
+- 本机已验证：真实 Keycloak 浏览器登录—稳定本地主体—退出、无效 state 和非白名单回调拒绝；前端 21 单测、后端 11 单测与 8 个 Testcontainers 集成测试通过；独立临时 PostgreSQL 的 R02 停库恢复与故意失败 V3 迁移回归通过。细项与限制见 `docs/progress/runs/R03-M03-001.md`。
+- 尚未完整验证：签名/issuer/audience/过期/nonce 的逐项故障注入、真实会话超时、停用后浏览器重新登录拒绝、IdP 中断时既有/新会话策略，以及本轮远端 CI/PR 结果。均不可写成 PASS；最终 GitHub 状态在交付回复核对。
+- 本轮不是完整 M03：项目/成员权限、RLS、跨租户防线、多节点会话、MFA、完整审计和 M03-AC01～AC05 仍待后续。P0 缺少的旧 ALM 版本、Edition、授权样本与全量 M02 事项继续保留。没有生产部署或 PR 合并。
 
 本页保留 R01、R02-M02-001、R02-M02-002 和 R02-M02-003 的历史事实。R02 只实现 M02 工程底座最小切片，不代表整个 M02、P0 或完整 ALM 产品已完成。
 
