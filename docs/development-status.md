@@ -1,10 +1,19 @@
 # Test365Alm 开发状态
 
-最后更新：2026-09-22
-当前轮次：`R02-M02-002`
-状态：`IMPLEMENTED_LOCALLY / CI_VERIFIED_FOR_CODE_SHA`
+最后更新：2026-09-23
+当前轮次：`R02-M02-003`
+状态：`IMPLEMENTED_LOCALLY / REMOTE_CI_PENDING`
 
-本页保留 R01 和 R02-M02-001 的历史事实，并在下方记录 R02-M02-002 的实际修复进展。R02 只实现 M02 工程底座最小切片，不代表整个 M02、P0 或完整 ALM 产品已完成。
+本页保留 R01、R02-M02-001 和 R02-M02-002 的历史事实，并在下方记录 R02-M02-003 的实际收口进展。R02 只实现 M02 工程底座最小切片，不代表整个 M02、P0 或完整 ALM 产品已完成。
+
+## R02-M02-003 当前状态
+
+- 起始审核提交：`8fb6ce36a18a18bd7c4108706283a8a20eec2f88`；重新 fetch 后 PR #1 仍 open、未合并，分支 `feat/r02-m02-001`，base `chore/r01-status-001`。
+- 代码提交：`00e6cbb82568fb677c6ea29db44f5e655c27c64d`；最终进度文档另有交付提交。
+- 已实现：Testcontainers 目标/对照数据库隔离、严格验证脚本与迁移失败启动脚本、前端 HTTP 状态判断、CI 检出 SHA/报告和迁移失败 job。
+- 已验证：Testcontainers 集成测试 3 个、前端 17 个、验证脚本离线 7 个、真实停库/恢复和临时 Flyway 失败启动；详见 `docs/progress/runs/R02-M02-003.md`。
+- 待验证：最终代码推送后的 GitHub Actions；本机 Java 17/Node 26 与 CI Java 21/Node 24 差异继续保留。
+- 仍未完成：完整 M02/P0、登录、权限、业务模块、旧 ALM 兼容认证和生产部署。
 
 ## R02-M02-002 当前状态
 
