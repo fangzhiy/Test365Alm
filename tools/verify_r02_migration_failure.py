@@ -16,9 +16,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.verify_r02_readiness import (
     ROOT,
     VerificationError,
-    _compose_environment,
-    cleanup_compose,
-    compose_identity,
     free_ephemeral_port,
     http_status,
     jar_build_commit,
@@ -26,6 +23,17 @@ from tools.verify_r02_readiness import (
     port_is_free,
     run_compose,
     tail_log,
+)
+from tools.r02_resource_guard import (
+    ResourceManifest,
+    ResourceOwnershipError,
+    assert_project_available,
+    capture_manifest,
+    cleanup_manifest,
+    isolated_environment,
+    java_environment,
+    manifest_path,
+    new_run_id,
 )
 
 
@@ -57,18 +65,23 @@ def main() -> int:
         )
         values.setdefault("TEST365ALM_DATASOURCE_USERNAME", values.get("POSTGRES_USER", ""))
         values.setdefault("TEST365ALM_DATASOURCE_PASSWORD", values.get("POSTGRES_PASSWORD", ""))
-        environment = _compose_environment(values)
-    except (OSError, ValueError) as error:
+        run_id = new_run_id(args.compose_project)
+        discovery_environment = isolated_environment(
+            values, run_id, values.get("TEST365ALM_DOCKER_CONTEXT", ""))
+        context, engine = assert_project_available(args.compose_project, discovery_environment)
+        environment = isolated_environment(values, run_id, context)
+        environment["TEST365ALM_DOCKER_ENGINE"] = engine
+    except (OSError, ValueError, ResourceOwnershipError) as error:
         print(f"FAIL: dedicated migration datasource rejected: {error}")
         return 2
 
-    identity: tuple[str, str] | None = None
+    manifest: ResourceManifest | None = None
     process: subprocess.Popen[bytes] | None = None
-    run_id = f"{args.compose_project}-{int(time.time())}"
     evidence_dir = ROOT / "local-evidence" / "r02-migration-failure" / run_id
     evidence_dir.mkdir(parents=True, exist_ok=True)
     log_path = evidence_dir / "startup.log"
     base_url = f"http://127.0.0.1:{args.server_port}"
+    result = 1
 
     with tempfile.TemporaryDirectory(prefix="test365alm-flyway-failure-") as migration_root:
         migration_dir = Path(migration_root)
@@ -79,22 +92,21 @@ def main() -> int:
         try:
             run_compose(args.compose_project, "up", "-d", "--wait", "postgres",
                         env_file=args.env_file, environment=environment)
-            identity = compose_identity(args.compose_project, args.env_file, environment)
-            if identity is None:
-                raise VerificationError("could not confirm owned migration-test Compose identity")
-            process_env = {
-                **environment,
-                "TEST365ALM_SERVER_ADDRESS": "127.0.0.1",
-                "TEST365ALM_SERVER_PORT": str(args.server_port),
-                "SERVER_ADDRESS": "127.0.0.1",
-                "SERVER_PORT": str(args.server_port),
-                "SPRING_FLYWAY_LOCATIONS": f"classpath:db/migration,filesystem:{migration_dir.as_posix()}",
-            }
+            manifest = capture_manifest(args.compose_project, run_id, context, environment)
+            manifest_path(evidence_dir / "resource-manifest.json", manifest)
+            process_env = java_environment(
+                environment,
+                datasource_url=values["TEST365ALM_DATASOURCE_URL"],
+                datasource_username=values["TEST365ALM_DATASOURCE_USERNAME"],
+                datasource_password=values["TEST365ALM_DATASOURCE_PASSWORD"],
+                server_port=args.server_port,
+                migration_locations=f"classpath:db/migration,filesystem:{migration_dir.as_posix()}",
+            )
             with log_path.open("wb") as output:
                 process = subprocess.Popen(
-                    ["java", "-jar", str(args.jar)], cwd=ROOT, env=process_env,
+                    ["java", "-jar", str(args.jar)], cwd=evidence_dir, env=process_env,
                     stdout=output, stderr=subprocess.STDOUT)
-            print(f"INFO: pid={process.pid} build={jar_build_commit(args.jar)} compose_project={identity[1]} postgres={identity[0]}")
+            print(f"INFO: run={run_id} pid={process.pid} build={jar_build_commit(args.jar)} compose_project={manifest.project} postgres={manifest.containers[0]} context={manifest.docker_context}")
             deadline = time.monotonic() + args.wait_seconds
             while time.monotonic() < deadline and process.poll() is None:
                 status, _ = http_status(base_url, "/health/ready", timeout=2.0)
@@ -110,13 +122,13 @@ def main() -> int:
                     f"startup failure was not attributable to Flyway V2 migration (exit={exit_code})"
                 )
             print(f"PASS: startup failed with Flyway V2 migration error; exit={exit_code}; log={log_path}")
-            return 0
+            result = 0
         except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired, VerificationError) as error:
             print(f"FAIL: {error}")
             if log_path.exists():
                 print("--- sanitized migration startup log ---", file=sys.stderr)
                 print(tail_log(log_path), file=sys.stderr)
-            return 1
+            result = 1
         finally:
             if process is not None and process.poll() is None:
                 process.terminate()
@@ -124,7 +136,10 @@ def main() -> int:
                     process.wait(timeout=10)
                 except subprocess.TimeoutExpired:
                     process.kill()
-            cleanup_compose(args.compose_project, args.env_file, environment, identity)
+            if manifest is not None and not cleanup_manifest(manifest, environment):
+                print("FAIL: owned Compose resource cleanup was not confirmed", file=sys.stderr)
+                result = 1
+    return result
 
 
 if __name__ == "__main__":

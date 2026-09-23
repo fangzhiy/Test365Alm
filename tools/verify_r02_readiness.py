@@ -13,13 +13,31 @@ import subprocess
 import sys
 import time
 import zipfile
+import shutil
 from pathlib import Path
 from typing import Mapping
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from tools.r02_resource_guard import (
+    ResourceManifest,
+    ResourceOwnershipError,
+    assert_project_available,
+    capture_manifest,
+    cleanup_manifest,
+    isolated_environment,
+    java_environment,
+    manifest_path,
+    new_run_id,
+    start_containers,
+    stop_containers,
+    verify_docker_engine,
+)
+
 ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_PROJECT = f"test365alm-r02-{os.getpid()}"
+DEFAULT_PROJECT = f"test365alm-r02-{new_run_id('project').split('-', 1)[1][:16]}"
 DEFAULT_ENV_FILE = ".env.r02-test"
 DEFAULT_TIMEOUT = 60.0
 
@@ -28,19 +46,22 @@ class VerificationError(RuntimeError):
     """A bounded verification step failed and must not be reported as PASS."""
 
 
-def compose_args(project: str, *args: str, env_file: str = DEFAULT_ENV_FILE) -> list[str]:
-    return ["docker", "compose", "--env-file", env_file, "-p", project, *args]
+def compose_args(project: str, *args: str, env_file: str = DEFAULT_ENV_FILE,
+                 context: str = "") -> list[str]:
+    standalone = bool(shutil.which("docker-compose"))
+    command = ["docker-compose"] if standalone else ["docker"]
+    if context:
+        command.extend(["--context", context])
+    if not standalone:
+        command.append("compose")
+    return command + ["--env-file", str(ROOT / env_file), "-f", str(ROOT / "compose.yaml"),
+                      "--project-directory", str(ROOT), "-p", project, *args]
 
 
-def _compose_environment(file_values: Mapping[str, str]) -> dict[str, str]:
-    """Make the dedicated file authoritative over inherited DB variables."""
-    environment = os.environ.copy()
-    for key in ("POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_HOST_PORT",
-                "TEST365ALM_DATASOURCE_URL", "TEST365ALM_DATASOURCE_USERNAME",
-                "TEST365ALM_DATASOURCE_PASSWORD"):
-        environment.pop(key, None)
-    environment.update(file_values)
-    return environment
+def _compose_environment(file_values: Mapping[str, str], run_id: str = "development",
+                         context: str = "") -> dict[str, str]:
+    """Build an isolated environment; no parent Spring/Compose overrides survive."""
+    return isolated_environment(file_values, run_id, context)
 
 
 def http_status(base_url: str, path: str, timeout: float = 5.0) -> tuple[int | None, str]:
@@ -75,7 +96,9 @@ def wait_for(base_url: str, path: str, expected: set[int], deadline: float,
 
 def run_compose(project: str, *args: str, env_file: str, environment: Mapping[str, str],
                 timeout: float = DEFAULT_TIMEOUT) -> subprocess.CompletedProcess[str]:
-    command = compose_args(project, *args, env_file=env_file)
+    verify_docker_engine(environment)
+    command = compose_args(project, *args, env_file=env_file,
+                           context=environment.get("TEST365ALM_DOCKER_CONTEXT", ""))
     try:
         return subprocess.run(
             command, cwd=ROOT, env=dict(environment), check=True,
@@ -178,6 +201,12 @@ def listening_addresses(port: int) -> list[str] | None:
 
 
 def load_env(path: Path) -> dict[str, str]:
+    allowed_keys = {
+        "POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_HOST_PORT",
+        "TEST365ALM_DATASOURCE_URL", "TEST365ALM_DATASOURCE_USERNAME",
+        "TEST365ALM_DATASOURCE_PASSWORD", "TEST365ALM_DB_CONNECTION_TIMEOUT_MS",
+        "TEST365ALM_READINESS_TIMEOUT_MS", "TEST365ALM_DOCKER_CONTEXT",
+    }
     values: dict[str, str] = {}
     for raw_line in path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
@@ -187,6 +216,8 @@ def load_env(path: Path) -> dict[str, str]:
         key = key.strip()
         if not separator or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", key):
             raise ValueError(f"invalid env entry: {raw_line}")
+        if key not in allowed_keys:
+            raise ValueError(f"unsupported test configuration key: {key}")
         value = value.strip().strip('"').strip("'")
 
         def expand(match: re.Match[str]) -> str:
@@ -224,33 +255,6 @@ def jar_build_commit(jar: Path) -> str:
     except (OSError, zipfile.BadZipFile):
         pass
     return "unknown"
-
-
-def compose_identity(project: str, env_file: str, environment: Mapping[str, str]) -> tuple[str, str] | None:
-    result = subprocess.run(compose_args(project, "ps", "-q", "postgres", env_file=env_file), cwd=ROOT,
-                            env=dict(environment), capture_output=True, text=True, check=False, timeout=15)
-    container_id = result.stdout.strip().splitlines()[-1] if result.stdout.strip() else ""
-    if result.returncode != 0 or not container_id:
-        return None
-    inspect = subprocess.run(
-        ["docker", "inspect", "--format", "{{.Id}} {{index .Config.Labels \"com.docker.compose.project\"}}", container_id],
-        capture_output=True, text=True, check=False, timeout=15)
-    fields = inspect.stdout.strip().split(maxsplit=1)
-    if inspect.returncode != 0 or len(fields) != 2 or fields[0] != container_id or fields[1] != project:
-        return None
-    return container_id, project
-
-
-def cleanup_compose(project: str, env_file: str, environment: Mapping[str, str], identity: tuple[str, str] | None) -> bool:
-    if identity is None or identity[1] != project:
-        print("BLOCKED: Compose ownership was not confirmed; refusing cleanup", file=sys.stderr)
-        return False
-    try:
-        run_compose(project, "down", "--volumes", "--remove-orphans", env_file=env_file, environment=environment)
-        return True
-    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
-        print(f"WARNING: owned Compose cleanup failed: {type(error).__name__}", file=sys.stderr)
-        return False
 
 
 def tail_log(path: Path, limit: int = 80) -> str:
@@ -303,28 +307,40 @@ def main() -> int:
         print(f"FAIL: dedicated test datasource rejected: {error}")
         return 2
 
-    environment = _compose_environment(file_values)
-    run_id = f"{args.compose_project}-{int(time.time())}"
+    run_id = new_run_id(args.compose_project)
     log_dir = ROOT / "local-evidence" / "r02-readiness" / run_id
     log_dir.mkdir(parents=True, exist_ok=True)
     log_path = log_dir / "backend-startup.log"
     server: subprocess.Popen[bytes] | None = None
-    identity: tuple[str, str] | None = None
+    manifest: ResourceManifest | None = None
+    environment: dict[str, str] = {}
+    result = 1
     base_url = f"http://127.0.0.1:{args.server_port}"
     build_commit = jar_build_commit(args.jar)
     stopped = False
     try:
+        # This check must precede the first mutating Compose command. It
+        # rejects collisions even when the existing container is stopped.
+        run_environment = _compose_environment(
+            file_values, run_id, file_values.get("TEST365ALM_DOCKER_CONTEXT", ""))
+        context, engine = assert_project_available(args.compose_project, run_environment)
+        environment = isolated_environment(file_values, run_id, context)
+        environment["TEST365ALM_DOCKER_ENGINE"] = engine
         run_compose(args.compose_project, "up", "-d", "--wait", "postgres", env_file=args.env_file, environment=environment)
-        identity = compose_identity(args.compose_project, args.env_file, environment)
-        if identity is None:
-            raise VerificationError("could not confirm owned Compose postgres identity")
+        manifest = capture_manifest(args.compose_project, run_id, context, environment)
+        manifest_path(log_dir / "resource-manifest.json", manifest)
         with log_path.open("wb") as output:
+            process_environment = java_environment(
+                environment,
+                datasource_url=file_values["TEST365ALM_DATASOURCE_URL"],
+                datasource_username=file_values["TEST365ALM_DATASOURCE_USERNAME"],
+                datasource_password=file_values["TEST365ALM_DATASOURCE_PASSWORD"],
+                server_port=args.server_port,
+            )
             server = subprocess.Popen(
-                ["java", "-jar", str(args.jar)], cwd=ROOT,
-                env={**environment, "TEST365ALM_SERVER_ADDRESS": "127.0.0.1", "TEST365ALM_SERVER_PORT": str(args.server_port),
-                     "SERVER_ADDRESS": "127.0.0.1", "SERVER_PORT": str(args.server_port)},
+                ["java", "-jar", str(args.jar)], cwd=log_dir, env=process_environment,
                 stdout=output, stderr=subprocess.STDOUT)
-        print(f"INFO: run={run_id} pid={server.pid} build={build_commit} compose_project={identity[1]} postgres={identity[0]}")
+        print(f"INFO: run={run_id} pid={server.pid} build={build_commit} compose_project={manifest.project} postgres={manifest.containers[0]} context={manifest.docker_context}")
         deadline = time.monotonic() + args.wait_seconds
         live, _ = wait_for(base_url, "/health/live", {200}, deadline, server, log_path)
         ready, _ = wait_for(base_url, "/health/ready", {200}, deadline, server, log_path)
@@ -347,7 +363,8 @@ def main() -> int:
         print(f"PASS: startup live=200 ready=200 version={response_commit} listener={listeners!r}")
 
         ensure_process_alive(server, "before database outage", log_path)
-        run_compose(args.compose_project, "stop", "postgres", env_file=args.env_file, environment=environment)
+        if not stop_containers(manifest, environment):
+            raise VerificationError("could not verify ownership before stopping postgres")
         stopped = True
         live_down, _ = wait_for(base_url, "/health/live", {200}, time.monotonic() + args.wait_seconds, server, log_path)
         ready_down, _ = wait_for(base_url, "/health/ready", {503}, time.monotonic() + args.wait_seconds, server, log_path)
@@ -356,33 +373,37 @@ def main() -> int:
             raise VerificationError(f"outage live={live_down!r} ready={ready_down!r}")
         print("PASS: outage live=200 ready=503 (same backend PID)")
 
-        run_compose(args.compose_project, "start", "postgres", env_file=args.env_file, environment=environment)
+        if not start_containers(manifest, environment):
+            raise VerificationError("could not verify ownership before starting postgres")
         stopped = False
         ready_up, _ = wait_for(base_url, "/health/ready", {200}, time.monotonic() + args.wait_seconds, server, log_path)
         ensure_process_alive(server, "database recovery", log_path)
         if ready_up != 200:
             raise VerificationError(f"recovery ready={ready_up!r}")
         print("PASS: recovery ready=200 without backend restart")
-        return 0
-    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired, VerificationError, json.JSONDecodeError) as error:
+        result = 0
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired,
+            VerificationError, ResourceOwnershipError, json.JSONDecodeError) as error:
         print(f"FAIL: {error}")
         if log_path.exists():
             print("--- sanitized backend startup log ---", file=sys.stderr)
             print(tail_log(log_path), file=sys.stderr)
-        return 1
+        result = 1
     finally:
         if stopped:
-            try:
-                run_compose(args.compose_project, "start", "postgres", env_file=args.env_file, environment=environment)
-            except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
-                print("WARNING: could not restore the owned postgres service", file=sys.stderr)
+            if not start_containers(manifest, environment):
+                print("FAIL: could not restore the owned postgres service", file=sys.stderr)
+                result = 1
         if server is not None and server.poll() is None:
             server.terminate()
             try:
                 server.wait(timeout=10)
             except subprocess.TimeoutExpired:
                 server.kill()
-        cleanup_compose(args.compose_project, args.env_file, environment, identity)
+        if manifest is None or not cleanup_manifest(manifest, environment):
+            print("FAIL: owned Compose resource cleanup was not confirmed", file=sys.stderr)
+            result = 1
+    return result
 
 
 if __name__ == "__main__":

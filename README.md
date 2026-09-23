@@ -68,20 +68,28 @@ Set-Location apps/server
 .\mvnw.cmd -B -ntp -Pintegration verify '-Dbuild.commit=local-r02'
 ```
 
-故障恢复脚本使用专用 `.env.r02-test`（不会覆盖已有 `.env`），项目名和后端端口应为本轮唯一值；脚本会确认后端 PID、版本提交、Compose 容器归属，并在数据库端口冲突时选择临时端口：
+故障恢复脚本使用专用 `.env.r02-test`（不会覆盖已有 `.env`），项目名和后端端口应为本轮唯一值；脚本会确认后端 PID、版本提交、Docker context/Engine、Compose 容器/网络/卷的本轮标签和资源 ID，并在数据库端口冲突时选择临时端口：
 
 ```powershell
 if (-not (Test-Path -LiteralPath .env.r02-test)) { Copy-Item .env.example .env.r02-test }
 python tools/verify_r02_readiness.py --env-file .env.r02-test --compose-project test365alm-r02-manual --server-port 18081
 ```
 
-脚本严格要求监听地址可验证且只能是 `127.0.0.1`、`::1` 或 `::ffff:127.0.0.1`；无法枚举监听、进程提前退出、版本提交不一致、端口被占用或数据源不是本机专用 PostgreSQL 时失败。它只清理本轮已确认归属的临时 Compose 项目和卷。
+脚本严格要求监听地址可验证且只能是 `127.0.0.1`、`::1` 或 `::ffff:127.0.0.1`；无法枚举监听、进程提前退出、版本提交不一致、端口被占用或数据源不是本机专用 PostgreSQL 时失败。首次 `up` 前会检查目标项目是否已有容器（包括停止的容器）、网络或卷；任何已有资源都会使脚本拒绝运行。默认使用当前本地 Docker context；若专用测试配置写入 `TEST365ALM_DOCKER_CONTEXT`，它必须与当前 context 一致。远端 Docker context 被拒绝。测试配置只接受脚本规定的键；父进程的 Spring、JVM 和 Compose 覆盖项不会传入子进程。
 
 启动迁移失败验证使用临时 V2 迁移目录，不修改正式 `db/migration`：
 
 ```powershell
 python tools/verify_r02_migration_failure.py --env-file .env.r02-test --compose-project test365alm-r02-migration-manual --server-port 18082
 ```
+
+使用一次性对照项目验证两套脚本不会碰触预先存在的容器、卷和两条哨兵数据：
+
+```powershell
+python tools/verify_r02_preexisting_project.py --env-file .env.r02-test
+```
+
+脚本成功时只清理本轮 manifest 记录且仍带有本轮标签的资源。如果异常中断，可用 `python tools/cleanup_r02_resources.py --root local-evidence/r02-readiness`（迁移脚本用 `local-evidence/r02-migration-failure`，对照脚本用 `local-evidence/r02-control`）重试；资源身份或 Docker Engine 无法确认时会拒绝删除并返回非零码，不要改用项目级 `down --volumes`。
 
 ### 可复现验证命令
 
