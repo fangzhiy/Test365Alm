@@ -11,7 +11,7 @@
 
 ## 项目状态
 
-- 当前目录包含规划与研发辅助工具，以及刚初始化的 `apps/web` Vite 前端和 `apps/server` Spring Boot 工程骨架；健康接口、数据库迁移和业务功能仍未实现。
+- 当前目录包含规划与研发辅助工具，以及 R02 工程底座的 `apps/web` Vite 前端和 `apps/server` Spring Boot 服务；本轮只覆盖健康/版本接口、平台元数据迁移和状态工作台，不代表业务模块完成。
 - 所有产品验收、迁移、兼容、安全和性能结论必须有真实证据。
 - `PLANNED`、`OPEN`、`BLOCKED`、`NOT_RUN` 不得被工具或文档改写成已完成。
 
@@ -22,15 +22,25 @@ python tools/validate_package.py
 python tools/calculate_budget.py
 python -m unittest discover -s tools/tests -v
 python tools/p0_health_check.py
-cd apps/web; npm ci; npm run lint; npm run build
-cd apps/server; .\mvnw.cmd test
+cd apps/web; npm ci; npm run lint; npm run test:run; npm run build
+cd apps/server; .\mvnw.cmd -B -ntp test
+# 集成测试由 Testcontainers 创建本轮唯一的临时 PostgreSQL；不读取日常 .env，也不设置 TEST365ALM_IT_DATASOURCE_*。
+cd apps/server; .\mvnw.cmd -B -ntp -Pintegration verify '-Dbuild.commit=local-r02'
+# Linux/macOS: chmod +x ./mvnw && ./mvnw -B -ntp test
+# PowerShell: if (-not (Test-Path .env.r02-test)) { Copy-Item .env.example .env.r02-test }
+python tools/verify_r02_readiness.py --env-file .env.r02-test --compose-project test365alm-r02-manual --server-port 18081  # 构建 server jar 后，验证唯一临时 PostgreSQL 停止/恢复且后端不重启
+python tools/verify_r02_migration_failure.py --env-file .env.r02-test --compose-project test365alm-r02-migration-manual --server-port 18082  # 临时失败迁移启动验证
+python tools/verify_r02_preexisting_project.py --env-file .env.r02-test  # 一次性对照项目及两条哨兵数据；验证两套脚本先拒绝碰触预存资源
+# PowerShell: . .\tools\import_dev_env.ps1  # 从已有 .env 加载同一份开发配置，不覆盖它
 ```
 
 Python 工具只使用标准库，支持 Python 3.10 及以上。新增工具必须保持离线可测试，不得默认调用 GitHub、客户环境或外部服务。
 
 ## 研发方向
 
-当前工程基线候选为 Spring Boot 4.1.1 + Java 17 + Maven、React 19 + TypeScript + Vite 8、PostgreSQL 17。官方兼容性已核对，但最终锁定、构建和数据库验证必须以本轮实际结果为准。计划中的对象存储、执行节点、兼容网关和业务模块仍按 P0/P1 顺序实现；不创建伪造的服务实现或客户适配器。
+当前工程方向保留 Spring Boot 4.1.1 + Java/Maven、React 19 + TypeScript + Vite 8、PostgreSQL 17。目标运行时为 Java 21、Node 24 LTS；本机实际版本和暂时偏差记录在 R02 轮次记录及 ADR 006，不得把目标环境写成已验证。计划中的对象存储、执行节点、兼容网关和业务模块仍按 P0/P1 顺序实现；不创建伪造的服务实现或客户适配器。
+
+本机开发服务默认绑定 `127.0.0.1`；Compose 仅把 PostgreSQL 发布到回环地址。容器内绑定和宿主机端口暴露必须分开记录。
 
 ## 数据与接口约束
 
@@ -46,3 +56,8 @@ Python 工具只使用标准库，支持 Python 3.10 及以上。新增工具必
 - 始终：先读相关契约和模块手册；为新行为写可复现验证；保留未知项和差异证据。
 - 需要评审：目标 ALM 版本/Edition、外部样本授权、数据库破坏性变更、兼容声明、依赖升级和预算变更。
 - 禁止：提交秘密、使用未经授权的生产数据、把示例当黄金样本、修改原系统数据库、绕过商业许可、用规划包校验冒充业务验收。
+- 健康接口只读；不得在探测、请求处理或测试脚本中执行 migrate、repair、clean 或自动修表。故障注入仅允许针对本轮隔离测试资源。
+- Testcontainers 集成测试必须使用测试类动态注入的临时数据源；破坏性测试不得连接日常 `.env`、未知 JDBC 地址或用户数据库。对照容器必须证明其数据未被目标故障注入改变。
+- 故障恢复/迁移失败脚本必须先确认端口、进程 PID、构建提交和 Compose 资源归属；无法验证监听或资源归属时记录 NOT_RUN/BLOCKED 并返回非成功状态，不得通过 observe/忽略错误判定通过。
+- R02 故障脚本及 CI 清理共用 `tools/r02_resource_guard.py`：首次 up 前检查预存容器/网络/卷，记录本轮不可复用 run ID、Docker context/Engine 和资源 ID；stop、start、cleanup 前核对身份。只删除 manifest 中仍带本轮标签的资源，禁止项目级 `down --volumes --remove-orphans`。
+- 故障脚本的子进程环境只能保留必要运行时变量和专用测试配置；Flyway 与 datasource URL 必须指向同一临时数据库，启动 JVM 时限定 Spring 配置加载位置。测试 `.env.r02-test` 不能覆盖日常 `.env`，不得继承父进程 Spring/JVM/Compose 偏转项。
