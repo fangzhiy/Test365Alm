@@ -37,7 +37,11 @@ const requestHealth = async (path: string, signal: AbortSignal, requireReadiness
   return { response, body }
 }
 
-const statusFromHealth = (response: HealthResponse): CheckState => response.status === 'UP' ? 'up' : 'down'
+const statusFromHealth = (response: Response, body: HealthResponse, requireReadinessDetails: boolean): CheckState => {
+  if (!response.ok || body.status !== 'UP') return 'down'
+  if (requireReadinessDetails && (body.database !== 'UP' || body.migration !== 'APPLIED')) return 'down'
+  return 'up'
+}
 
 function HealthCard({ label, state, detail }: HealthCardProps) {
   const stateLabel = { loading: '检查中', up: '正常', down: '不可用', unavailable: '无法连接' }[state]
@@ -79,13 +83,13 @@ function App() {
       .then((response) => { if (isCurrent()) { setVersion(response); setVersionState('up') } })
       .catch(() => { if (isCurrent()) { setVersion(null); setVersionState('unavailable') } })
     const liveRequest = requestHealth('/health/live', controller.signal, false)
-      .then(({ body }) => { if (isCurrent()) setLiveState(statusFromHealth(body)) })
+      .then(({ response, body }) => { if (isCurrent()) setLiveState(statusFromHealth(response, body, false)) })
       .catch(() => { if (isCurrent()) setLiveState('unavailable') })
     const readyRequest = requestHealth('/health/ready', controller.signal, true)
       .then(({ response, body }) => {
         if (!isCurrent()) return
         setReadyDetail(`数据库 ${body.database} · 迁移 ${body.migration}`)
-        setReadyState(response.ok ? statusFromHealth(body) : 'down')
+        setReadyState(statusFromHealth(response, body, true))
       })
       .catch(() => { if (isCurrent()) { setReadyDetail(''); setReadyState('unavailable') } })
 
