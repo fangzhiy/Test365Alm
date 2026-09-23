@@ -13,6 +13,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Record checkout identity
+        run: |
+          printf 'event=%s\nref=%s\nsha=%s\n' "$GITHUB_EVENT_NAME" "$GITHUB_REF" "$GITHUB_SHA" | tee checkout-sha.txt
+          git rev-parse HEAD | tee -a checkout-sha.txt
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -23,15 +27,15 @@ jobs:
       - name: Run planning tool tests
         run: |
           set -o pipefail
-          python -m unittest discover -s tools/tests -v | tee planning-tests.txt
+          python -m unittest discover -s tools/tests -v 2>&1 | tee planning-tests.txt
       - name: Validate planning package
         run: |
           set -o pipefail
-          python tools/validate_package.py | tee planning-validation.txt
+          python tools/validate_package.py 2>&1 | tee planning-validation.txt
       - name: Run P0 health check
         run: |
           set -o pipefail
-          python tools/p0_health_check.py | tee planning-p0-health.txt
+          python tools/p0_health_check.py 2>&1 | tee planning-p0-health.txt
       - name: Upload planning evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -39,10 +43,11 @@ jobs:
           name: planning-evidence
           path: |
             planning-python-version.txt
+            checkout-sha.txt
             planning-tests.txt
             planning-validation.txt
             planning-p0-health.txt
-          if-no-files-found: ignore
+          if-no-files-found: error
 
   web:
     runs-on: ubuntu-latest
@@ -51,6 +56,10 @@ jobs:
         working-directory: apps/web
     steps:
       - uses: actions/checkout@v4
+      - name: Record checkout identity
+        run: |
+          printf 'event=%s\nref=%s\nsha=%s\n' "$GITHUB_EVENT_NAME" "$GITHUB_REF" "$GITHUB_SHA" | tee checkout-sha.txt
+          git rev-parse HEAD | tee -a checkout-sha.txt
       - uses: actions/setup-node@v4
         with:
           node-version: '24.x'
@@ -81,33 +90,24 @@ jobs:
           path: |
             apps/web/runtime-node.txt
             apps/web/runtime-npm.txt
+            apps/web/checkout-sha.txt
             apps/web/npm-ci.txt
             apps/web/lint.txt
             apps/web/test-results.txt
             apps/web/build.txt
-          if-no-files-found: ignore
+          if-no-files-found: error
 
   server:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:17.11@sha256:f4c66b820c6f974249089d3d16d86a3698eae11e8746eb6644b2271031e91232
-        env:
-          POSTGRES_DB: test365alm
-          POSTGRES_USER: test365alm
-          POSTGRES_PASSWORD: test365alm_dev_password
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U test365alm -d test365alm"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 12
     defaults:
       run:
         working-directory: apps/server
     steps:
       - uses: actions/checkout@v4
+      - name: Record checkout identity
+        run: |
+          printf 'event=%s\nref=%s\nsha=%s\n' "$GITHUB_EVENT_NAME" "$GITHUB_REF" "$GITHUB_SHA" | tee checkout-sha.txt
+          git rev-parse HEAD | tee -a checkout-sha.txt
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -125,10 +125,6 @@ jobs:
           set -o pipefail
           ./mvnw -B -ntp test 2>&1 | tee unit-tests.txt
       - name: Run PostgreSQL integration tests and build
-        env:
-          TEST365ALM_IT_DATASOURCE_URL: jdbc:postgresql://127.0.0.1:5432/test365alm
-          TEST365ALM_IT_DATASOURCE_USERNAME: test365alm
-          TEST365ALM_IT_DATASOURCE_PASSWORD: test365alm_dev_password
         run: |
           set -o pipefail
           ./mvnw -B -ntp -Pintegration verify "-Dbuild.commit=${GITHUB_SHA}" 2>&1 | tee integration-build.txt
@@ -140,16 +136,21 @@ jobs:
           path: |
             apps/server/runtime-java.txt
             apps/server/runtime-maven.txt
+            apps/server/checkout-sha.txt
             apps/server/unit-tests.txt
             apps/server/integration-build.txt
             apps/server/target/surefire-reports/**
             apps/server/target/failsafe-reports/**
-          if-no-files-found: ignore
+          if-no-files-found: error
 
   readiness-recovery:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Record checkout identity
+        run: |
+          printf 'event=%s\nref=%s\nsha=%s\n' "$GITHUB_EVENT_NAME" "$GITHUB_REF" "$GITHUB_SHA" | tee checkout-sha.txt
+          git rev-parse HEAD | tee -a checkout-sha.txt
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -162,28 +163,27 @@ jobs:
         run: chmod +x apps/server/mvnw
       - name: Start isolated PostgreSQL
         run: |
-          cp .env.example .env
-          docker compose --env-file .env -p test365alm-r02 up -d --wait postgres
+          cp .env.example .env.r02-test
       - name: Build server jar for outage check
         working-directory: apps/server
         run: |
           set -o pipefail
           ./mvnw -B -ntp package -DskipTests "-Dbuild.commit=${GITHUB_SHA}" 2>&1 | tee readiness-build.txt
       - name: Verify outage and recovery without backend restart
-        env:
-          TEST365ALM_DATASOURCE_URL: jdbc:postgresql://127.0.0.1:54329/test365alm
-          TEST365ALM_DATASOURCE_USERNAME: test365alm
-          TEST365ALM_DATASOURCE_PASSWORD: test365alm_dev_password
         run: |
           set +e
-          python -u tools/verify_r02_readiness.py --wait-seconds 90 --listener-mode observe 2>&1 | tee readiness-recovery.txt
+          python -u tools/verify_r02_readiness.py --env-file .env.r02-test --compose-project "test365alm-r02-${GITHUB_RUN_ID}" --expected-commit "${GITHUB_SHA}" --wait-seconds 90 2>&1 | tee readiness-recovery.txt
           status=${PIPESTATUS[0]}
           {
             echo '### Readiness recovery output'
             cat readiness-recovery.txt
           } >> "$GITHUB_STEP_SUMMARY"
-          summary=$(tr '\n' ' ' < readiness-recovery.txt | cut -c1-4000)
-          echo "::error title=readiness-recovery::${summary:-no output captured}"
+          if [ "$status" -ne 0 ]; then
+            summary=$(tr '\n' ' ' < readiness-recovery.txt | cut -c1-4000)
+            echo "::error title=readiness-recovery::${summary:-no output captured}"
+          else
+            echo "Readiness recovery passed for ${GITHUB_SHA}"
+          fi
           exit "$status"
       - name: Upload readiness evidence
         if: always()
@@ -192,8 +192,71 @@ jobs:
           name: readiness-recovery-evidence
           path: |
             apps/server/readiness-build.txt
+            checkout-sha.txt
             readiness-recovery.txt
-          if-no-files-found: ignore
+          if-no-files-found: error
       - name: Stop isolated PostgreSQL
         if: always()
-        run: docker compose --env-file .env -p test365alm-r02 down --volumes
+        run: |
+          if [ -f .env.r02-test ]; then
+            docker compose --env-file .env.r02-test -p "test365alm-r02-${GITHUB_RUN_ID}" down --volumes --remove-orphans
+          fi
+
+  migration-failure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record checkout identity
+        run: |
+          printf 'event=%s\nref=%s\nsha=%s\n' "$GITHUB_EVENT_NAME" "$GITHUB_REF" "$GITHUB_SHA" | tee checkout-sha.txt
+          git rev-parse HEAD | tee -a checkout-sha.txt
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Ensure Maven Wrapper is executable
+        run: chmod +x apps/server/mvnw
+      - name: Create dedicated migration test configuration
+        run: cp .env.example .env.r02-test
+      - name: Build server jar for migration failure check
+        working-directory: apps/server
+        run: |
+          set -o pipefail
+          ./mvnw -B -ntp package -DskipTests "-Dbuild.commit=${GITHUB_SHA}" 2>&1 | tee migration-build.txt
+      - name: Verify intentional migration startup failure
+        run: |
+          set +e
+          python -u tools/verify_r02_migration_failure.py --env-file .env.r02-test --compose-project "test365alm-r02-migration-${GITHUB_RUN_ID}" --server-port 18082 --wait-seconds 90 2>&1 | tee migration-failure.txt
+          status=${PIPESTATUS[0]}
+          {
+            echo '### Migration failure output'
+            cat migration-failure.txt
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$status" -ne 0 ]; then
+            summary=$(tr '\n' ' ' < migration-failure.txt | cut -c1-4000)
+            echo "::error title=migration-failure::${summary:-no output captured}"
+          else
+            echo "Intentional migration failure was detected for ${GITHUB_SHA}"
+          fi
+          exit "$status"
+      - name: Upload migration evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: migration-failure-evidence
+          path: |
+            checkout-sha.txt
+            apps/server/migration-build.txt
+            migration-failure.txt
+            local-evidence/r02-migration-failure/**
+          if-no-files-found: error
+      - name: Stop migration test PostgreSQL
+        if: always()
+        run: |
+          if [ -f .env.r02-test ]; then
+            docker compose --env-file .env.r02-test -p "test365alm-r02-migration-${GITHUB_RUN_ID}" down --volumes --remove-orphans
+          fi

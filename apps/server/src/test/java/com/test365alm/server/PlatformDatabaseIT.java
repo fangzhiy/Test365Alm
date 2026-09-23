@@ -16,11 +16,35 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.ActiveProfiles;
+import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.utility.DockerImageName;
 
 @ActiveProfiles("integration")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@Testcontainers
 class PlatformDatabaseIT {
+    private static final String POSTGRES_IMAGE =
+            "postgres:17.11@sha256:f4c66b820c6f974249089d3d16d86a3698eae11e8746eb6644b2271031e91232";
+
+    @Container
+    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>(DockerImageName.parse(POSTGRES_IMAGE)
+            .asCompatibleSubstituteFor("postgres"))
+            .withDatabaseName("test365alm_it")
+            .withUsername("test365alm_it")
+            .withPassword("test365alm_it_password");
+
+    @DynamicPropertySource
+    static void registerDatasource(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
+        registry.add("spring.datasource.username", POSTGRES::getUsername);
+        registry.add("spring.datasource.password", POSTGRES::getPassword);
+    }
+
     @LocalServerPort
     private int port;
 
@@ -64,31 +88,6 @@ class PlatformDatabaseIT {
         String value = jdbcTemplate.queryForObject(
                 "SELECT metadata_value FROM platform_metadata WHERE metadata_key = 'schema-purpose'", String.class);
         assertEquals("preserved-by-integration-test", value);
-    }
-
-    @Test
-    void readinessDistinguishesReachableDatabaseFromMissingRequiredStructure() throws Exception {
-        // This test only mutates the isolated integration database. Restore the
-        // migration-owned table in finally so the shared test context remains usable.
-        jdbcTemplate.execute("DROP TABLE platform_metadata");
-        try {
-            HttpResponse<String> ready = request("/health/ready");
-            assertEquals(HttpStatus.SERVICE_UNAVAILABLE.value(), ready.statusCode());
-            assertTrue(ready.body().contains("\"database\":\"UP\""));
-            assertTrue(ready.body().contains("\"migration\":\"NOT_APPLIED\""));
-        } finally {
-            jdbcTemplate.execute("""
-                    CREATE TABLE platform_metadata (
-                        metadata_key TEXT PRIMARY KEY,
-                        metadata_value TEXT NOT NULL,
-                        created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                        updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-                    )
-                    """);
-            jdbcTemplate.update(
-                    "INSERT INTO platform_metadata (metadata_key, metadata_value) VALUES (?, ?)",
-                    "schema-purpose", "Test365Alm platform bootstrap metadata");
-        }
     }
 
     private HttpResponse<String> request(String path) throws Exception {

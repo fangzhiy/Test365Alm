@@ -4,7 +4,7 @@
 
 > **当前状态：R02 工程底座最小切片正在实施。** 健康/版本接口、受控迁移、前端状态工作台和自动化测试以实际代码与轮次记录为准；这不代表完整 ALM 产品、兼容认证或生产部署已经完成。
 
-当前开发状态以 [development-status.md](docs/development-status.md) 和 [R02-M02-002 轮次记录](docs/progress/runs/R02-M02-002.md) 为准；上一轮记录仍保留供追溯。
+当前开发状态以 [development-status.md](docs/development-status.md) 和 [R02-M02-003 轮次记录](docs/progress/runs/R02-M02-003.md) 为准；前两轮记录仍保留供追溯。
 
 ## R02 工程底座：本地启动
 
@@ -57,12 +57,30 @@ docker compose --env-file .env -p test365alm-r02 down
 
 后端的 `server.address` 默认是 `127.0.0.1`，前端 Vite 默认 host 也是 `127.0.0.1`；只有在明确启动容器网络时才通过环境变量覆盖。readiness 的 JDBC 连接校验和结构查询各自使用 `TEST365ALM_READINESS_TIMEOUT_MS` 的有界预算，不能将两段预算相加后理解为单一 HTTP 请求上限。
 
-要复现数据库故障场景，保持后端进程运行，执行 `docker compose --env-file .env -p test365alm-r02 stop postgres`，确认 live 仍为 200 且 ready 为 503；随后执行 `docker compose --env-file .env -p test365alm-r02 start postgres`，ready 应在下一次探测恢复为 200。该场景只针对本轮隔离 Compose 项目，不要对用户已有数据库使用清库或删除卷。
+要复现数据库故障场景，保持后端进程运行，执行 `docker compose --env-file .env -p test365alm-r02 stop postgres`，确认 live 仍为 200 且 ready 为 503；随后执行 `docker compose --env-file .env -p test365alm-r02 start postgres`，ready 应在下一次探测恢复为 200。该手工场景使用开发数据库项目，只允许停/起本机开发容器，不要删除卷。
 
-也可以在构建后端 jar 后运行可重复的自动检查（脚本只停止并恢复 `test365alm-r02` 项目的 PostgreSQL，不删除数据卷）：
+### 自动化测试与故障注入
+
+后端集成测试默认使用 Testcontainers 创建唯一的临时 PostgreSQL 目标容器；隔离测试还会创建独立的临时对照容器。它不读取日常 `.env`，测试结束由 Testcontainers 清理容器，要求 Docker Desktop/兼容 Docker API 可用：
 
 ```powershell
-python tools/verify_r02_readiness.py
+Set-Location apps/server
+.\mvnw.cmd -B -ntp -Pintegration verify '-Dbuild.commit=local-r02'
+```
+
+故障恢复脚本使用专用 `.env.r02-test`（不会覆盖已有 `.env`），项目名和后端端口应为本轮唯一值；脚本会确认后端 PID、版本提交、Compose 容器归属，并在数据库端口冲突时选择临时端口：
+
+```powershell
+if (-not (Test-Path -LiteralPath .env.r02-test)) { Copy-Item .env.example .env.r02-test }
+python tools/verify_r02_readiness.py --env-file .env.r02-test --compose-project test365alm-r02-manual --server-port 18081
+```
+
+脚本严格要求监听地址可验证且只能是 `127.0.0.1`、`::1` 或 `::ffff:127.0.0.1`；无法枚举监听、进程提前退出、版本提交不一致、端口被占用或数据源不是本机专用 PostgreSQL 时失败。它只清理本轮已确认归属的临时 Compose 项目和卷。
+
+启动迁移失败验证使用临时 V2 迁移目录，不修改正式 `db/migration`：
+
+```powershell
+python tools/verify_r02_migration_failure.py --env-file .env.r02-test --compose-project test365alm-r02-migration-manual --server-port 18082
 ```
 
 ### 可复现验证命令
@@ -73,10 +91,8 @@ python tools/validate_package.py
 python tools/p0_health_check.py
 cd apps/web && npm ci && npm run lint && npm run test:run && npm run build
 cd ../server && ./mvnw -B -ntp test
-TEST365ALM_IT_DATASOURCE_URL=jdbc:postgresql://127.0.0.1:54329/test365alm \
-TEST365ALM_IT_DATASOURCE_USERNAME=test365alm \
-TEST365ALM_IT_DATASOURCE_PASSWORD=test365alm_dev_password \
 ./mvnw -B -ntp -Pintegration verify -Dbuild.commit=local-r02
+python tools/verify_r02_migration_failure.py --env-file .env.r02-test --compose-project test365alm-r02-migration-manual --server-port 18082
 ```
 
 Windows PowerShell 的 Maven 系统属性建议写成 `'-Dbuild.commit=local-r02'`，避免参数被 shell 解析。Linux 检出后如执行权限未保留，先运行 `chmod +x apps/server/mvnw`。
