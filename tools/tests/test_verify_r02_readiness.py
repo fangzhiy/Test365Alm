@@ -161,18 +161,24 @@ class ReadinessScriptTests(unittest.TestCase):
 
     def test_main_refuses_after_preflight_failure_before_cleanup_or_success(self):
         calls = []
-        with patch.object(sys, "argv", ["verify_r02_readiness.py", "--compose-project", "collision-project"]), \
-                patch.object(readiness, "port_is_free", return_value=True), \
-                patch.object(readiness, "load_env", return_value={
-                    "POSTGRES_DB": "test365alm", "POSTGRES_USER": "test", "POSTGRES_PASSWORD": "secret",
-                    "POSTGRES_HOST_PORT": "54329",
-                }), \
-                patch.object(readiness, "jar_build_commit", return_value="unknown"), \
-                patch.object(readiness, "assert_project_available", side_effect=ResourceOwnershipError("collision")), \
-                patch.object(readiness, "isolated_environment", side_effect=lambda *args: {}), \
-                patch.object(readiness, "run_compose", side_effect=lambda *args, **kwargs: calls.append("up")), \
-                patch.object(readiness, "capture_manifest", side_effect=lambda *args: calls.append("capture")):
-            result = readiness.main()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / ".env.r02-test").write_text("POSTGRES_DB=test365alm\n", encoding="utf-8")
+            jar = root / "server.jar"
+            jar.write_bytes(b"test")
+            with patch.object(readiness, "ROOT", root), \
+                    patch.object(sys, "argv", ["verify_r02_readiness.py", "--compose-project", "collision-project", "--jar", str(jar)]), \
+                    patch.object(readiness, "port_is_free", return_value=True), \
+                    patch.object(readiness, "load_env", return_value={
+                        "POSTGRES_DB": "test365alm", "POSTGRES_USER": "test", "POSTGRES_PASSWORD": "secret",
+                        "POSTGRES_HOST_PORT": "54329",
+                    }), \
+                    patch.object(readiness, "jar_build_commit", return_value="unknown"), \
+                    patch.object(readiness, "assert_project_available", side_effect=ResourceOwnershipError("collision")), \
+                    patch.object(readiness, "isolated_environment", side_effect=lambda *args: {}), \
+                    patch.object(readiness, "run_compose", side_effect=lambda *args, **kwargs: calls.append("up")), \
+                    patch.object(readiness, "capture_manifest", side_effect=lambda *args: calls.append("capture")):
+                result = readiness.main()
         self.assertEqual(1, result)
         self.assertEqual([], calls)
 
