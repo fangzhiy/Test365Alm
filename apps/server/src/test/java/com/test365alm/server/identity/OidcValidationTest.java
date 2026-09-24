@@ -11,6 +11,7 @@ import java.time.Instant;
 import java.util.Date;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
@@ -26,6 +27,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.security.oauth2.client.authentication.OAuth2LoginAuthenticationToken;
 import org.springframework.security.oauth2.client.oidc.authentication.OidcAuthorizationCodeAuthenticationProvider;
 import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserService;
+import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserRequest;
 import org.springframework.security.oauth2.client.registration.ClientRegistration;
 import org.springframework.security.oauth2.core.AuthorizationGrantType;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
@@ -34,6 +36,7 @@ import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationExch
 import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationRequest;
 import org.springframework.security.oauth2.core.endpoint.OAuth2AuthorizationResponse;
 import org.springframework.security.oauth2.core.endpoint.OAuth2AccessTokenResponse;
+import org.springframework.security.oauth2.core.oidc.user.OidcUser;
 
 class OidcValidationTest {
     private static final String NONCE = "test-nonce-only";
@@ -75,7 +78,9 @@ class OidcValidationTest {
 
     @Test
     void validSignedIdTokenPassesActualOidcProvider() throws Exception {
-        assertNotNull(authenticate(token(null, null, null, null, null)));
+        var userLoads = new AtomicInteger();
+        assertNotNull(authenticate(token(null, null, null, null, null), userLoads));
+        assertEquals(1, userLoads.get());
     }
 
     @Test
@@ -105,11 +110,14 @@ class OidcValidationTest {
     }
 
     private static void assertRejected(String code, String idToken) {
-        var rejected = assertThrows(OAuth2AuthenticationException.class, () -> authenticate(idToken));
+        var userLoads = new AtomicInteger();
+        var rejected = assertThrows(OAuth2AuthenticationException.class, () -> authenticate(idToken, userLoads));
         assertEquals(code, rejected.getError().getErrorCode());
+        // IdentitySecurity's principal upsert is downstream of OidcUserService.loadUser.
+        assertEquals(0, userLoads.get());
     }
 
-    private static Object authenticate(String idToken) {
+    private static Object authenticate(String idToken, AtomicInteger userLoads) {
         OAuth2AuthorizationRequest request = OAuth2AuthorizationRequest.authorizationCode()
                 .authorizationUri(registration.getProviderDetails().getAuthorizationUri())
                 .clientId(registration.getClientId())
@@ -126,7 +134,13 @@ class OidcValidationTest {
                         .tokenType(OAuth2AccessToken.TokenType.BEARER)
                         .expiresIn(300)
                         .additionalParameters(Map.of("id_token", idToken))
-                        .build(), new OidcUserService());
+                        .build(), new OidcUserService() {
+                            @Override
+                            public OidcUser loadUser(OidcUserRequest userRequest) {
+                                userLoads.incrementAndGet();
+                                return super.loadUser(userRequest);
+                            }
+                        });
         return provider.authenticate(new OAuth2LoginAuthenticationToken(registration, exchange));
     }
 
