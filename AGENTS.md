@@ -69,3 +69,4 @@ Python 工具只使用标准库，支持 Python 3.10 及以上。新增工具必
 - 故障脚本的子进程环境只能保留必要运行时变量和专用测试配置；Flyway 与 datasource URL 必须指向同一临时数据库，启动 JVM 时限定 Spring 配置加载位置。测试 `.env.r02-test` 不能覆盖日常 `.env`，不得继承父进程 Spring/JVM/Compose 偏转项。
 - OIDC 身份只能由服务端验证的 issuer+subject 建立；不能信任请求头、前端 userId、邮箱或显示名合并。默认无 OIDC 配置时身份 API 拒绝访问。浏览器仅使用 HttpOnly 会话 Cookie；不得回传原始 OAuth token，退出必须有 CSRF，停用主体的下一次受保护请求必须失效。
 - R03 的 Compose 与测试账户只用于本地/CI 隔离环境；`.env.r03` 和 realm import 含随机测试秘密，不提交。运行账号与 Flyway 迁移账号分离，运行账号不拥有表、DDL、BYPASSRLS；后续项目授权/RLS 不能因本轮登录被标为完成。正式 V2 迁移后，R02 故意失败测试使用 V3 专属错误标记。
+- R03 真实故障浏览器用例只在 CI 本轮唯一、带 `R03_RUN_ID` 资源标签的 Compose 项目中停启 Keycloak 或修改临时主体；普通 `npm run test:e2e` 不得触碰日常开发数据库或未知容器。CI 的 realm 导入文件仅容器 UID 1000 可读，`.env.r03` 与 realm 都是秘密；只上传脱敏的白名单证据和实际测试报告。

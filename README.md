@@ -4,7 +4,7 @@
 
 > **当前状态：R03 首个认证切片实施中。** R02 健康/版本、迁移和状态工作台保留；新增 OIDC 登录不代表项目授权、完整 M03、生产安全认证或完整 ALM 已完成。
 
-当前开发状态以 [development-status.md](docs/development-status.md) 和 [R03-M03-001 轮次记录](docs/progress/runs/R03-M03-001.md) 为准；R02 历史记录保留供追溯。
+当前开发状态以 [development-status.md](docs/development-status.md) 和 [R03-M03-001-FIX01 验收补修记录](docs/progress/runs/R03-M03-001-FIX01.md) 为准；[R03-M03-001 原始记录](docs/progress/runs/R03-M03-001.md) 与 R02 历史记录保留供追溯。
 
 ## R03 本地 OIDC 登录切片
 
@@ -19,6 +19,8 @@ curl.exe -f http://127.0.0.1:18090/realms/test365alm/.well-known/openid-configur
 ```
 
 准备脚本只在 `.env.r03` 和 `local-evidence/r03/realm.json` 均不存在时创建本地随机凭据；存在时退出且不覆盖。两者被 Git 忽略。项目名应为本轮唯一值；首次启动前确认没有同名 Compose 资源。PostgreSQL 只发布到 `127.0.0.1:54339`，Keycloak 只发布到 `127.0.0.1:18090`。服务容器内监听地址与宿主机发布地址是不同边界。
+
+Linux/CI 使用锁定的 Keycloak 镜像时，realm 导入文件需由容器 UID 1000 读取；生成器在 POSIX 上将它设为仅所有者可读。确认路径是本轮生成的临时文件后执行 `sudo chown 1000:1000 local-evidence/r03/realm.json` 与 `sudo chmod 0400 local-evidence/r03/realm.json`，不开放整个工作区权限，也不要把 realm 或 `.env.r03` 上传为制品。CI 在启动前检查文件权限、镜像用户和资源项目归属，失败时保存脱敏容器日志。
 
 后端终端（PowerShell）：
 
@@ -53,6 +55,8 @@ docker compose --env-file .env.r03 -f compose.r03.yaml -p test365alm-r03-my-run 
 匿名 `/api/v1/me` 应返回 JSON 401；`/health/ready` 应返回 200。`down` 不删除数据卷；只有确认是本轮专用资源后才人工清理。改变 Keycloak、PostgreSQL 或前端端口时，必须同步更新 `.env.r03` 中的 JDBC/issuer、realm import 中的回调地址和前端代理；不要只改 Compose 发布端口。浏览器若显示登录失败，先检查 Keycloak discovery、固定回调、后端 OIDC profile 和本地角色迁移；不要关闭 issuer、签名、CSRF 校验。生产必须采用 HTTPS 与 Secure Cookie、正式 IdP、独立秘密管理和独立安全评审。
 
 自动化回归：后端 `cd apps/server; .\mvnw.cmd -B -ntp -Pintegration verify` 使用 Testcontainers 的临时 PostgreSQL；前端 `cd apps/web; npm ci; npm run lint; npm run test:run; npm run build`。真实浏览器联调需先启动上述四个本地服务，再在 `apps/web` 执行 `. ..\..\tools\import_r03_env.ps1 -Path ..\..\.env.r03; npm run test:e2e`；本机可设置 `R03_E2E_BROWSER_CHANNEL=chrome` 使用已安装 Chrome，CI 安装隔离 Chromium。E2E 不用 mock 登录取代真实 Keycloak。
+
+会话到期、主体停用和 IdP 中断用例会改变测试资源状态，仅在带本轮 `R03_RUN_ID` 标签的唯一 CI Compose 项目中运行；普通本机开发只运行不破坏数据的浏览器用例。CI 将空闲超时配置为 1 分钟，测试关闭页面避免轮询续期，等待 75 秒后检查旧 Cookie。IdP 不可用时，新登录必须失败；已建立的本地会话在本地有效期内仍可访问、可 CSRF 退出。这里不承诺实时 IdP 撤权或全局单点退出。
 
 ## R02 工程底座：本地启动
 

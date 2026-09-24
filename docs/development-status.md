@@ -1,8 +1,17 @@
 # Test365Alm 开发状态
 
-最后更新：2026-09-23
-当前轮次：`R03-M03-001`
-状态：`AUTH_SLICE_IMPLEMENTED_LOCALLY / R03_CI_PENDING`
+最后更新：2026-09-24
+当前轮次：`R03-M03-001-FIX01`
+状态：`AUTH_SLICE_IMPLEMENTED / FIX01_CI_GREEN_WITH_E05_LIMIT`
+
+## R03-M03-001-FIX01 当前状态
+
+- 在原 R03 分支和 PR #2（base `feat/r02-m02-001`）继续补修；PR #1 仍是未合并依赖。本轮未合并、部署或恢复定时任务。原 `R03-M03-001.md` 保留为产生时的历史快照，不能用其 `NOT_RUN` 误判当前，也不能静默改写曾经失败的 CI。
+- 已修复 Linux Keycloak realm 导入权限：CI 将本轮生成的文件交给镜像 UID 1000 且设为 0400；启动前验证 issuer/文件可读性，退出前保存脱敏容器状态和日志，报告要求非零测试数与零失败/跳过。`276185e` 的 Push/PR 六个 Job 已全绿，证实原浏览器 Job 在 discovery 前失败与文件权限有关。
+- 已加入标准 Spring Security OIDC provider 的错误签名、issuer、audience、过期、nonce 负向测试及用户加载零调用断言；新增 CI 专属、带本轮资源标签的会话到期、主体停用和 IdP 停启真实浏览器场景。最终测试增强代码 SHA `2992db71afa5c63a3bba24aaf9c5305c9df52ef6` 的 [Push CI](https://github.com/fangzhiy/Test365Alm/actions/runs/35945841031) 和 [PR CI](https://github.com/fangzhiy/Test365Alm/actions/runs/35945844209) 均六个 Job 成功；PR 实际 merge checkout `e98b22d45ae897f0b7ca7d085990d5645635c689`，浏览器报告 5/5、零失败/跳过。
+- 历史失败保留：原 `a1f6e89` 的 OIDC 浏览器 Job 在 Keycloak discovery 前失败；`4a63d91` 与 `897acce` 的新增浏览器断言运行后仍有失败，随后修正了异步退出、空闲计时、IdP 恢复后的已有 SSO 会话。详见 `docs/progress/runs/R03-M03-001-FIX01.md`。
+- E05/F03 未完全验收：五类恶意令牌经实际 provider 拒绝且不进入用户加载，但尚未逐例经完整 HTTP 回调直接断言 `/me` 与数据库行数。外部审核未发生，不能因 CI 全绿写成完整 M03 安全验收。
+- 本轮不包含项目权限、RLS、生产 IdP、实时撤权、全局退出、集群会话或 MFA；旧 ALM/P0 输入和完整 M02/M03 继续保留未验证。
 
 ## R03-M03-001 当前状态
 
