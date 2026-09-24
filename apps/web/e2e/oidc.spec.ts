@@ -6,10 +6,15 @@ async function login(page: import('@playwright/test').Page): Promise<string> {
   if (!password) throw new Error('Isolated R03 test credential is required')
   await page.goto('/')
   await page.getByRole('link', { name: '登录 Test365Alm' }).click()
-  await page.locator('#username').fill('r03-user')
-  await page.locator('#password').fill(password)
-  await page.locator('#kc-login').click()
-  await expect(page.getByText('R03 Tester')).toBeVisible()
+  const username = page.locator('#username')
+  const loggedIn = page.getByText('R03 Tester')
+  await expect(username.or(loggedIn).first()).toBeVisible({ timeout: 15_000 })
+  if (await username.isVisible()) {
+    await username.fill('r03-user')
+    await page.locator('#password').fill(password)
+    await page.locator('#kc-login').click()
+  }
+  await expect(loggedIn).toBeVisible()
   const me = await page.request.get('/api/v1/me')
   expect(me.status()).toBe(200)
   return (await me.json()).id as string
@@ -75,13 +80,13 @@ test('real Keycloak authorization code login, current user and local logout', as
 
 test('real session expires; a locally disabled principal cannot resume or log in again', async ({ page }) => {
   test.skip(!isOwnedCiRun(), 'destructive identity test requires the current CI-owned R03 stack')
-  test.setTimeout(100_000)
-  expect(process.env.TEST365ALM_SESSION_TIMEOUT).toBe('25s')
+  test.setTimeout(160_000)
+  expect(process.env.TEST365ALM_SESSION_TIMEOUT).toBe('1m')
   const id = await login(page)
   // Close the page so its health polling cannot refresh the browser session.
   const originalContext = page.context()
   await page.close()
-  await new Promise((resolve) => setTimeout(resolve, 29_000))
+  await new Promise((resolve) => setTimeout(resolve, 75_000))
   expect((await originalContext.request.get('/api/v1/me')).status()).toBe(401)
   const expiredPage = await originalContext.newPage()
   await expiredPage.goto('/')
