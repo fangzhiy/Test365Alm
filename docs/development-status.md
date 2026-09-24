@@ -1,8 +1,17 @@
 # Test365Alm 开发状态
 
 最后更新：2026-09-24
-当前轮次：`R03-M03-001-FIX01`
-状态：`AUTH_SLICE_IMPLEMENTED / FIX01_CI_GREEN_WITH_E05_LIMIT`
+当前轮次：`R03-M03-001-FIX02`
+状态：`AUTH_SLICE_IMPLEMENTED / FIX02_HTTP_EVIDENCE_GREEN`
+
+## R03-M03-001-FIX02 当前状态
+
+- 本轮从审核基准 `d8240fd0f8f006326f7a0188d900dca4f119917e` 继续在 `feat/r03-m03-001` / PR #2（base `feat/r02-m02-001`）实施；PR #1 仍未合并。本轮代码/测试提交为 `d52598d8d1224e1fad82e853be96024d243d04bd`，交付文档提交 SHA 在最终回复给出，不在本记录自引用。
+- 已补齐真实 HTTP OIDC 回调证据：合法对照、错误签名、错误 issuer、错误 audience、过期和错误 nonce 六类 token 回调，以及失败后重新发起合法授权恢复；同一 Cookie 的 `/api/v1/me` 和 PostgreSQL `principal` 全字段快照均被断言。测试使用回环本地协议 IdP 和固定摘要 PostgreSQL Testcontainers，不读取日常 `.env`。
+- 已加入 `verify_r03_oidc_http_report.py`，CI server job 必须发现 7 个指定 `OidcCallbackSecurityIT` 用例且 failures/errors/skipped 全为 0；原 planning、web、readiness-recovery、migration-failure、oidc-browser 与 server 六个 job 保留。
+- 代码提交的 [Push CI](https://github.com/fangzhiy/Test365Alm/actions/runs/35963117055) 与 [PR CI](https://github.com/fangzhiy/Test365Alm/actions/runs/35963119731) 均成功，六 job 和 backend-evidence 等白名单制品存在；PR merge checkout ref 当时为 `5ee8fd859802cb5f974d14356b7f98aae6814c77`。文档交付提交会另触发 CI，最终状态在任务回复中核对。
+- E05/F03 在本轮定义范围内为 PASS；这只表示五类非法 token 的真实应用回调、会话拒绝及主体不变证据完成，不代表全部 OIDC 标准认证、生产安全审查或完整 M03 完成。
+- 详见 [`R03-M03-001-FIX02.md`](progress/runs/R03-M03-001-FIX02.md)；FIX01 记录和历史失败不改写。
 
 ## R03-M03-001-FIX01 当前状态
 
