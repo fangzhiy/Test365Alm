@@ -116,6 +116,9 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Ensure Maven Wrapper is executable
         run: chmod +x mvnw
       - name: Record backend runtime
@@ -131,6 +134,11 @@ jobs:
         run: |
           set -o pipefail
           ./mvnw -B -ntp -Pintegration verify "-Dbuild.commit=${GITHUB_SHA}" 2>&1 | tee integration-build.txt
+      - name: Require real HTTP OIDC callback integration report
+        if: always()
+        run: |
+          set -o pipefail
+          python ../../tools/verify_r03_oidc_http_report.py target/failsafe-reports 2>&1 | tee oidc-http-report.txt
       - name: Upload backend evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -142,6 +150,7 @@ jobs:
             apps/server/checkout-sha.txt
             apps/server/unit-tests.txt
             apps/server/integration-build.txt
+            apps/server/oidc-http-report.txt
             apps/server/target/surefire-reports/**
             apps/server/target/failsafe-reports/**
           if-no-files-found: error

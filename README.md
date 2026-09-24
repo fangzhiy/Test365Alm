@@ -54,7 +54,7 @@ docker compose --env-file .env.r03 -f compose.r03.yaml -p test365alm-r03-my-run 
 
 匿名 `/api/v1/me` 应返回 JSON 401；`/health/ready` 应返回 200。`down` 不删除数据卷；只有确认是本轮专用资源后才人工清理。改变 Keycloak、PostgreSQL 或前端端口时，必须同步更新 `.env.r03` 中的 JDBC/issuer、realm import 中的回调地址和前端代理；不要只改 Compose 发布端口。浏览器若显示登录失败，先检查 Keycloak discovery、固定回调、后端 OIDC profile 和本地角色迁移；不要关闭 issuer、签名、CSRF 校验。生产必须采用 HTTPS 与 Secure Cookie、正式 IdP、独立秘密管理和独立安全评审。
 
-自动化回归：后端 `cd apps/server; .\mvnw.cmd -B -ntp -Pintegration verify` 使用 Testcontainers 的临时 PostgreSQL；前端 `cd apps/web; npm ci; npm run lint; npm run test:run; npm run build`。真实浏览器联调需先启动上述四个本地服务，再在 `apps/web` 执行 `. ..\..\tools\import_r03_env.ps1 -Path ..\..\.env.r03; npm run test:e2e`；本机可设置 `R03_E2E_BROWSER_CHANNEL=chrome` 使用已安装 Chrome，CI 安装隔离 Chromium。E2E 不用 mock 登录取代真实 Keycloak。
+自动化回归：后端 `cd apps/server; .\mvnw.cmd -B -ntp -Pintegration verify` 使用 Testcontainers 的临时 PostgreSQL，并运行真实 HTTP OIDC 回调集成类 `OidcCallbackSecurityIT`（1 个合法对照、5 个非法令牌和 1 个失败后恢复场景）；可单独复跑 `.\mvnw.cmd -B -ntp -Pintegration verify '-Dit.test=OidcCallbackSecurityIT'`。前端 `cd apps/web; npm ci; npm run lint; npm run test:run; npm run build`。真实浏览器联调需先启动上述四个本地服务，再在 `apps/web` 执行 `. ..\..\tools\import_r03_env.ps1 -Path ..\..\.env.r03; npm run test:e2e`；本机可设置 `R03_E2E_BROWSER_CHANNEL=chrome` 使用已安装 Chrome，CI 安装隔离 Chromium。E2E 不用 mock 登录取代真实 Keycloak。
 
 会话到期、主体停用和 IdP 中断用例会改变测试资源状态，仅在带本轮 `R03_RUN_ID` 标签的唯一 CI Compose 项目中运行；普通本机开发只运行不破坏数据的浏览器用例。CI 将空闲超时配置为 1 分钟，测试关闭页面避免轮询续期，等待 75 秒后检查旧 Cookie。IdP 不可用时，新登录必须失败；已建立的本地会话在本地有效期内仍可访问、可 CSRF 退出。这里不承诺实时 IdP 撤权或全局单点退出。
 
