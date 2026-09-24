@@ -61,7 +61,7 @@ def main() -> int:
     if os.name == "posix":
         REALM.chmod(0o600)
         ENV.chmod(0o600)
-    print("Created ignored .env.r03 and local-evidence/r03/realm.json; credentials are in .env.r03 only.")
+    print("Created ignored .env.r03 and local-evidence/r03/realm.json; both contain disposable test credentials.")
     return 0
 
 

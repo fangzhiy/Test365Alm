@@ -313,6 +313,14 @@ jobs:
           set -a
           source .env.r03
           set +a
+          # The pinned Keycloak image runs as UID 1000. The import includes a
+          # disposable password and must remain readable only to that UID.
+          sudo chown 1000:1000 local-evidence/r03/realm.json
+          sudo chmod 0400 local-evidence/r03/realm.json
+          stat -c 'realm uid=%u gid=%g mode=%a' local-evidence/r03/realm.json \
+            > local-evidence/r03/import-permissions.txt
+          stat -c 'env uid=%u gid=%g mode=%a' .env.r03 \
+            >> local-evidence/r03/import-permissions.txt
           project="test365alm-r03-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           if [ -n "$(docker ps -aq --filter "label=com.docker.compose.project=${project}")" ] || \
              [ -n "$(docker network ls -q --filter "label=com.docker.compose.project=${project}")" ] || \
@@ -324,6 +332,17 @@ jobs:
           web_pid=''
           cleanup() {
             status=$?
+            # Capture diagnostics before removing only this CI run's project.
+            docker image inspect quay.io/keycloak/keycloak:26.4.4@sha256:c6459d5fae1b759f5d667ebdc6237ab3121379c3494e213898569014ede1846d \
+              --format 'keycloak image user={{.Config.User}}' \
+              > local-evidence/r03/image-user.txt 2>&1 || status=1
+            docker compose --env-file .env.r03 -f compose.r03.yaml -p "$project" ps -a \
+              > local-evidence/r03/containers-raw.txt 2>&1 || status=1
+            docker compose --env-file .env.r03 -f compose.r03.yaml -p "$project" logs --no-color postgres keycloak \
+              > local-evidence/r03/containers-raw.log 2>&1 || status=1
+            python tools/redact_r03_logs.py .env.r03 local-evidence/r03/containers-raw.txt local-evidence/r03/containers.txt || status=1
+            python tools/redact_r03_logs.py .env.r03 local-evidence/r03/containers-raw.log local-evidence/r03/containers.log || status=1
+            rm -f local-evidence/r03/containers-raw.txt local-evidence/r03/containers-raw.log
             if [ -n "$web_pid" ]; then kill "$web_pid" 2>/dev/null || true; fi
             if [ -n "$backend_pid" ]; then kill "$backend_pid" 2>/dev/null || true; fi
             docker compose --env-file .env.r03 -f compose.r03.yaml -p "$project" down || status=1
@@ -332,12 +351,20 @@ jobs:
           trap cleanup EXIT
           docker compose --env-file .env.r03 -f compose.r03.yaml -p "$project" up -d postgres keycloak
           for i in $(seq 1 90); do
+            container_id="$(docker compose --env-file .env.r03 -f compose.r03.yaml -p "$project" ps -q keycloak)"
+            if [ -z "$container_id" ] || [ "$(docker inspect --format '{{.State.Running}}' "$container_id")" != true ]; then
+              echo 'Keycloak container exited before discovery became available' >&2
+              exit 1
+            fi
             if curl --silent --fail --max-time 2 \
               http://127.0.0.1:18090/realms/test365alm/.well-known/openid-configuration >/dev/null; then break; fi
             sleep 2
           done
-          curl --silent --fail --max-time 3 \
-            http://127.0.0.1:18090/realms/test365alm/.well-known/openid-configuration >/dev/null
+          curl --silent --show-error --fail --max-time 3 \
+            http://127.0.0.1:18090/realms/test365alm/.well-known/openid-configuration \
+            | python -c 'import json,os,sys; d=json.load(sys.stdin); assert d["issuer"] == os.environ["TEST365ALM_OIDC_ISSUER"], "OIDC issuer mismatch"'
+          docker compose --env-file .env.r03 -f compose.r03.yaml -p "$project" exec -T keycloak \
+            sh -c 'test -r /opt/keycloak/data/import/realm.json'
           java -jar apps/server/target/server-0.0.1-SNAPSHOT.jar \
             > local-evidence/r03/backend.log 2>&1 & backend_pid=$!
           for i in $(seq 1 60); do
@@ -356,7 +383,7 @@ jobs:
           (cd apps/web && npm run test:e2e) 2>&1 | tee local-evidence/r03/e2e.log
       - name: Require real browser report
         if: always()
-        run: test -s local-evidence/r03/playwright-results.xml
+        run: python tools/verify_r03_report.py local-evidence/r03/playwright-results.xml
       - name: Upload R03 browser evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -371,4 +398,8 @@ jobs:
             local-evidence/r03/browser-install.txt
             local-evidence/r03/e2e.log
             local-evidence/r03/playwright-results.xml
+            local-evidence/r03/import-permissions.txt
+            local-evidence/r03/image-user.txt
+            local-evidence/r03/containers.txt
+            local-evidence/r03/containers.log
           if-no-files-found: error
