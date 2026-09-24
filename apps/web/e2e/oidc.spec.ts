@@ -78,14 +78,17 @@ test('real session expires; a locally disabled principal cannot resume or log in
   test.setTimeout(100_000)
   expect(process.env.TEST365ALM_SESSION_TIMEOUT).toBe('25s')
   const id = await login(page)
-  // No /me polling during the idle interval: it would reset the real session timer.
-  await page.waitForTimeout(29_000)
-  expect((await page.request.get('/api/v1/me')).status()).toBe(401)
-  await page.reload()
-  await expect(page.getByText('未登录或会话已过期')).toBeVisible()
+  // Close the page so its health polling cannot refresh the browser session.
+  const originalContext = page.context()
+  await page.close()
+  await new Promise((resolve) => setTimeout(resolve, 29_000))
+  expect((await originalContext.request.get('/api/v1/me')).status()).toBe(401)
+  const expiredPage = await originalContext.newPage()
+  await expiredPage.goto('/')
+  await expect(expiredPage.getByText('未登录或会话已过期')).toBeVisible()
 
   // A fresh browser context avoids relying on the expired local cookie.
-  const another = await page.context().browser()!.newContext()
+  const another = await originalContext.browser()!.newContext()
   try {
     const secondPage = await another.newPage()
     await login(secondPage)
@@ -123,6 +126,7 @@ test('IdP outage blocks new login but local session and logout remain available'
       expect((await fresh.get('/api/v1/me')).status()).toBe(401)
     } finally { await fresh.dispose() }
     await page.getByRole('button', { name: '退出登录' }).click()
+    await expect(page.getByText('未登录或会话已过期')).toBeVisible()
     expect((await page.request.get('/api/v1/me')).status()).toBe(401)
     const replay = await request.newContext({ baseURL: 'http://127.0.0.1:5173',
       extraHTTPHeaders: { Cookie: `JSESSIONID=${oldCookie}` } })
@@ -130,11 +134,11 @@ test('IdP outage blocks new login but local session and logout remain available'
     finally { await replay.dispose() }
   } finally {
     startKeycloak()
+    await expect.poll(async () => {
+      try { return (await page.request.get('http://127.0.0.1:18090/realms/test365alm/.well-known/openid-configuration',
+        { timeout: 2_000 })).status() } catch { return 0 }
+    }, { timeout: 60_000, intervals: [1_000] }).toBe(200)
   }
-  await expect.poll(async () => {
-    try { return (await page.request.get('http://127.0.0.1:18090/realms/test365alm/.well-known/openid-configuration',
-      { timeout: 2_000 })).status() } catch { return 0 }
-  }, { timeout: 60_000, intervals: [1_000] }).toBe(200)
   await login(page)
 })
 
