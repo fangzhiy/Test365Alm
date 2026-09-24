@@ -1,4 +1,19 @@
-import { expect, test } from '@playwright/test'
+import { expect, request, test } from '@playwright/test'
+import { isOwnedCiRun, setPrincipalDisabled, startKeycloak, stopKeycloak } from './ownedR03'
+
+async function login(page: import('@playwright/test').Page): Promise<string> {
+  const password = process.env.R03_TEST_USER_PASSWORD
+  if (!password) throw new Error('Isolated R03 test credential is required')
+  await page.goto('/')
+  await page.getByRole('link', { name: '登录 Test365Alm' }).click()
+  await page.locator('#username').fill('r03-user')
+  await page.locator('#password').fill(password)
+  await page.locator('#kc-login').click()
+  await expect(page.getByText('R03 Tester')).toBeVisible()
+  const me = await page.request.get('/api/v1/me')
+  expect(me.status()).toBe(200)
+  return (await me.json()).id as string
+}
 
 test('real Keycloak authorization code login, current user and local logout', async ({ page }) => {
   const password = process.env.R03_TEST_USER_PASSWORD
@@ -43,10 +58,84 @@ test('real Keycloak authorization code login, current user and local logout', as
   expect(await invalidLogout.json()).toEqual({ code: 'CSRF_REJECTED' })
   expect((await page.request.get('/api/v1/me')).status()).toBe(200)
 
+  const csrf = await (await page.request.get('/api/v1/csrf')).json() as { headerName: string, token: string }
+  const wrongCsrf = await page.request.post('/api/v1/auth/logout', { headers: { [csrf.headerName]: 'invalid-token' } })
+  expect(wrongCsrf.status()).toBe(403)
+  expect((await page.request.get('/api/v1/me')).status()).toBe(200)
+
   await page.getByRole('button', { name: '退出登录' }).click()
   await expect(page.getByText('未登录或会话已过期')).toBeVisible()
   const after = await page.request.get('/api/v1/me')
   expect(after.status()).toBe(401)
+  const replay = await request.newContext({ baseURL: 'http://127.0.0.1:5173',
+    extraHTTPHeaders: { Cookie: `JSESSIONID=${session?.value}` } })
+  try { expect((await replay.get('/api/v1/me')).status()).toBe(401) }
+  finally { await replay.dispose() }
+})
+
+test('real session expires; a locally disabled principal cannot resume or log in again', async ({ page }) => {
+  test.skip(!isOwnedCiRun(), 'destructive identity test requires the current CI-owned R03 stack')
+  test.setTimeout(100_000)
+  expect(process.env.TEST365ALM_SESSION_TIMEOUT).toBe('25s')
+  const id = await login(page)
+  // No /me polling during the idle interval: it would reset the real session timer.
+  await page.waitForTimeout(29_000)
+  expect((await page.request.get('/api/v1/me')).status()).toBe(401)
+  await page.reload()
+  await expect(page.getByText('未登录或会话已过期')).toBeVisible()
+
+  // A fresh browser context avoids relying on the expired local cookie.
+  const another = await page.context().browser()!.newContext()
+  try {
+    const secondPage = await another.newPage()
+    await login(secondPage)
+    setPrincipalDisabled(id, true)
+    try {
+      const blocked = await secondPage.request.get('/api/v1/me')
+      expect(blocked.status()).toBe(403)
+      expect(await blocked.json()).toEqual({ code: 'IDENTITY_DISABLED' })
+      expect((await secondPage.request.get('/api/v1/me')).status()).toBe(401)
+      await secondPage.goto('/')
+      await secondPage.getByRole('link', { name: '登录 Test365Alm' }).click()
+      await expect(secondPage.getByText('登录失败，请检查身份提供方后重试')).toBeVisible()
+      expect((await secondPage.request.get('/api/v1/me')).status()).toBe(401)
+    } finally { setPrincipalDisabled(id, false) }
+  } finally { await another.close() }
+})
+
+test('IdP outage blocks new login but local session and logout remain available', async ({ page }) => {
+  test.skip(!isOwnedCiRun(), 'IdP outage test requires the current CI-owned R03 stack')
+  test.setTimeout(120_000)
+  await login(page)
+  const oldCookie = (await page.context().cookies()).find((cookie) => cookie.name === 'JSESSIONID')?.value
+  expect(oldCookie).toBeTruthy()
+  stopKeycloak()
+  try {
+    expect((await page.request.get('/health/live')).status()).toBe(200)
+    expect((await page.request.get('/api/v1/me')).status()).toBe(200)
+    const fresh = await request.newContext({ baseURL: 'http://127.0.0.1:5173' })
+    try {
+      const auth = await fresh.get('/oauth2/authorization/test365alm', { maxRedirects: 0 })
+      expect(auth.status()).toBe(302)
+      const location = auth.headers().location
+      expect(location).toContain('127.0.0.1:18090')
+      await expect(fresh.get(location, { timeout: 3_000 })).rejects.toThrow()
+      expect((await fresh.get('/api/v1/me')).status()).toBe(401)
+    } finally { await fresh.dispose() }
+    await page.getByRole('button', { name: '退出登录' }).click()
+    expect((await page.request.get('/api/v1/me')).status()).toBe(401)
+    const replay = await request.newContext({ baseURL: 'http://127.0.0.1:5173',
+      extraHTTPHeaders: { Cookie: `JSESSIONID=${oldCookie}` } })
+    try { expect((await replay.get('/api/v1/me')).status()).toBe(401) }
+    finally { await replay.dispose() }
+  } finally {
+    startKeycloak()
+  }
+  await expect.poll(async () => {
+    try { return (await page.request.get('http://127.0.0.1:18090/realms/test365alm/.well-known/openid-configuration',
+      { timeout: 2_000 })).status() } catch { return 0 }
+  }, { timeout: 60_000, intervals: [1_000] }).toBe(200)
+  await login(page)
 })
 
 test('invalid OAuth state cannot establish a session', async ({ page }) => {

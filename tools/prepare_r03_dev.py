@@ -22,6 +22,7 @@ def main() -> int:
     admin_password = secrets.token_urlsafe(32)
     demo_password = secrets.token_urlsafe(24)
     values = {
+        "R03_RUN_ID": secrets.token_hex(16),
         "R03_DB_NAME": "test365alm_r03",
         "R03_MIGRATION_USER": "test365alm_migrator",
         "R03_MIGRATION_PASSWORD": migration_password,

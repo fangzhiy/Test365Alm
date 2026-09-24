@@ -30,7 +30,7 @@ def main() -> int:
         print(f"Browser report invalid: {exc}", file=sys.stderr)
         return 1
     print(f"browser tests={tests} failures={failures} errors={errors} skipped={skipped}")
-    return 0 if tests >= 3 and failures == 0 and errors == 0 and skipped == 0 else 1
+    return 0 if tests >= 5 and failures == 0 and errors == 0 and skipped == 0 else 1
 
 
 if __name__ == "__main__":

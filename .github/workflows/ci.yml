@@ -322,6 +322,8 @@ jobs:
           stat -c 'env uid=%u gid=%g mode=%a' .env.r03 \
             >> local-evidence/r03/import-permissions.txt
           project="test365alm-r03-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          export R03_COMPOSE_PROJECT="$project"
+          export TEST365ALM_SESSION_TIMEOUT=25s
           if [ -n "$(docker ps -aq --filter "label=com.docker.compose.project=${project}")" ] || \
              [ -n "$(docker network ls -q --filter "label=com.docker.compose.project=${project}")" ] || \
              [ -n "$(docker volume ls -q --filter "label=com.docker.compose.project=${project}")" ]; then
