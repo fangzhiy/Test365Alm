@@ -12,6 +12,7 @@
 ## 项目状态
 
 - 当前目录包含规划与研发辅助工具，以及 R02 工程底座的 `apps/web` Vite 前端和 `apps/server` Spring Boot 服务；本轮只覆盖健康/版本接口、平台元数据迁移和状态工作台，不代表业务模块完成。
+- R03-M03-001 在独立 `feat/r03-m03-001` 分支增加本地 OIDC 首个切片；PR #1 未合并时，新 PR 依赖 `feat/r02-m02-001`。登录成功不代表已获得项目权限、RLS 或完整 M03。
 - 所有产品验收、迁移、兼容、安全和性能结论必须有真实证据。
 - `PLANNED`、`OPEN`、`BLOCKED`、`NOT_RUN` 不得被工具或文档改写成已完成。
 
@@ -26,11 +27,20 @@ cd apps/web; npm ci; npm run lint; npm run test:run; npm run build
 cd apps/server; .\mvnw.cmd -B -ntp test
 # 集成测试由 Testcontainers 创建本轮唯一的临时 PostgreSQL；不读取日常 .env，也不设置 TEST365ALM_IT_DATASOURCE_*。
 cd apps/server; .\mvnw.cmd -B -ntp -Pintegration verify '-Dbuild.commit=local-r02'
+# R03 FIX02：真实 HTTP OIDC 授权码/回调/PKCE/JWKS 与临时 PostgreSQL 主体快照（7 个用例）
+cd apps/server; .\mvnw.cmd -B -ntp -Pintegration verify '-Dit.test=OidcCallbackSecurityIT' '-Dbuild.commit=local-r03-fix02'
+# CI/本地报告门槛：Failsafe 必须发现上述 7 个用例且 failures/errors/skipped 全为 0
+python tools/verify_r03_oidc_http_report.py apps/server/target/failsafe-reports
 # Linux/macOS: chmod +x ./mvnw && ./mvnw -B -ntp test
 # PowerShell: if (-not (Test-Path .env.r02-test)) { Copy-Item .env.example .env.r02-test }
 python tools/verify_r02_readiness.py --env-file .env.r02-test --compose-project test365alm-r02-manual --server-port 18081  # 构建 server jar 后，验证唯一临时 PostgreSQL 停止/恢复且后端不重启
 python tools/verify_r02_migration_failure.py --env-file .env.r02-test --compose-project test365alm-r02-migration-manual --server-port 18082  # 临时失败迁移启动验证
 python tools/verify_r02_preexisting_project.py --env-file .env.r02-test  # 一次性对照项目及两条哨兵数据；验证两套脚本先拒绝碰触预存资源
+python tools/prepare_r03_dev.py  # 仅首次生成被忽略的随机本地凭据和 Keycloak realm，不覆盖已有文件
+docker compose --env-file .env.r03 -f compose.r03.yaml -p <本轮唯一项目名> up -d postgres keycloak
+# PowerShell 后端：. ..\..\tools\import_r03_env.ps1 -Path ..\..\.env.r03; .\mvnw.cmd spring-boot:run
+# PowerShell 前端：$env:TEST365ALM_DEV_BACKEND_URL='http://127.0.0.1:8080'; npm run dev
+# 已启动隔离服务后，apps/web: npm run test:e2e
 # PowerShell: . .\tools\import_dev_env.ps1  # 从已有 .env 加载同一份开发配置，不覆盖它
 ```
 
@@ -61,3 +71,7 @@ Python 工具只使用标准库，支持 Python 3.10 及以上。新增工具必
 - 故障恢复/迁移失败脚本必须先确认端口、进程 PID、构建提交和 Compose 资源归属；无法验证监听或资源归属时记录 NOT_RUN/BLOCKED 并返回非成功状态，不得通过 observe/忽略错误判定通过。
 - R02 故障脚本及 CI 清理共用 `tools/r02_resource_guard.py`：首次 up 前检查预存容器/网络/卷，记录本轮不可复用 run ID、Docker context/Engine 和资源 ID；stop、start、cleanup 前核对身份。只删除 manifest 中仍带本轮标签的资源，禁止项目级 `down --volumes --remove-orphans`。
 - 故障脚本的子进程环境只能保留必要运行时变量和专用测试配置；Flyway 与 datasource URL 必须指向同一临时数据库，启动 JVM 时限定 Spring 配置加载位置。测试 `.env.r02-test` 不能覆盖日常 `.env`，不得继承父进程 Spring/JVM/Compose 偏转项。
+- OIDC 身份只能由服务端验证的 issuer+subject 建立；不能信任请求头、前端 userId、邮箱或显示名合并。默认无 OIDC 配置时身份 API 拒绝访问。浏览器仅使用 HttpOnly 会话 Cookie；不得回传原始 OAuth token，退出必须有 CSRF，停用主体的下一次受保护请求必须失效。
+- R03 的 Compose 与测试账户只用于本地/CI 隔离环境；`.env.r03` 和 realm import 含随机测试秘密，不提交。运行账号与 Flyway 迁移账号分离，运行账号不拥有表、DDL、BYPASSRLS；后续项目授权/RLS 不能因本轮登录被标为完成。正式 V2 迁移后，R02 故意失败测试使用 V3 专属错误标记。
+- R03 真实故障浏览器用例只在 CI 本轮唯一、带 `R03_RUN_ID` 资源标签的 Compose 项目中停启 Keycloak 或修改临时主体；普通 `npm run test:e2e` 不得触碰日常开发数据库或未知容器。CI 的 realm 导入文件仅容器 UID 1000 可读，`.env.r03` 与 realm 都是秘密；只上传脱敏的白名单证据和实际测试报告。
+- R03 FIX02 的 HTTP 回调测试必须保留真实应用过滤器链和同一 Cookie 容器；测试 IdP 只提供回环协议响应，不能用 `oidcLogin`、`@WithMockUser`、直接 SecurityContext 或 mock Principal/JWT 验证替代。每类非法 token 之后必须以独立 owner 连接比较 principal 全字段快照；只允许合成 subject 与 Testcontainers 临时 PostgreSQL，报告不得包含 Cookie、token、私钥或秘密。

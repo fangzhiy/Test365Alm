@@ -85,9 +85,9 @@ def main() -> int:
 
     with tempfile.TemporaryDirectory(prefix="test365alm-flyway-failure-") as migration_root:
         migration_dir = Path(migration_root)
-        failure_migration = migration_dir / "V2__intentional_failure.sql"
+        failure_migration = migration_dir / "V3__intentional_failure.sql"
         failure_migration.write_text(
-            "SELECT CAST('intentional migration failure' AS integer);\n", encoding="utf-8"
+            "SELECT CAST('R03_INTENTIONAL_MIGRATION_FAILURE' AS integer);\n", encoding="utf-8"
         )
         try:
             run_compose(args.compose_project, "up", "-d", "--wait", "postgres",
@@ -117,11 +117,13 @@ def main() -> int:
             if exit_code is None:
                 raise VerificationError("application did not exit after intentional migration failure")
             log_text = log_path.read_text(encoding="utf-8", errors="replace")
-            if exit_code == 0 or "Flyway" not in log_text or "V2__intentional_failure" not in log_text:
+            if (exit_code == 0 or "Flyway" not in log_text
+                    or "V3__intentional_failure" not in log_text
+                    or "R03_INTENTIONAL_MIGRATION_FAILURE" not in log_text):
                 raise VerificationError(
-                    f"startup failure was not attributable to Flyway V2 migration (exit={exit_code})"
+                    f"startup failure was not attributable to deliberate Flyway V3 SQL (exit={exit_code})"
                 )
-            print(f"PASS: startup failed with Flyway V2 migration error; exit={exit_code}; log={log_path}")
+            print(f"PASS: startup failed with deliberate Flyway V3 SQL; exit={exit_code}; log={log_path}")
             result = 0
         except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired, VerificationError) as error:
             print(f"FAIL: {error}")

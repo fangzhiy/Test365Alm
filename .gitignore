@@ -12,6 +12,10 @@ __pycache__/
 .venv/
 node_modules/
 target/
+.maven-repo/
+.npm-cache/
+.playwright-browsers/
+test-results/
 dist/
 .DS_Store
 # Do not put source customer data into Git
