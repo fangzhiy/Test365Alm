@@ -6,6 +6,12 @@
 
 当前开发状态以 [development-status.md](docs/development-status.md) 和 [R03-M03-001-FIX01 验收补修记录](docs/progress/runs/R03-M03-001-FIX01.md) 为准；[R03-M03-001 原始记录](docs/progress/runs/R03-M03-001.md) 与 R02 历史记录保留供追溯。
 
+## R03-M03-002 项目访问最小切片
+
+B 段在已认证的 BFF 会话下提供租户、项目、成员和固定角色的最小管理闭环。工作台的“租户、项目与成员”面板按需读取当前主体可见范围，可创建项目、保存 `PROJECT_ADMIN`、`PROJECT_MEMBER`、`PROJECT_VIEWER` 固定项目角色并撤销成员访问；租户、域和初始成员只允许通过隔离的开发/测试 bootstrap 准备，本轮不开放租户/域管理 HTTP 接口。前端不持有 OIDC token，也不以隐藏页面代替服务端授权。接口字段、错误体和撤权语义见 [project-access.json](contracts/project-access.json)，架构边界见 [ADR 012](docs/adr/012-r03-project-access-slice.md)。
+
+该切片已包含新租户/项目表的基础 RLS 和追加审计证据，但仍不代表完整 M03：跨节点会话、MFA、完整审计策略、批量目录和旧 ALM 兼容继续按开发状态记录验证。
+
 ## R03 本地 OIDC 登录切片
 
 本节只用于本机隔离演示。需要 Docker Desktop、Java 21（本机 Java 17 可编译目标 17）、Node 24（本机 Node 26 已实测）、Python 3.10+。`compose.r03.yaml` 固定 PostgreSQL 17.11 和 Keycloak 26.4.4 的镜像摘要；Keycloak `start-dev`、回环 HTTP Cookie 例外和生成的测试账户绝不可直接用于生产。不要连接公司身份系统或日常开发数据库。
@@ -129,7 +135,7 @@ python tools/verify_r02_readiness.py --env-file .env.r02-test --compose-project 
 
 脚本严格要求监听地址可验证且只能是 `127.0.0.1`、`::1` 或 `::ffff:127.0.0.1`；无法枚举监听、进程提前退出、版本提交不一致、端口被占用或数据源不是本机专用 PostgreSQL 时失败。首次 `up` 前会检查目标项目是否已有容器（包括停止的容器）、网络或卷；任何已有资源都会使脚本拒绝运行。默认使用当前本地 Docker context；若专用测试配置写入 `TEST365ALM_DOCKER_CONTEXT`，它必须与当前 context 一致。远端 Docker context 被拒绝。测试配置只接受脚本规定的键；父进程的 Spring、JVM 和 Compose 覆盖项不会传入子进程。
 
-启动迁移失败验证使用临时 V2 迁移目录，不修改正式 `db/migration`：
+启动迁移失败验证保留正式 V3，向临时目录注入独立的 V4 故障迁移，不修改正式 `db/migration`；脚本先确认正式 V3 已成功记录：
 
 ```powershell
 python tools/verify_r02_migration_failure.py --env-file .env.r02-test --compose-project test365alm-r02-migration-manual --server-port 18082

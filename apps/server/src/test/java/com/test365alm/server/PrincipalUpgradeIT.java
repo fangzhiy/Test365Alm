@@ -34,6 +34,15 @@ class PrincipalUpgradeIT {
                     + "WHERE metadata_key = 'schema-purpose'");
         }
 
+        var v2 = Flyway.configure().dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+                .locations("classpath:db/migration").target("2").load();
+        assertEquals(1, v2.migrate().migrationsExecuted);
+        try (var connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+                var statement = connection.createStatement()) {
+            statement.executeUpdate("INSERT INTO principal (issuer, subject, display_name) "
+                    + "VALUES ('https://upgrade.example', 'survives-v2', 'Survives V2')");
+        }
+
         var latest = Flyway.configure().dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
                 .locations("classpath:db/migration").load();
         assertEquals(1, latest.migrate().migrationsExecuted);
@@ -44,9 +53,10 @@ class PrincipalUpgradeIT {
                     + "WHERE metadata_key = 'schema-purpose'");
             result.next();
             assertEquals("keep-me", result.getString(1));
-            var principal = statement.executeQuery("SELECT COUNT(*) FROM principal");
+            var principal = statement.executeQuery("SELECT COUNT(*) FROM principal WHERE issuer = 'https://upgrade.example' "
+                    + "AND subject = 'survives-v2' AND display_name = 'Survives V2'");
             principal.next();
-            assertEquals(0, principal.getInt(1));
+            assertEquals(1, principal.getInt(1));
         }
     }
 }

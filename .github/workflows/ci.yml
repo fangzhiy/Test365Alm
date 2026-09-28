@@ -139,6 +139,11 @@ jobs:
         run: |
           set -o pipefail
           python ../../tools/verify_r03_oidc_http_report.py target/failsafe-reports 2>&1 | tee oidc-http-report.txt
+      - name: Require project access and RLS integration report
+        if: always()
+        run: |
+          set -o pipefail
+          python ../../tools/verify_r03_project_access_report.py target/failsafe-reports 2>&1 | tee project-access-report.txt
       - name: Upload backend evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -151,6 +156,7 @@ jobs:
             apps/server/unit-tests.txt
             apps/server/integration-build.txt
             apps/server/oidc-http-report.txt
+            apps/server/project-access-report.txt
             apps/server/target/surefire-reports/**
             apps/server/target/failsafe-reports/**
           if-no-files-found: error
@@ -250,7 +256,7 @@ jobs:
         run: |
           set -o pipefail
           ./mvnw -B -ntp package -DskipTests "-Dbuild.commit=${GITHUB_SHA}" 2>&1 | tee migration-build.txt
-      - name: Verify intentional migration startup failure
+      - name: Verify formal V3 then intentional V4 migration startup failure
         run: |
           set +e
           python -u tools/verify_r02_migration_failure.py --env-file .env.r02-test --compose-project "test365alm-r02-migration-${GITHUB_RUN_ID}" --server-port 18082 --wait-seconds 90 2>&1 | tee migration-failure.txt
@@ -263,7 +269,7 @@ jobs:
             summary=$(tr '\n' ' ' < migration-failure.txt | cut -c1-4000)
             echo "::error title=migration-failure::${summary:-no output captured}"
           else
-            echo "Intentional migration failure was detected for ${GITHUB_SHA}"
+            echo "Formal V3 migration and intentional V4 failure were detected for ${GITHUB_SHA}"
           fi
           exit "$status"
       - name: Upload migration evidence

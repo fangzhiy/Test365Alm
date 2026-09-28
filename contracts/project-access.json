@@ -1,0 +1,120 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Test365Alm Project Access API",
+    "version": "0.1.0-planning",
+    "description": "R03-M03-002 B 段项目访问最小契约。接口要求已认证的同源 BFF 会话；服务端必须按 tenant、project、principal 和固定角色矩阵过滤。"
+  },
+  "servers": [{ "url": "https://test365alm.example.invalid", "description": "部署时替换的示例地址" }],
+  "security": [{ "SessionCookie": [] }],
+  "paths": {
+    "/api/v1/tenants": {
+      "get": {
+        "operationId": "listTenants",
+        "summary": "列出当前主体可见租户",
+        "responses": { "200": { "description": "成功", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TenantList" } } } }, "default": { "$ref": "#/components/responses/CommonReadErrors" } }
+      }
+    },
+    "/api/v1/projects": {
+      "post": {
+        "operationId": "createProject",
+        "summary": "在租户域内创建项目",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProjectCreate" } } } },
+        "responses": { "201": { "description": "创建成功", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Project" } } } }, "default": { "$ref": "#/components/responses/CommonWriteErrors" } }
+      },
+      "get": {
+        "operationId": "listProjects",
+        "summary": "列出租户内当前主体可见项目",
+        "parameters": [{ "$ref": "#/components/parameters/TenantId" }],
+        "responses": { "200": { "description": "成功", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProjectList" } } } }, "default": { "$ref": "#/components/responses/CommonReadErrors" } }
+      }
+    },
+    "/api/v1/projects/{projectId}": {
+      "get": {
+        "operationId": "getProject",
+        "summary": "读取项目",
+        "parameters": [{ "$ref": "#/components/parameters/ProjectId" }],
+        "responses": { "200": { "description": "成功", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Project" } } } }, "default": { "$ref": "#/components/responses/CommonReadErrors" } }
+      },
+      "patch": {
+        "operationId": "updateProject",
+        "summary": "以乐观版本更新项目名称",
+        "parameters": [{ "$ref": "#/components/parameters/ProjectId" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProjectUpdate" } } } },
+        "responses": { "200": { "description": "更新成功", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Project" } } } }, "default": { "$ref": "#/components/responses/CommonWriteErrors" } }
+      }
+    },
+    "/api/v1/projects/{projectId}/members": {
+      "get": {
+        "operationId": "listProjectMembers",
+        "summary": "列出项目成员",
+        "parameters": [{ "$ref": "#/components/parameters/ProjectId" }],
+        "responses": { "200": { "description": "成功", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MemberList" } } } }, "default": { "$ref": "#/components/responses/CommonReadErrors" } }
+      }
+    },
+    "/api/v1/projects/{projectId}/member-candidates": {
+      "get": {
+        "operationId": "listMemberCandidates",
+        "summary": "列出同租户尚未加入项目的有效主体",
+        "parameters": [{ "$ref": "#/components/parameters/ProjectId" }],
+        "responses": { "200": { "description": "成功", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MemberCandidateList" } } } }, "default": { "$ref": "#/components/responses/CommonReadErrors" } }
+      }
+    },
+    "/api/v1/projects/{projectId}/members/{principalId}": {
+      "put": {
+        "operationId": "setProjectMemberRoles",
+        "summary": "授予或替换项目成员固定角色",
+        "parameters": [{ "$ref": "#/components/parameters/ProjectId" }, { "$ref": "#/components/parameters/PrincipalId" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MemberRoleUpdate" } } } },
+        "responses": { "200": { "description": "授权成功", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProjectMember" } } } }, "default": { "$ref": "#/components/responses/CommonWriteErrors" } }
+      },
+      "delete": {
+        "operationId": "revokeProjectMember",
+        "summary": "撤销项目成员访问",
+        "parameters": [{ "$ref": "#/components/parameters/ProjectId" }, { "$ref": "#/components/parameters/PrincipalId" }],
+        "responses": { "200": { "description": "撤销成功；重复撤销返回已撤销成员", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProjectMember" } } } }, "default": { "$ref": "#/components/responses/CommonWriteErrors" } }
+      }
+    },
+    "/api/v1/me/permissions": {
+      "get": {
+        "operationId": "getMyProjectPermissions",
+        "summary": "读取当前主体在项目内的有效权限",
+        "parameters": [{ "$ref": "#/components/parameters/ProjectIdQuery" }],
+        "responses": { "200": { "description": "成功", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/PermissionSet" } } } }, "default": { "$ref": "#/components/responses/CommonReadErrors" } }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": { "SessionCookie": { "type": "apiKey", "in": "cookie", "name": "JSESSIONID", "description": "Spring Security BFF 会话；浏览器以 same-origin credentials 发送，前端不持有 OIDC token。" } },
+    "parameters": {
+      "TenantId": { "name": "tenantId", "in": "query", "required": true, "schema": { "type": "string", "minLength": 1 } },
+      "ProjectIdQuery": { "name": "projectId", "in": "query", "required": true, "schema": { "type": "string", "minLength": 1 } },
+      "ProjectId": { "name": "projectId", "in": "path", "required": true, "schema": { "type": "string", "minLength": 1 } },
+      "PrincipalId": { "name": "principalId", "in": "path", "required": true, "schema": { "type": "string", "minLength": 1 } },
+      "IdempotencyKey": { "name": "Idempotency-Key", "in": "header", "required": false, "schema": { "type": "string", "minLength": 8, "maxLength": 128 }, "description": "预留请求幂等键；本轮服务端不持久化该键。" }
+    },
+    "responses": {
+      "CommonReadErrors": { "description": "未认证、无权或请求失败", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+      "CommonWriteErrors": { "description": "输入、认证、权限、幂等或状态冲突", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+    },
+    "schemas": {
+      "Error": { "type": "object", "additionalProperties": false, "required": ["code", "message", "requestId"], "properties": { "code": { "type": "string" }, "message": { "type": "string" }, "requestId": { "type": "string" }, "details": { "type": "array", "items": { "type": "object", "additionalProperties": false, "properties": { "field": { "type": "string" }, "reason": { "type": "string" } } } } } },
+      "TenantCreate": { "type": "object", "additionalProperties": false, "required": ["code"], "properties": { "code": { "type": "string", "minLength": 1, "maxLength": 100 }, "name": { "type": "string", "maxLength": 200 } } },
+      "Tenant": { "type": "object", "additionalProperties": false, "required": ["id", "code", "name", "status", "rowVersion"], "properties": { "id": { "type": "string" }, "code": { "type": "string" }, "name": { "type": "string" }, "status": { "type": "string", "enum": ["ACTIVE", "SUSPENDED", "ARCHIVED"] }, "rowVersion": { "type": "integer", "minimum": 0 } } },
+      "TenantList": { "type": "array", "items": { "$ref": "#/components/schemas/Tenant" } },
+      "DomainCreate": { "type": "object", "additionalProperties": false, "required": ["tenantId", "name"], "properties": { "tenantId": { "type": "string" }, "name": { "type": "string", "minLength": 1, "maxLength": 200 } } },
+      "Domain": { "type": "object", "additionalProperties": false, "required": ["id", "tenantId", "name", "status", "rowVersion"], "properties": { "id": { "type": "string" }, "tenantId": { "type": "string" }, "name": { "type": "string" }, "status": { "type": "string", "enum": ["ACTIVE", "SUSPENDED", "ARCHIVED"] }, "rowVersion": { "type": "integer", "minimum": 0 } } },
+      "ProjectCreate": { "type": "object", "additionalProperties": false, "required": ["tenantId", "domainId", "code", "name"], "properties": { "tenantId": { "type": "string" }, "domainId": { "type": "string" }, "code": { "type": "string", "minLength": 1, "maxLength": 100 }, "name": { "type": "string", "minLength": 1, "maxLength": 200 } } },
+      "ProjectUpdate": { "type": "object", "additionalProperties": false, "required": ["name", "rowVersion"], "properties": { "name": { "type": "string", "minLength": 1, "maxLength": 200 }, "rowVersion": { "type": "integer", "minimum": 0 } } },
+      "Project": { "type": "object", "additionalProperties": false, "required": ["id", "tenantId", "domainId", "code", "name", "state", "rowVersion"], "properties": { "id": { "type": "string" }, "tenantId": { "type": "string" }, "domainId": { "type": ["string", "null"] }, "code": { "type": "string" }, "name": { "type": "string" }, "state": { "type": "string", "enum": ["ACTIVE", "SUSPENDED", "ARCHIVED"] }, "rowVersion": { "type": "integer", "minimum": 0 } } },
+      "ProjectList": { "type": "array", "items": { "$ref": "#/components/schemas/Project" } },
+      "ProjectRole": { "type": "string", "enum": ["PROJECT_ADMIN", "PROJECT_MEMBER", "PROJECT_VIEWER"] },
+      "MemberRoleUpdate": { "type": "object", "additionalProperties": false, "required": ["roles"], "properties": { "roles": { "type": "array", "minItems": 1, "maxItems": 2, "items": { "$ref": "#/components/schemas/ProjectRole" } } } },
+      "ProjectMember": { "type": "object", "additionalProperties": false, "required": ["principalId", "displayName", "roles", "state"], "properties": { "principalId": { "type": "string" }, "displayName": { "type": "string" }, "roles": { "type": "array", "items": { "$ref": "#/components/schemas/ProjectRole" } }, "state": { "type": "string", "enum": ["ACTIVE", "REVOKED", "DISABLED"] }, "authorizationVersion": { "type": "integer", "minimum": 1 }, "validUntil": { "type": ["string", "null"], "format": "date-time" } } },
+      "MemberList": { "type": "array", "items": { "$ref": "#/components/schemas/ProjectMember" } },
+      "MemberCandidate": { "type": "object", "additionalProperties": false, "required": ["principalId", "displayName"], "properties": { "principalId": { "type": "string" }, "displayName": { "type": "string" } } },
+      "MemberCandidateList": { "type": "array", "items": { "$ref": "#/components/schemas/MemberCandidate" } },
+      "PermissionSet": { "type": "object", "additionalProperties": false, "required": ["tenantId", "projectId", "principalId", "roles", "permissions"], "properties": { "tenantId": { "type": "string" }, "projectId": { "type": "string" }, "principalId": { "type": "string" }, "roles": { "type": "array", "items": { "$ref": "#/components/schemas/ProjectRole" } }, "permissions": { "type": "array", "items": { "type": "string" } } } }
+    }
+  }
+}

@@ -10,6 +10,8 @@
 - A 的 Push run [36373203011](https://github.com/fangzhiy/Test365Alm/actions/runs/36373203011) 和 PR run [36373206437](https://github.com/fangzhiy/Test365Alm/actions/runs/36373206437) 均六 job success；PR #2 仍 Open、未合并。A 的详细记录见 [`R03-M03-001-FIX02-CLOSE.md`](progress/runs/R03-M03-001-FIX02-CLOSE.md)。
 - A 只修正 OIDC HTTP 回归证据：同一 HttpClient/CookieManager 失败后合法重试复用，以及每个非法变体的两个哨兵、existing/absent 主体和完整 principal 快照。A 未改写 FIX02 历史。
 - B 段现在开始于新分支 `feat/r03-m03-002`，以 A 已验证 head 为基准，目标是项目/成员/固定角色/撤权/数据隔离最小闭环；不把权限功能追加到 PR #2。
+- B 前端/契约切片已加入按需加载的租户、项目、成员管理面板，以及 [`contracts/project-access.json`](../contracts/project-access.json) 和 [ADR 012](adr/012-r03-project-access-slice.md)。前端只发送同源会话请求并为写操作读取 CSRF 令牌，租户角色与项目角色分离，固定项目角色为 `PROJECT_ADMIN`、`PROJECT_MEMBER`、`PROJECT_VIEWER`；前端单元测试 24/24 通过，后端接口和跨租户证据仍由本轮其他任务验证。
+- B 仍为 `IN_PROGRESS`：当前面板和契约不代表项目权限、RLS、撤权传播或完整 M03 验收已经通过；真实后端集成结果以 B 段最终记录为准。
 
 ## R03-M03-001-FIX02 当前状态
 

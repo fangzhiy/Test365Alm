@@ -5,6 +5,7 @@ from pathlib import Path
 from tools.redact_r03_logs import redact
 from tools.verify_r03_report import count_results
 from tools.verify_r03_oidc_http_report import REQUIRED_TESTS, verify
+from tools.verify_r03_project_access_report import REQUIRED_PROJECT_TESTS, verify_project_access
 
 
 class R03CiEvidenceTests(unittest.TestCase):
@@ -40,6 +41,32 @@ class R03CiEvidenceTests(unittest.TestCase):
                 'tests="1" failures="0" errors="0" skipped="0"><testcase name="legal" /></testsuite>'
             )
             valid, _ = verify(Path(directory))
+            self.assertFalse(valid)
+
+    def test_requires_real_project_access_rls_case(self):
+        with tempfile.TemporaryDirectory() as directory:
+            report = Path(directory) / "TEST-com.test365alm.server.PlatformDatabaseIT.xml"
+            report.write_text(
+                '<testsuite name="com.test365alm.server.PlatformDatabaseIT" '
+                'tests="2" failures="0" errors="0" skipped="0">'
+                '<testcase name="runtimeRoleSeesOnlyTheCurrentTenantThroughRls" />'
+                '<testcase name="projectSliceCreatesAuditsGrantsViewerAndRevokesWithoutCrossTenantLeak" />'
+                '</testsuite>'
+            )
+            valid, summary = verify_project_access(Path(directory))
+            self.assertTrue(valid, summary)
+            self.assertEqual({
+                "runtimeRoleSeesOnlyTheCurrentTenantThroughRls",
+                "projectSliceCreatesAuditsGrantsViewerAndRevokesWithoutCrossTenantLeak",
+            }, REQUIRED_PROJECT_TESTS)
+
+            report.write_text(
+                '<testsuite name="com.test365alm.server.PlatformDatabaseIT" '
+                'tests="1" failures="1" errors="0" skipped="0">'
+                '<testcase name="runtimeRoleSeesOnlyTheCurrentTenantThroughRls"><failure /></testcase>'
+                '</testsuite>'
+            )
+            valid, _ = verify_project_access(Path(directory))
             self.assertFalse(valid)
 
 
