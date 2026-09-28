@@ -14,7 +14,7 @@ class FinishedProcess:
 
     def __init__(self, *args, **kwargs):
         stdout = kwargs["stdout"]
-        stdout.write(b"Flyway V2__intentional_failure\n")
+        stdout.write(b"Flyway V3__intentional_failure R03_INTENTIONAL_MIGRATION_FAILURE\n")
         stdout.flush()
 
     def poll(self):

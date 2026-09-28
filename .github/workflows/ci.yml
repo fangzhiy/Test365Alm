@@ -116,6 +116,9 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Ensure Maven Wrapper is executable
         run: chmod +x mvnw
       - name: Record backend runtime
@@ -131,6 +134,11 @@ jobs:
         run: |
           set -o pipefail
           ./mvnw -B -ntp -Pintegration verify "-Dbuild.commit=${GITHUB_SHA}" 2>&1 | tee integration-build.txt
+      - name: Require real HTTP OIDC callback integration report
+        if: always()
+        run: |
+          set -o pipefail
+          python ../../tools/verify_r03_oidc_http_report.py target/failsafe-reports 2>&1 | tee oidc-http-report.txt
       - name: Upload backend evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -142,6 +150,7 @@ jobs:
             apps/server/checkout-sha.txt
             apps/server/unit-tests.txt
             apps/server/integration-build.txt
+            apps/server/oidc-http-report.txt
             apps/server/target/surefire-reports/**
             apps/server/target/failsafe-reports/**
           if-no-files-found: error
@@ -272,3 +281,136 @@ jobs:
         if: always()
         run: |
           python tools/cleanup_r02_resources.py --root local-evidence/r02-migration-failure
+
+  oidc-browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Record checkout identity
+        run: |
+          printf 'event=%s\nref=%s\ngithub_sha=%s\ncheckout_sha=%s\n' \
+            "$GITHUB_EVENT_NAME" "$GITHUB_REF" "$GITHUB_SHA" "$(git rev-parse HEAD)" > r03-checkout-sha.txt
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.x'
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install browser and build application
+        run: |
+          set -euo pipefail
+          mkdir -p local-evidence/r03
+          java -version 2>&1 | tee local-evidence/r03/java-version.txt
+          node --version | tee local-evidence/r03/node-version.txt
+          python --version | tee local-evidence/r03/python-version.txt
+          chmod +x apps/server/mvnw
+          (cd apps/server && ./mvnw -B -ntp package -DskipTests "-Dbuild.commit=${GITHUB_SHA}") \
+            2>&1 | tee local-evidence/r03/server-build.txt
+          (cd apps/web && npm ci && npx playwright install --with-deps chromium) \
+            2>&1 | tee local-evidence/r03/browser-install.txt
+      - name: Real Keycloak browser login, me and logout
+        run: |
+          set -euo pipefail
+          python tools/prepare_r03_dev.py
+          set -a
+          source .env.r03
+          set +a
+          # The pinned Keycloak image runs as UID 1000. The import includes a
+          # disposable password and must remain readable only to that UID.
+          sudo chown 1000:1000 local-evidence/r03/realm.json
+          sudo chmod 0400 local-evidence/r03/realm.json
+          stat -c 'realm uid=%u gid=%g mode=%a' local-evidence/r03/realm.json \
+            > local-evidence/r03/import-permissions.txt
+          stat -c 'env uid=%u gid=%g mode=%a' .env.r03 \
+            >> local-evidence/r03/import-permissions.txt
+          project="test365alm-r03-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          export R03_COMPOSE_PROJECT="$project"
+          export TEST365ALM_SESSION_TIMEOUT=1m
+          if [ -n "$(docker ps -aq --filter "label=com.docker.compose.project=${project}")" ] || \
+             [ -n "$(docker network ls -q --filter "label=com.docker.compose.project=${project}")" ] || \
+             [ -n "$(docker volume ls -q --filter "label=com.docker.compose.project=${project}")" ]; then
+            echo 'R03 project already has Docker resources; refusing to reuse it' >&2
+            exit 2
+          fi
+          backend_pid=''
+          web_pid=''
+          cleanup() {
+            status=$?
+            # Capture diagnostics before removing only this CI run's project.
+            docker image inspect quay.io/keycloak/keycloak:26.4.4@sha256:c6459d5fae1b759f5d667ebdc6237ab3121379c3494e213898569014ede1846d \
+              --format 'keycloak image user={{.Config.User}}' \
+              > local-evidence/r03/image-user.txt 2>&1 || status=1
+            docker compose --env-file .env.r03 -f compose.r03.yaml -p "$project" ps -a \
+              > local-evidence/r03/containers-raw.txt 2>&1 || status=1
+            docker compose --env-file .env.r03 -f compose.r03.yaml -p "$project" logs --no-color postgres keycloak \
+              > local-evidence/r03/containers-raw.log 2>&1 || status=1
+            python tools/redact_r03_logs.py .env.r03 local-evidence/r03/containers-raw.txt local-evidence/r03/containers.txt || status=1
+            python tools/redact_r03_logs.py .env.r03 local-evidence/r03/containers-raw.log local-evidence/r03/containers.log || status=1
+            rm -f local-evidence/r03/containers-raw.txt local-evidence/r03/containers-raw.log
+            if [ -n "$web_pid" ]; then kill "$web_pid" 2>/dev/null || true; fi
+            if [ -n "$backend_pid" ]; then kill "$backend_pid" 2>/dev/null || true; fi
+            docker compose --env-file .env.r03 -f compose.r03.yaml -p "$project" down || status=1
+            exit "$status"
+          }
+          trap cleanup EXIT
+          docker compose --env-file .env.r03 -f compose.r03.yaml -p "$project" up -d postgres keycloak
+          for i in $(seq 1 90); do
+            container_id="$(docker compose --env-file .env.r03 -f compose.r03.yaml -p "$project" ps -q keycloak)"
+            if [ -z "$container_id" ] || [ "$(docker inspect --format '{{.State.Running}}' "$container_id")" != true ]; then
+              echo 'Keycloak container exited before discovery became available' >&2
+              exit 1
+            fi
+            if curl --silent --fail --max-time 2 \
+              http://127.0.0.1:18090/realms/test365alm/.well-known/openid-configuration >/dev/null; then break; fi
+            sleep 2
+          done
+          curl --silent --show-error --fail --max-time 3 \
+            http://127.0.0.1:18090/realms/test365alm/.well-known/openid-configuration \
+            | python -c 'import json,os,sys; d=json.load(sys.stdin); assert d["issuer"] == os.environ["TEST365ALM_OIDC_ISSUER"], "OIDC issuer mismatch"'
+          docker compose --env-file .env.r03 -f compose.r03.yaml -p "$project" exec -T keycloak \
+            sh -c 'test -r /opt/keycloak/data/import/realm.json'
+          java -jar apps/server/target/server-0.0.1-SNAPSHOT.jar \
+            > local-evidence/r03/backend.log 2>&1 & backend_pid=$!
+          for i in $(seq 1 60); do
+            kill -0 "$backend_pid"
+            if curl --silent --fail --max-time 2 http://127.0.0.1:8080/health/ready >/dev/null; then break; fi
+            sleep 2
+          done
+          curl --silent --fail --max-time 3 http://127.0.0.1:8080/health/ready >/dev/null
+          (cd apps/web && npm run dev -- --host 127.0.0.1) \
+            > local-evidence/r03/web.log 2>&1 & web_pid=$!
+          for i in $(seq 1 30); do
+            kill -0 "$web_pid"
+            if curl --silent --fail --max-time 2 http://127.0.0.1:5173/ >/dev/null; then break; fi
+            sleep 1
+          done
+          (cd apps/web && npm run test:e2e) 2>&1 | tee local-evidence/r03/e2e.log
+      - name: Require real browser report
+        if: always()
+        run: python tools/verify_r03_report.py local-evidence/r03/playwright-results.xml
+      - name: Upload R03 browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r03-oidc-browser-evidence
+          path: |
+            r03-checkout-sha.txt
+            local-evidence/r03/java-version.txt
+            local-evidence/r03/node-version.txt
+            local-evidence/r03/python-version.txt
+            local-evidence/r03/server-build.txt
+            local-evidence/r03/browser-install.txt
+            local-evidence/r03/e2e.log
+            local-evidence/r03/playwright-results.xml
+            local-evidence/r03/import-permissions.txt
+            local-evidence/r03/image-user.txt
+            local-evidence/r03/containers.txt
+            local-evidence/r03/containers.log
+          if-no-files-found: error

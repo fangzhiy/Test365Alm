@@ -1,0 +1,19 @@
+{
+  "slice": "R03-M03-001",
+  "description": "Browser uses a server-side session. No endpoint exposes OIDC tokens or project permissions.",
+  "routes": {
+    "GET /api/v1/me": {
+      "200": { "id": "UUID", "issuer": "string", "subject": "string", "displayName": "string" },
+      "401": { "code": "UNAUTHENTICATED" },
+      "403": { "code": "IDENTITY_DISABLED" }
+    },
+    "GET /api/v1/csrf": { "200": { "headerName": "string", "token": "string" } },
+    "POST /api/v1/auth/logout": {
+      "request": "CSRF header from GET /api/v1/csrf",
+      "200": { "status": "LOGGED_OUT" },
+      "403": { "code": "CSRF_REJECTED" }
+    }
+  },
+  "login": "/oauth2/authorization/test365alm",
+  "callback": "/login/oauth2/code/test365alm"
+}

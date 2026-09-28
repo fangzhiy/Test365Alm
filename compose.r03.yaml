@@ -1,0 +1,32 @@
+name: test365alm-r03
+services:
+  postgres:
+    labels:
+      test365alm.r03.run: ${R03_RUN_ID:-manual-unverified}
+    image: postgres:17.11@sha256:f4c66b820c6f974249089d3d16d86a3698eae11e8746eb6644b2271031e91232
+    environment:
+      POSTGRES_DB: ${R03_DB_NAME:?required}
+      POSTGRES_USER: ${R03_MIGRATION_USER:?required}
+      POSTGRES_PASSWORD: ${R03_MIGRATION_PASSWORD:?required}
+      POSTGRES_RUNTIME_PASSWORD: ${R03_RUNTIME_PASSWORD:?required}
+    ports:
+      - "127.0.0.1:${R03_POSTGRES_PORT:?required}:5432"
+    volumes:
+      - r03-postgres-data:/var/lib/postgresql/data
+      - ./tools/r03_init_db.sh:/docker-entrypoint-initdb.d/10-runtime-role.sh:ro
+  keycloak:
+    labels:
+      test365alm.r03.run: ${R03_RUN_ID:-manual-unverified}
+    image: quay.io/keycloak/keycloak:26.4.4@sha256:c6459d5fae1b759f5d667ebdc6237ab3121379c3494e213898569014ede1846d
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${R03_KEYCLOAK_ADMIN_USER:?required}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${R03_KEYCLOAK_ADMIN_PASSWORD:?required}
+      KC_HOSTNAME: http://127.0.0.1:${R03_KEYCLOAK_PORT:?required}
+      KC_HTTP_ENABLED: "true"
+    ports:
+      - "127.0.0.1:${R03_KEYCLOAK_PORT:?required}:8080"
+    volumes:
+      - ./local-evidence/r03/realm.json:/opt/keycloak/data/import/realm.json:ro
+volumes:
+  r03-postgres-data:
