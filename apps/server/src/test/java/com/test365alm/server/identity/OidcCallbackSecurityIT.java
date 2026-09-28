@@ -3,6 +3,7 @@ package com.test365alm.server.identity;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -19,6 +20,8 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -65,6 +68,8 @@ class OidcCallbackSecurityIT {
     private static final String CLIENT_ID = "test365alm-web";
     private static final String WEB_ORIGIN = "http://127.0.0.1:5173";
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(10);
+    private static final OffsetDateTime BASELINE_TIMESTAMP = OffsetDateTime.ofInstant(
+            Instant.parse("2026-01-01T00:00:00Z"), ZoneOffset.UTC);
     private static final LocalOidcProvider IDP = LocalOidcProvider.start();
 
     @Container
@@ -152,27 +157,45 @@ class OidcCallbackSecurityIT {
 
     @Test
     void failedCallbackDoesNotPoisonClientAndFreshLegalAuthorizationRecovers() throws Exception {
+        ClientFixture fixture = newClientFixture();
+        seedEnabledBaseline(Variant.WRONG_AUDIENCE);
         String invalidSubject = uniqueSubject("recovery-invalid");
         PrincipalSnapshot before = snapshot();
-        Flow rejected = runAuthorization(Variant.WRONG_AUDIENCE, invalidSubject);
-        assertUnauthenticated(rejected, before, invalidSubject);
+        Flow rejected = runAuthorization(Variant.WRONG_AUDIENCE, invalidSubject, fixture.client());
+        assertUnauthenticated(rejected, before, invalidSubject, false);
+        assertSame(fixture.client(), rejected.client);
+        assertSame(fixture.cookies(), rejected.client().cookieHandler().orElseThrow());
 
         String legalSubject = uniqueSubject("recovery-legal");
-        Flow recovered = runAuthorization(Variant.VALID, legalSubject);
+        Flow recovered = runAuthorization(Variant.VALID, legalSubject, fixture.client());
+        assertSame(fixture.client(), recovered.client);
+        assertSame(fixture.cookies(), recovered.client().cookieHandler().orElseThrow());
         assertEquals(200, get(recovered.client, "/api/v1/me").statusCode());
         assertTrue(snapshot().has(IDP.issuer(), legalSubject));
     }
 
     private void assertRejected(Variant variant) throws Exception {
-        String subject = uniqueSubject(variant.name().toLowerCase());
+        seedEnabledBaseline(variant);
         PrincipalSnapshot before = snapshot();
+        assertFalse(before.rows().isEmpty(), "invalid-token checks require a non-empty baseline");
+        String absentSubject = absentSubject(variant);
+        String existingSubject = existingSubject(variant);
+        assertFalse(before.has(IDP.issuer(), absentSubject));
+        assertTrue(before.enabled(targetIssuer(variant), existingSubject));
+        assertRejectedForSubject(variant, absentSubject, before, false);
+        assertRejectedForSubject(variant, existingSubject, before, true);
+    }
+
+    private void assertRejectedForSubject(Variant variant, String subject, PrincipalSnapshot before,
+            boolean subjectPresent) throws Exception {
         Flow flow = runAuthorization(variant, subject);
-        assertUnauthenticated(flow, before, subject);
+        assertUnauthenticated(flow, before, subject, subjectPresent);
         assertTrue(flow.scenario.protocolValid);
         assertEquals(1, flow.scenario.tokenRequests.get());
     }
 
-    private void assertUnauthenticated(Flow flow, PrincipalSnapshot before, String subject) throws Exception {
+    private void assertUnauthenticated(Flow flow, PrincipalSnapshot before, String subject,
+            boolean subjectPresent) throws Exception {
         assertEquals(302, flow.callback.statusCode());
         String location = flow.callback.headers().firstValue("location").orElse("");
         assertTrue(location.contains("login=failed"), "OIDC failure must use the configured failure redirect");
@@ -182,14 +205,15 @@ class OidcCallbackSecurityIT {
         assertTrue(me.body().contains("UNAUTHENTICATED"));
         PrincipalSnapshot after = snapshot();
         assertEquals(before, after, "an invalid token must not insert or update any principal");
-        assertFalse(after.has(IDP.issuer(), subject));
+        assertEquals(subjectPresent, after.has(targetIssuer(flow.scenario.variant), subject));
     }
 
     private Flow runAuthorization(Variant variant, String subject) throws Exception {
+        return runAuthorization(variant, subject, newClientFixture().client());
+    }
+
+    private Flow runAuthorization(Variant variant, String subject, HttpClient client) throws Exception {
         Scenario scenario = IDP.prepare(variant, subject);
-        CookieManager cookies = new CookieManager(null, CookiePolicy.ACCEPT_ALL);
-        HttpClient client = HttpClient.newBuilder().cookieHandler(cookies)
-                .followRedirects(HttpClient.Redirect.NEVER).connectTimeout(Duration.ofSeconds(5)).build();
 
         HttpResponse<String> start = get(client, "/oauth2/authorization/test365alm");
         assertEquals(302, start.statusCode());
@@ -219,6 +243,63 @@ class OidcCallbackSecurityIT {
                 HttpResponse.BodyHandlers.ofString());
         assertTrue(scenario.tokenRequests.get() == 1, "application must exchange the one-time authorization code");
         return new Flow(client, scenario, callbackResponse);
+    }
+
+    private ClientFixture newClientFixture() {
+        CookieManager cookies = new CookieManager(null, CookiePolicy.ACCEPT_ALL);
+        HttpClient client = HttpClient.newBuilder().cookieHandler(cookies)
+                .followRedirects(HttpClient.Redirect.NEVER).connectTimeout(Duration.ofSeconds(5)).build();
+        assertSame(cookies, client.cookieHandler().orElseThrow(), "fixture must retain its CookieManager");
+        return new ClientFixture(client, cookies);
+    }
+
+    private void seedEnabledBaseline(Variant variant) throws Exception {
+        String target = existingSubject(variant);
+        String sentinelA = sentinelSubject(variant, "a");
+        String sentinelB = sentinelSubject(variant, "b");
+        String targetIssuer = targetIssuer(variant);
+        try (var connection = java.sql.DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+                var statement = connection.prepareStatement("""
+                        INSERT INTO principal (id, issuer, subject, display_name, disabled_at, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, NULL, ?, ?)
+                        ON CONFLICT (issuer, subject) DO NOTHING
+                        """)) {
+            insertBaseline(statement, targetIssuer, target, "FIX02 existing target");
+            insertBaseline(statement, IDP.issuer(), sentinelA, "FIX02 baseline sentinel A");
+            insertBaseline(statement, IDP.issuer(), sentinelB, "FIX02 baseline sentinel B");
+        }
+    }
+
+    private void insertBaseline(java.sql.PreparedStatement statement, String issuer, String subject, String displayName)
+            throws java.sql.SQLException {
+        statement.setObject(1, baselineId(subject));
+        statement.setString(2, issuer);
+        statement.setString(3, subject);
+        statement.setString(4, displayName);
+        statement.setObject(5, BASELINE_TIMESTAMP);
+        statement.setObject(6, BASELINE_TIMESTAMP);
+        statement.executeUpdate();
+    }
+
+    private static UUID baselineId(String subject) {
+        return UUID.nameUUIDFromBytes(("r03-fix02-baseline:" + subject).getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static String absentSubject(Variant variant) {
+        return "r03-fix02-" + variant.name().toLowerCase() + "-absent-target";
+    }
+
+    private static String existingSubject(Variant variant) {
+        return "r03-fix02-" + variant.name().toLowerCase() + "-existing-target";
+    }
+
+    private static String sentinelSubject(Variant variant, String suffix) {
+        return "r03-fix02-" + variant.name().toLowerCase() + "-baseline-sentinel-" + suffix;
+    }
+
+    private static String targetIssuer(Variant variant) {
+        return variant == Variant.WRONG_ISSUER ? "https://example.invalid/r03-wrong-issuer" : IDP.issuer();
     }
 
     private PrincipalSnapshot snapshot() throws Exception {
@@ -267,6 +348,8 @@ class OidcCallbackSecurityIT {
         return values;
     }
 
+    private record ClientFixture(HttpClient client, CookieManager cookies) { }
+
     private record Flow(HttpClient client, Scenario scenario, HttpResponse<String> callback) { }
 
     private record PrincipalSnapshot(List<Map<String, String>> rows) {
@@ -274,6 +357,13 @@ class OidcCallbackSecurityIT {
             return rows.stream().anyMatch(row -> issuer.equals(row.get("issuer"))
                     && subject.equals(row.get("subject")));
         }
+
+        boolean enabled(String issuer, String subject) {
+            return rows.stream().anyMatch(row -> issuer.equals(row.get("issuer"))
+                    && subject.equals(row.get("subject"))
+                    && row.get("disabled_at") == null);
+        }
+
     }
 
     private enum Variant { VALID, WRONG_SIGNATURE, WRONG_ISSUER, WRONG_AUDIENCE, EXPIRED, WRONG_NONCE }
