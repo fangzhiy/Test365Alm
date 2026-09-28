@@ -1,8 +1,15 @@
 # Test365Alm 开发状态
 
-最后更新：2026-09-24
-当前轮次：`R03-M03-001-FIX02`
-状态：`AUTH_SLICE_IMPLEMENTED / FIX02_HTTP_EVIDENCE_GREEN`
+最后更新：2026-09-28
+当前轮次：`R03-M03-002`
+状态：`A_PASS / B_IN_PROGRESS`
+
+## R03-M03-002 当前状态
+
+- A 段已在 `feat/r03-m03-001` / PR #2 的依赖分支中完成，起始 `6489932ebd93542f80a036709c58e3fdab06082e`，修正代码提交 `75b9d9304ceff2c38c40d3c9d9be96957db88145`。
+- A 的 Push run [36373203011](https://github.com/fangzhiy/Test365Alm/actions/runs/36373203011) 和 PR run [36373206437](https://github.com/fangzhiy/Test365Alm/actions/runs/36373206437) 均六 job success；PR #2 仍 Open、未合并。A 的详细记录见 [`R03-M03-001-FIX02-CLOSE.md`](progress/runs/R03-M03-001-FIX02-CLOSE.md)。
+- A 只修正 OIDC HTTP 回归证据：同一 HttpClient/CookieManager 失败后合法重试复用，以及每个非法变体的两个哨兵、existing/absent 主体和完整 principal 快照。A 未改写 FIX02 历史。
+- B 段现在开始于新分支 `feat/r03-m03-002`，以 A 已验证 head 为基准，目标是项目/成员/固定角色/撤权/数据隔离最小闭环；不把权限功能追加到 PR #2。
 
 ## R03-M03-001-FIX02 当前状态
 
