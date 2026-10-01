@@ -25,13 +25,14 @@ export default function RequirementsPanel({ projectId, access, resetSignal = 0 }
   const [notice, setNotice] = useState('')
   const [conflict, setConflict] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [detailLoading, setDetailLoading] = useState(false)
   const roundRef = useRef(0)
   const controllerRef = useRef<AbortController | null>(null)
   const timeoutRef = useRef<number | null>(null)
   const lastResetRef = useRef(resetSignal)
 
   const cancel = () => { controllerRef.current?.abort(); controllerRef.current = null; if (timeoutRef.current !== null) { window.clearTimeout(timeoutRef.current); timeoutRef.current = null } }
-  const resetData = () => { setState('idle'); setItems([]); setSelected(null); setRevisions([]); setSelectedRevision(null); setTitle(''); setBody(''); setCreateTitle(''); setCreateBody(''); setDraft(null); setNotice(''); setConflict(false); setSaving(false) }
+  const resetData = () => { setState('idle'); setItems([]); setSelected(null); setRevisions([]); setSelectedRevision(null); setTitle(''); setBody(''); setCreateTitle(''); setCreateBody(''); setDraft(null); setNotice(''); setConflict(false); setSaving(false); setDetailLoading(false) }
 
   useEffect(() => () => { roundRef.current += 1; cancel() }, [])
   useEffect(() => {
@@ -50,7 +51,7 @@ export default function RequirementsPanel({ projectId, access, resetSignal = 0 }
     const controller = new AbortController()
     controllerRef.current = controller
     timeoutRef.current = window.setTimeout(() => controller.abort(), 5000)
-    setState('loading'); setNotice(''); setConflict(false); setItems([]); setSelected(null); setRevisions([]); setSelectedRevision(null); setTitle(''); setBody(''); setDraft(null)
+    setState('loading'); setNotice(''); setConflict(false); setDetailLoading(false); setItems([]); setSelected(null); setRevisions([]); setSelectedRevision(null); setTitle(''); setBody(''); setDraft(null)
     try {
       const page = await requirementsApi.list(nextProjectId, { signal: controller.signal })
       if (roundRef.current !== round) return
@@ -70,12 +71,13 @@ export default function RequirementsPanel({ projectId, access, resetSignal = 0 }
     const round = ++roundRef.current
     cancel()
     const controller = new AbortController(); controllerRef.current = controller; timeoutRef.current = window.setTimeout(() => controller.abort(), 5000)
+    setDetailLoading(true)
     setNotice(''); setConflict(false); setSelected(requirement); setRevisions([]); setSelectedRevision(null); setTitle(requirement.title); setBody(requirement.body); setDraft(null)
     try {
       const [detail, history] = await Promise.all([requirementsApi.get(projectId, requirement.id, { signal: controller.signal }), requirementsApi.revisions(projectId, requirement.id, { signal: controller.signal })])
       if (roundRef.current !== round) return
       setSelected(detail); setItems((current) => current.map((item) => item.id === detail.id ? detail : item)); setTitle(detail.title); setBody(detail.body); setRevisions(history)
-    } catch (error) { if (roundRef.current === round && (error as { name?: string }).name !== 'AbortError') setNotice(messageFor(error)); else if (roundRef.current === round && (error as { name?: string }).name === 'AbortError') { setState('ready'); setNotice('需求请求超时，请稍后重试') } } finally { if (roundRef.current === round) { controllerRef.current = null; if (timeoutRef.current !== null) { window.clearTimeout(timeoutRef.current); timeoutRef.current = null } } }
+    } catch (error) { if (roundRef.current === round && (error as { name?: string }).name !== 'AbortError') setNotice(messageFor(error)); else if (roundRef.current === round && (error as { name?: string }).name === 'AbortError') { setState('ready'); setNotice('需求请求超时，请稍后重试') } } finally { if (roundRef.current === round) { controllerRef.current = null; setDetailLoading(false); if (timeoutRef.current !== null) { window.clearTimeout(timeoutRef.current); timeoutRef.current = null } } }
   }
 
   const create = async (event: FormEvent) => {
@@ -105,7 +107,7 @@ export default function RequirementsPanel({ projectId, access, resetSignal = 0 }
     {creator && <form className="requirement-create-form" onSubmit={(event) => void create(event)}><strong>新建需求</strong><label>标题<input aria-label="需求标题" value={createTitle} onChange={(event) => setCreateTitle(event.target.value)} maxLength={500} required /></label><label>正文<textarea aria-label="需求正文" value={createBody} onChange={(event) => setCreateBody(event.target.value)} rows={3} /></label><button type="submit" className="primary-button" disabled={saving}>{saving ? '保存中…' : '创建需求'}</button></form>}
     {state !== 'loading' && items.length === 0 && <p className="access-empty" role="status">当前项目还没有需求。</p>}
     {items.length > 0 && <div className="requirements-layout"><div className="requirement-list" aria-label="需求列表"><div className="member-list-heading"><strong>需求列表</strong><span>{items.length} 条</span></div>{items.map((item) => <button type="button" className={`requirement-row${selected?.id === item.id ? ' is-selected' : ''}`} key={item.id} onClick={() => void selectRequirement(item)}><span><strong>{item.displayNumber}</strong><span>{item.title}</span></span><small>修订 {item.revisionNumber}</small></button>)}</div>
-      {selected && <div className="requirement-detail" aria-label="需求详情"><div className="requirement-detail-heading"><div><span className="panel-label">需求详情 · {selected.displayNumber}</span><h3>{selected.title}</h3><p>修订 {selected.revisionNumber} · 版本 {selected.rowVersion} · 固定优先级 {selected.priority}</p></div>{draft && <span className="requirements-draft-badge">草稿已保留</span>}</div><form onSubmit={(event) => void save(event)}>{writable ? <><label>标题<input aria-label="编辑需求标题" value={title} onChange={(event) => setTitle(event.target.value)} maxLength={500} required /></label><label>正文<textarea aria-label="编辑需求正文" value={body} onChange={(event) => setBody(event.target.value)} rows={6} /></label><button className="primary-button" type="submit" disabled={saving}>{saving ? '保存中…' : '保存需求'}</button></> : <><p className="requirement-body">{selected.body || '（无正文）'}</p><p className="access-empty">只读用户可以查看需求和历史，但不能创建或保存。</p></>}</form><section className="requirement-history" aria-label="修订历史"><div className="member-list-heading"><strong>不可变修订历史</strong><span>{revisions.length} 个修订</span></div>{revisions.length === 0 ? <p className="access-empty">暂无修订历史。</p> : <div className="revision-list">{revisions.map((revision) => <button type="button" className="revision-row" key={revision.id} onClick={() => setSelectedRevision(revision)}><span>修订 {revision.revisionNumber}</span><small>{revision.createdBy} · {revision.createdAt}</small></button>)}</div>}{selectedRevision && <article className="revision-readonly"><strong>修订 {selectedRevision.revisionNumber}（只读）</strong><h4>{selectedRevision.title}</h4><p>{selectedRevision.body || '（无正文）'}</p><small>{selectedRevision.createdBy} · {selectedRevision.createdAt}</small></article>}</section></div>}
+      {selected && <div className="requirement-detail" aria-label="需求详情"><div className="requirement-detail-heading"><div><span className="panel-label">需求详情 · {selected.displayNumber}</span><h3>{selected.title}</h3><p>修订 {selected.revisionNumber} · 版本 {selected.rowVersion} · 固定优先级 {selected.priority}</p></div>{draft && <span className="requirements-draft-badge">草稿已保留</span>}</div><form onSubmit={(event) => void save(event)}>{writable ? <><label>标题<input aria-label="编辑需求标题" value={title} onChange={(event) => setTitle(event.target.value)} maxLength={500} required disabled={detailLoading || saving} /></label><label>正文<textarea aria-label="编辑需求正文" value={body} onChange={(event) => setBody(event.target.value)} rows={6} disabled={detailLoading || saving} /></label><button className="primary-button" type="submit" disabled={saving || detailLoading}>{saving ? '保存中…' : '保存需求'}</button></> : <><p className="requirement-body">{selected.body || '（无正文）'}</p><p className="access-empty">只读用户可以查看需求和历史，但不能创建或保存。</p></>}</form><section className="requirement-history" aria-label="修订历史"><div className="member-list-heading"><strong>不可变修订历史</strong><span>{revisions.length} 个修订</span></div>{revisions.length === 0 ? <p className="access-empty">暂无修订历史。</p> : <div className="revision-list">{revisions.map((revision) => <button type="button" className="revision-row" key={revision.id} onClick={() => setSelectedRevision(revision)}><span>修订 {revision.revisionNumber}</span><small>{revision.createdBy} · {revision.createdAt}</small></button>)}</div>}{selectedRevision && <article className="revision-readonly"><strong>修订 {selectedRevision.revisionNumber}（只读）</strong><h4>{selectedRevision.title}</h4><p>{selectedRevision.body || '（无正文）'}</p><small>{selectedRevision.createdBy} · {selectedRevision.createdAt}</small></article>}</section></div>}
     </div>}
   </section>
 }

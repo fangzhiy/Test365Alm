@@ -441,6 +441,7 @@ test('real Keycloak UI requirement flow creates edits and keeps viewer read-only
 
     await diagnostics.step(page, 'requirement edit', async () => {
       await requirementsPanel.locator('.requirement-row').first().click()
+      await expect(requirementsPanel.getByLabel('编辑需求标题')).toHaveValue(requirementTitle)
       await requirementsPanel.getByLabel('编辑需求标题').fill(updatedRequirementTitle)
       await requirementsPanel.getByLabel('编辑需求正文').fill('The edited body is revision two.')
       await requirementsPanel.getByRole('button', { name: '保存需求' }).click()
