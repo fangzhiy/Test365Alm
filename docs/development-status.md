@@ -1,8 +1,18 @@
 # Test365Alm 开发状态
 
-最后更新：2026-09-28
-当前轮次：`R03-M03-002`
-状态：`A_PASS / B_SLICE_DELIVERED_WITH_LIMITS`
+最后更新：2026-10-01
+当前轮次：`R03-M03-002-FIX01`
+状态：`DELIVERED / CODE_CI_PASS`
+
+## R03-M03-002-FIX01 当前状态
+
+- 本轮继续使用 `feat/r03-m03-002` / PR #3（base `feat/r03-m03-001`），审核基准为 `42670b869d399d04c0a6e4e7ad5eab83ef5fdbaa`。开始前工作区位于该基准；远端 fetch 因本机 Git Schannel 凭据错误 `SEC_E_NO_CREDENTIALS` 未能完成，未执行回退或强制覆盖。PR #3 仍未合并。
+- 代码最终提交为 `19009f2`（完整 SHA 及远端核对见本轮记录）。修正内容：V4 迁移收紧项目/审计 RLS；TENANT_ADMIN 只能看到显式加入的项目；租户成员撤权立即失去项目访问；PROJECT_ADMIN 仍可在其租户内读取成员候选；前端只读、请求轮次、超时、卸载和退出清理；CI 增加真实 Keycloak 双用户项目访问报告门禁和失败摘要。
+- 本机前端 28 个测试、后端 Surefire 17 个测试、Python 工具 44 个测试均已通过；前端 lint/build 通过。真实 PostgreSQL/Testcontainers 与 Keycloak 双用户浏览器只能依赖 Ubuntu CI，本机 Docker named pipe/JNA 权限仍阻塞，不能把本地跳过写成 PASS。
+- `19009f2` 的 Push run [36811944675](https://github.com/fangzhiy/Test365Alm/actions/runs/36811944675) 与 PR run [36811948812](https://github.com/fangzhiy/Test365Alm/actions/runs/36811948812) 均六个 job success；Push checkout 为分支 head，PR merge checkout 为 `fae29d49c0b11ea8d1abe97dc3fb6b1471238097`。文档交付提交会再次触发 CI，不把文档提交 SHA 冒充代码测试 SHA。
+- 本轮不把整个 M03、H00-H12 或 P0 标记完成；未覆盖的需求、用例、缺陷、MFA、集群会话、生产 IdP/部署和旧 ALM 兼容继续保留。
+
+详细执行证据见 [`R03-M03-002-FIX01.md`](progress/runs/R03-M03-002-FIX01.md)。
 
 ## R03-M03-002 当前状态
 
