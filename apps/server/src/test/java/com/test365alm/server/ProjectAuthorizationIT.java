@@ -210,6 +210,8 @@ class ProjectAuthorizationIT {
         ownerUpdate("UPDATE project SET state = 'ARCHIVED' WHERE id = ?", f.project());
         assertThrows(ProjectAccessException.class,
                 () -> projects.updateProject(f.admin(), f.project(), "Project must be active", 0L));
+        assertThrows(ProjectAccessException.class, () -> projects.getProject(f.admin(), f.project()));
+        assertThrows(ProjectAccessException.class, () -> projects.listMembers(f.admin(), f.project()));
     }
 
     @Test
@@ -320,23 +322,23 @@ class ProjectAuthorizationIT {
             TransactionTemplate tx = new TransactionTemplate(new DataSourceTransactionManager(pool));
             ExecutorService workers = Executors.newFixedThreadPool(2);
             try {
-                Callable<Throwable> attempt = () -> {
+                Callable<Exception> attempt = () -> {
                     try {
                         tx.execute(status -> {
                             isolated.putMember(a.admin(), a.project(), a.viewer(), List.of("PROJECT_MEMBER"), 1L, false);
                             return null;
                         });
                         return null;
-                    } catch (Throwable failure) {
+                    } catch (Exception failure) {
                         return failure;
                     }
                 };
-                Future<Throwable> first = workers.submit(attempt);
-                Future<Throwable> second = workers.submit(attempt);
-                Throwable left = first.get();
-                Throwable right = second.get();
+                Future<Exception> first = workers.submit(attempt);
+                Future<Exception> second = workers.submit(attempt);
+                Exception left = first.get();
+                Exception right = second.get();
                 assertTrue((left == null) ^ (right == null), "one stale writer must be rejected");
-                Throwable rejected = left == null ? right : left;
+                Exception rejected = left == null ? right : left;
                 assertTrue(rejected instanceof ProjectAccessException,
                         "unexpected concurrency failure: " + rejected);
             } finally {

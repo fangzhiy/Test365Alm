@@ -10,7 +10,10 @@ const runId = process.env.R03_RUN_ID || ''
 export function isOwnedCiRun(): boolean {
   return Boolean(process.env.GITHUB_RUN_ID && process.env.GITHUB_RUN_ATTEMPT
     && project === `test365alm-r03-${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}`
-    && /^[0-9a-f]{32}$/.test(runId))
+    // The workflow derives this non-reusable identity from the immutable run
+    // id/attempt and a nanosecond suffix. Keep the shape strict so arbitrary
+    // parent-process values can never opt a test into destructive operations.
+    && /^r03-[0-9]+-[0-9]+-[0-9]+$/.test(runId))
 }
 
 function docker(args: string[]): string {

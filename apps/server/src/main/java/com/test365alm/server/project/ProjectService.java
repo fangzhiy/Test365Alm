@@ -131,10 +131,13 @@ public class ProjectService {
                 SELECT DISTINCT p.id, p.tenant_id, p.domain_id, p.code, p.name, p.state,
                        p.schema_version, p.row_version
                 FROM project p
+                JOIN tenant t ON t.id = p.tenant_id
+                JOIN domain d ON d.tenant_id = p.tenant_id AND d.id = p.domain_id
                 JOIN project_member pm ON pm.tenant_id = p.tenant_id AND pm.project_id = p.id
                     AND pm.principal_id = ? AND pm.revoked_at IS NULL
                     AND (pm.valid_until IS NULL OR pm.valid_until > CURRENT_TIMESTAMP)
-                WHERE (? IS NULL OR p.tenant_id = ?)
+                WHERE p.state = 'ACTIVE' AND d.status = 'ACTIVE' AND t.status = 'ACTIVE'
+                  AND (? IS NULL OR p.tenant_id = ?)
                 ORDER BY p.code
                 """;
         return jdbc.query(sql, ProjectService::project, actor, tenantId, tenantId);
@@ -329,7 +332,7 @@ public class ProjectService {
     }
 
     private void requireTenantAdmin(UUID actor, UUID tenantId) {
-        setContext(tenantId, actor);
+        requireTenantMember(actor, tenantId);
         if (!hasRole(actor, tenantId, null, TENANT_ADMINS, false)) throw ProjectAccessException.forbidden();
     }
 
@@ -340,11 +343,13 @@ public class ProjectService {
                 WHERE tm.tenant_id = ? AND tm.principal_id = ? AND p.disabled_at IS NULL
                   AND revoked_at IS NULL AND (valid_until IS NULL OR valid_until > CURRENT_TIMESTAMP)
                 """, Integer.class, tenantId, actor) == 0) throw ProjectAccessException.forbidden();
+        requireTenantActive(tenantId);
     }
 
     private void requireProjectAdmin(UUID actor, UUID tenantId, UUID projectId) {
         requireTenantMember(actor, tenantId);
         if (!hasRole(actor, tenantId, projectId, PROJECT_ADMINS, true)) throw ProjectAccessException.forbidden();
+        requireProjectActive(tenantId, projectId);
     }
 
     private void recheckProjectAdminAfterLock(UUID actor, ProjectView project) {
@@ -376,8 +381,12 @@ public class ProjectService {
     }
 
     private void requireProjectActive(ProjectView project) {
+        requireProjectActive(project.tenantId(), project.id());
+    }
+
+    private void requireProjectActive(UUID tenantId, UUID projectId) {
         String state = jdbc.queryForObject("SELECT state FROM project WHERE tenant_id = ? AND id = ?",
-                String.class, project.tenantId(), project.id());
+                String.class, tenantId, projectId);
         if (!"ACTIVE".equals(state)) {
             throw ProjectAccessException.conflict("PROJECT_NOT_ACTIVE", "Project is not active");
         }
@@ -387,6 +396,7 @@ public class ProjectService {
         requireTenantMember(actor, tenantId);
         if (!hasRole(actor, tenantId, projectId, PROJECT_ADMINS, true)
                 && !hasRole(actor, tenantId, projectId, PROJECT_ROLES, true)) throw ProjectAccessException.forbidden();
+        requireProjectActive(tenantId, projectId);
     }
 
     private boolean hasRole(UUID actor, UUID tenantId, UUID projectId, Set<String> roles, boolean project) {
