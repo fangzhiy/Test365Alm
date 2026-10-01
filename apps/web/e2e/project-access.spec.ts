@@ -115,7 +115,7 @@ test('real Keycloak UI project flow shows scoped viewer controls and clears revo
     const projectCode = `R03-UI-${Date.now()}`
 
     await page.getByRole('button', { name: '加载访问范围' }).click()
-    await page.getByLabel('租户').selectOption(tenantId)
+    await page.getByRole('region', { name: '租户、项目与成员' }).getByRole('combobox').first().selectOption(tenantId)
     await expect(page.getByLabel('项目域')).toBeVisible()
     await page.getByLabel('项目代码').fill(projectCode)
     await page.getByLabel('显示名称').fill('R03 UI project')
@@ -166,7 +166,7 @@ test('real Keycloak UI project flow shows scoped viewer controls and clears revo
     // Select the tenant returned by the isolated seed explicitly.  A user may
     // belong to more than one tenant and the first list entry is not a stable
     // project-access scope for this scenario.
-    await viewerPage.getByLabel('租户').selectOption(tenantId)
+    await viewerPage.getByRole('region', { name: '租户、项目与成员' }).getByRole('combobox').first().selectOption(tenantId)
     await expect(viewerPage.getByLabel('项目')).toContainText(`R03 concurrent update`)
     await expect(viewerPage.getByLabel('项目')).not.toContainText('R03 UI private project')
     await expect(viewerPage.getByRole('region', { name: '项目详情' })).toContainText('R03 concurrent update')
@@ -181,7 +181,7 @@ test('real Keycloak UI project flow shows scoped viewer controls and clears revo
     await expect(page.getByText('R03 Viewer 已撤销项目访问')).toBeVisible()
 
     await viewerPage.getByRole('button', { name: '加载访问范围' }).click()
-    await viewerPage.getByLabel('租户').selectOption(tenantId)
+    await viewerPage.getByRole('region', { name: '租户、项目与成员' }).getByRole('combobox').first().selectOption(tenantId)
     await expect(viewerPage.getByLabel('项目')).toHaveValue('')
     await expect(viewerPage.getByRole('region', { name: '项目详情' })).not.toBeVisible()
     await viewerPage.getByRole('button', { name: '退出登录' }).click()
