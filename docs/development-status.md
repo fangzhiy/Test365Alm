@@ -1,5 +1,12 @@
 # Test365Alm 开发状态
 
+## R03-M03-002-FIX02 当前状态
+
+- 本轮从 `feat/r03-m03-002` 的 `0a03c357478574c91526e60adf3b76b61fd87abe` 继续，PR #3 仍以 `feat/r03-m03-001` 为 base；未合并、未部署、未修改默认分支或保护规则。Git fetch 在本机因 Windows Git Schannel `SEC_E_NO_CREDENTIALS` 未完成，远端 PR/分支信息通过 GitHub API 和非强制 push 核对。
+- 已实现并待远端 CI 验证（代码提交 `3af2cac`）：V5 项目访问/RLS 边界迁移、成员 `authorizationVersion` 前置条件、有效最后管理员判断、前后角色/版本审计字段、受限 runtime HTTP 项目访问与未 bootstrap 拒绝测试、真实页面项目授权/撤权流程、R03 Compose 资源 manifest 归属清理。
+- 本机已验证：Java/Maven 单元测试 17 个通过；前端 Vitest 31 个通过、lint/build 通过；Python 工具测试 49 个通过；Playwright 已发现 7 个真实 Keycloak 用例。Windows 本机 Docker/Testcontainers/Keycloak 浏览器执行仍因 Docker/JNA 条件未运行，不能写成真实集成通过。
+- 当前轮次的详细证据、H00-H12 逐项口径和剩余限制见 [`R03-M03-002-FIX02.md`](progress/runs/R03-M03-002-FIX02.md)。本状态页会在代码提交和 CI 结果确定后补充实际 SHA/链接，但不把本地或文档检查冒充远端验收。
+
 最后更新：2026-10-01
 当前轮次：`R03-M03-002-FIX01`
 状态：`DELIVERED / CODE_CI_PASS`
