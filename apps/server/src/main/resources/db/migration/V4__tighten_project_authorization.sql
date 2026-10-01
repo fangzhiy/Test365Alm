@@ -176,7 +176,17 @@ CREATE POLICY project_member_scope ON project_member USING (
 DROP POLICY audit_event_scope ON audit_event;
 CREATE POLICY audit_event_scope ON audit_event USING (
     app_has_active_tenant_member(tenant_id, NULLIF(current_setting('test365alm.principal_id', true), '')::UUID)
+    AND (
+        project_id IS NULL
+        OR app_has_active_project_member(tenant_id, project_id,
+                NULLIF(current_setting('test365alm.principal_id', true), '')::UUID)
+    )
 ) WITH CHECK (
     tenant_id::TEXT = NULLIF(current_setting('test365alm.tenant_id', true), '')
     AND app_has_active_tenant_member(tenant_id, NULLIF(current_setting('test365alm.principal_id', true), '')::UUID)
+    AND (
+        project_id IS NULL
+        OR app_has_active_project_member(tenant_id, project_id,
+                NULLIF(current_setting('test365alm.principal_id', true), '')::UUID)
+    )
 );

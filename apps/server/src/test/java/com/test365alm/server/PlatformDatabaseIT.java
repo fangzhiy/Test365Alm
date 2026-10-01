@@ -257,7 +257,7 @@ class PlatformDatabaseIT {
     }
 
     @Test
-    void tenantAdminOnlySeesProjectsWhereTheyAreExplicitlyJoined() {
+    void tenantAdminOnlySeesProjectsWhereTheyAreExplicitlyJoined() throws Exception {
         UUID tenantAdmin = principals.upsertVerified("https://project-fix.example",
                 "tenant-admin-" + UUID.randomUUID(), "Tenant Admin").id();
         UUID otherAdmin = principals.upsertVerified("https://project-fix.example",
@@ -272,6 +272,18 @@ class PlatformDatabaseIT {
         assertEquals(java.util.List.of(joined.id()), projects.listProjects(tenantAdmin, tenant.id()).stream()
                 .map(ProjectService.ProjectView::id).toList());
         assertThrows(ProjectAccessException.class, () -> projects.getProject(tenantAdmin, unjoined.id()));
+
+        jdbcTemplate.update("INSERT INTO audit_event (tenant_id, project_id, actor_principal_id, action, object_type, object_id) "
+                + "VALUES (?, ?, ?, 'test.unjoined.audit', 'project', ?)",
+                tenant.id(), unjoined.id(), otherAdmin, unjoined.id());
+        try (var connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), "test365alm_runtime", "r03_isolated_test_role_only")) {
+            connection.setAutoCommit(false);
+            setPrincipal(connection, tenantAdmin);
+            setTenant(connection, tenant.id());
+            assertEquals(0, countAuditProject(connection, unjoined.id()));
+            connection.commit();
+        }
     }
 
     @Test
@@ -400,6 +412,10 @@ class PlatformDatabaseIT {
 
     private static int countProject(java.sql.Connection connection, UUID projectId) throws SQLException {
         return countRows(connection, "SELECT COUNT(*) FROM project WHERE id = ?", projectId);
+    }
+
+    private static int countAuditProject(java.sql.Connection connection, UUID projectId) throws SQLException {
+        return countRows(connection, "SELECT COUNT(*) FROM audit_event WHERE project_id = ?", projectId);
     }
 
     private static int countRows(java.sql.Connection connection, String sql, Object... parameters) throws SQLException {
