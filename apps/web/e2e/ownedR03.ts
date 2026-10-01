@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process'
+import { randomUUID } from 'node:crypto'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -57,4 +58,47 @@ export function setPrincipalDisabled(id: string, disabled: boolean): void {
   const result = compose(['exec', '-T', 'postgres', 'psql', '-X', '-v', 'ON_ERROR_STOP=1',
     '-U', user, '-d', db, '-At', '-c', `WITH changed AS (UPDATE principal SET disabled_at = ${value} WHERE id = '${id}' RETURNING id) SELECT id FROM changed;`])
   if (result !== id) throw new Error('Expected exactly one disposable principal to change')
+}
+
+/**
+ * Seed only the disposable tenant boundary needed by the dual-user project
+ * access scenario. The migration account is used deliberately: the product
+ * slice has no tenant/domain bootstrap HTTP endpoint yet, and this helper is
+ * reachable only from a CI-owned Compose project with a matching run label.
+ */
+export function seedProjectAccessScope(adminId: string, viewerId: string): { tenantId: string, domainId: string } {
+  if (!isOwnedCiRun()) throw new Error('Only this CI run may seed its R03 project access scope')
+  for (const id of [adminId, viewerId]) {
+    if (!/^[0-9a-f-]{36}$/.test(id)) throw new Error('Invalid disposable principal ID')
+  }
+  ownedContainer('postgres')
+  const db = process.env.R03_DB_NAME || ''
+  const user = process.env.R03_MIGRATION_USER || ''
+  if (!/^[a-z][a-z0-9_]*$/.test(db) || !/^[a-z][a-z0-9_]*$/.test(user)) {
+    throw new Error('Invalid disposable database identity')
+  }
+  const tenantId = randomUUID()
+  const domainId = randomUUID()
+  const suffix = tenantId.replaceAll('-', '')
+  const sql = `WITH tenant_row AS (
+      INSERT INTO tenant (id, code, name)
+      VALUES ('${tenantId}', 'e2e-${suffix}', 'R03 E2E tenant') RETURNING id
+    ), domain_row AS (
+      INSERT INTO domain (id, tenant_id, name)
+      SELECT '${domainId}', id, 'R03 E2E domain' FROM tenant_row RETURNING id
+    ), member_rows AS (
+      INSERT INTO tenant_member (tenant_id, principal_id, roles)
+      SELECT tenant_row.id, members.principal_id, members.roles
+      FROM tenant_row CROSS JOIN (VALUES
+        ('${adminId}'::uuid, ARRAY['TENANT_ADMIN']::text[]),
+        ('${viewerId}'::uuid, ARRAY['MEMBER']::text[])
+      ) AS members(principal_id, roles)
+      RETURNING tenant_id
+    )
+    SELECT '${tenantId}:${domainId}' FROM tenant_row, domain_row
+    WHERE (SELECT COUNT(*) FROM member_rows) = 2`
+  const result = compose(['exec', '-T', 'postgres', 'psql', '-X', '-v', 'ON_ERROR_STOP=1',
+    '-U', user, '-d', db, '-At', '-c', sql])
+  if (result !== `${tenantId}:${domainId}`) throw new Error(`Unexpected project access seed output: ${result}`)
+  return { tenantId, domainId }
 }

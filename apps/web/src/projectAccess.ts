@@ -38,6 +38,7 @@ export type ProjectAccess = {
 
 export type AccessError = { code: string; message: string }
 export type CreateProjectInput = { tenantId: string; domainId: string; code: string; name: string }
+export type AccessRequestOptions = { signal?: AbortSignal }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 const isString = (value: unknown): value is string => typeof value === 'string' && value.length > 0
@@ -55,8 +56,8 @@ const idempotencyKey = () => typeof crypto !== 'undefined' && typeof crypto.rand
 
 type CsrfResponse = { headerName: string; token: string }
 
-const csrfToken = async (): Promise<CsrfResponse> => {
-  const response = await fetch('/api/v1/csrf', { credentials: 'same-origin' })
+const csrfToken = async (signal?: AbortSignal): Promise<CsrfResponse> => {
+  const response = await fetch('/api/v1/csrf', { credentials: 'same-origin', signal })
   if (!response.ok) throw { code: 'CSRF_UNAVAILABLE', message: '无法取得写操作所需的安全令牌' } satisfies AccessError
   const body: unknown = await response.json()
   if (!isRecord(body) || !isString(body.headerName) || !isString(body.token)) {
@@ -65,14 +66,15 @@ const csrfToken = async (): Promise<CsrfResponse> => {
   return { headerName: body.headerName, token: body.token }
 }
 
-const requestJson = async (input: RequestInfo | URL, init?: RequestInit): Promise<unknown> => {
+const requestJson = async (input: RequestInfo | URL, init?: RequestInit, options?: AccessRequestOptions): Promise<unknown> => {
   const method = (init?.method ?? 'GET').toUpperCase()
   const headers = new Headers(init?.headers)
+  const signal = options?.signal ?? init?.signal ?? undefined
   if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
-    const csrf = await csrfToken()
+    const csrf = await csrfToken(signal)
     headers.set(csrf.headerName, csrf.token)
   }
-  const response = await fetch(input, { credentials: 'same-origin', ...init, headers })
+  const response = await fetch(input, { credentials: 'same-origin', ...init, headers, signal })
   if (!response.ok) throw await parseError(response)
   try { return await response.json() } catch { throw { code: 'INVALID_JSON', message: '服务返回了无效 JSON' } satisfies AccessError }
 }
@@ -112,28 +114,28 @@ const parseList = <T>(body: unknown, parser: (value: unknown) => T | null): T[] 
 }
 
 export const accessApi = {
-  async listTenants(): Promise<Tenant[]> { return parseList(await requestJson('/api/v1/tenants'), parseTenant) },
-  async createProject(input: CreateProjectInput): Promise<Project> {
-    const body = await requestJson('/api/v1/projects', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey() }, body: JSON.stringify(input) })
+  async listTenants(options?: AccessRequestOptions): Promise<Tenant[]> { return parseList(await requestJson('/api/v1/tenants', undefined, options), parseTenant) },
+  async createProject(input: CreateProjectInput, options?: AccessRequestOptions): Promise<Project> {
+    const body = await requestJson('/api/v1/projects', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey() }, body: JSON.stringify(input) }, options)
     const project = parseProject(body)
     if (!project) throw { code: 'INVALID_RESPONSE', message: '服务返回了无效项目对象' } satisfies AccessError
     return project
   },
-  async listProjects(tenantId: string): Promise<Project[]> { return parseList(await requestJson(`/api/v1/projects?tenantId=${encodeURIComponent(tenantId)}`), parseProject) },
-  async listMembers(projectId: string): Promise<ProjectMember[]> { return parseList(await requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/members`), parseMember) },
-  async listMemberCandidates(projectId: string): Promise<MemberCandidate[]> { return parseList(await requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/member-candidates`), parseCandidate) },
-  async getPermissions(projectId: string): Promise<ProjectAccess> {
-    const body = await requestJson(`/api/v1/me/permissions?projectId=${encodeURIComponent(projectId)}`)
+  async listProjects(tenantId: string, options?: AccessRequestOptions): Promise<Project[]> { return parseList(await requestJson(`/api/v1/projects?tenantId=${encodeURIComponent(tenantId)}`, undefined, options), parseProject) },
+  async listMembers(projectId: string, options?: AccessRequestOptions): Promise<ProjectMember[]> { return parseList(await requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/members`, undefined, options), parseMember) },
+  async listMemberCandidates(projectId: string, options?: AccessRequestOptions): Promise<MemberCandidate[]> { return parseList(await requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/member-candidates`, undefined, options), parseCandidate) },
+  async getPermissions(projectId: string, options?: AccessRequestOptions): Promise<ProjectAccess> {
+    const body = await requestJson(`/api/v1/me/permissions?projectId=${encodeURIComponent(projectId)}`, undefined, options)
     if (!isRecord(body) || !isString(body.tenantId) || !isString(body.projectId) || !isString(body.principalId) || !Array.isArray(body.roles) || !body.roles.every(isRole) || !Array.isArray(body.permissions) || !body.permissions.every(isString)) throw { code: 'INVALID_RESPONSE', message: '服务返回了无效权限对象' } satisfies AccessError
     return { tenantId: body.tenantId, projectId: body.projectId, principalId: body.principalId, roles: body.roles, permissions: body.permissions }
   },
-  async setMemberRoles(projectId: string, principalId: string, roles: ProjectRole[]): Promise<ProjectMember> {
-    const body = await requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(principalId)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey() }, body: JSON.stringify({ roles }) })
+  async setMemberRoles(projectId: string, principalId: string, roles: ProjectRole[], options?: AccessRequestOptions): Promise<ProjectMember> {
+    const body = await requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(principalId)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey() }, body: JSON.stringify({ roles }) }, options)
     const member = parseMember(body)
     if (!member) throw { code: 'INVALID_RESPONSE', message: '服务返回了无效成员对象' } satisfies AccessError
     return member
   },
-  async revokeMember(projectId: string, principalId: string): Promise<void> {
-    await requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(principalId)}`, { method: 'DELETE', headers: { 'Idempotency-Key': idempotencyKey() } })
+  async revokeMember(projectId: string, principalId: string, options?: AccessRequestOptions): Promise<void> {
+    await requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(principalId)}`, { method: 'DELETE', headers: { 'Idempotency-Key': idempotencyKey() } }, options)
   },
 }

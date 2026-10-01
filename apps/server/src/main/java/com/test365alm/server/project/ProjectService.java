@@ -36,14 +36,13 @@ public class ProjectService {
         UUID id = UUID.randomUUID();
         setContext(id, actor);
         try {
-            TenantView tenant = jdbc.queryForObject("""
-                    INSERT INTO tenant (id, code, name) VALUES (?, ?, ?)
-                    RETURNING id, code, name, status, row_version
-                    """, ProjectService::tenant, id, safeCode, safeName);
+            jdbc.update("INSERT INTO tenant (id, code, name) VALUES (?, ?, ?)", id, safeCode, safeName);
             jdbc.update("INSERT INTO tenant_member (tenant_id, principal_id, roles) VALUES (?, ?, ?)",
                     id, actor, sqlArray("TENANT_ADMIN"));
             audit(id, null, actor, "tenant.created", "tenant", id, 0);
-            return tenant;
+            return jdbc.queryForObject("""
+                    SELECT id, code, name, status, row_version FROM tenant WHERE id = ?
+                    """, ProjectService::tenant, id);
         } catch (DataIntegrityViolationException ex) {
             throw ProjectAccessException.conflict("TENANT_CODE_EXISTS", "Tenant code is already in use");
         }
@@ -94,16 +93,17 @@ public class ProjectService {
         setContext(tenantId, actor);
         UUID id = UUID.randomUUID();
         try {
-            ProjectView project = jdbc.queryForObject("""
+            jdbc.update("""
                     INSERT INTO project (id, tenant_id, domain_id, code, name, created_by)
                     VALUES (?, ?, ?, ?, ?, ?)
-                    RETURNING id, tenant_id, domain_id, code, name, state, schema_version, row_version
-                    """, ProjectService::project, id, tenantId, domainId, required(code, "code"),
-                    required(name, "name"), actor);
+                    """, id, tenantId, domainId, required(code, "code"), required(name, "name"), actor);
             jdbc.update("INSERT INTO project_member (tenant_id, project_id, principal_id, roles) VALUES (?, ?, ?, ?)",
                     tenantId, id, actor, sqlArray("PROJECT_ADMIN"));
             audit(tenantId, id, actor, "project.created", "project", id, 0);
-            return project;
+            return jdbc.queryForObject("""
+                    SELECT id, tenant_id, domain_id, code, name, state, schema_version, row_version
+                    FROM project WHERE id = ?
+                    """, ProjectService::project, id);
         } catch (DataIntegrityViolationException ex) {
             throw ProjectAccessException.conflict("PROJECT_CODE_EXISTS", "Project code is already in use");
         }
@@ -117,16 +117,13 @@ public class ProjectService {
                 SELECT DISTINCT p.id, p.tenant_id, p.domain_id, p.code, p.name, p.state,
                        p.schema_version, p.row_version
                 FROM project p
-                LEFT JOIN project_member pm ON pm.tenant_id = p.tenant_id AND pm.project_id = p.id
+                JOIN project_member pm ON pm.tenant_id = p.tenant_id AND pm.project_id = p.id
                     AND pm.principal_id = ? AND pm.revoked_at IS NULL
                     AND (pm.valid_until IS NULL OR pm.valid_until > CURRENT_TIMESTAMP)
-                LEFT JOIN tenant_member tm ON tm.tenant_id = p.tenant_id AND tm.principal_id = ?
-                    AND tm.revoked_at IS NULL AND (tm.valid_until IS NULL OR tm.valid_until > CURRENT_TIMESTAMP)
-                    AND tm.roles && CAST(? AS text[])
-                WHERE (? IS NULL OR p.tenant_id = ?) AND (pm.principal_id IS NOT NULL OR tm.principal_id IS NOT NULL)
+                WHERE (? IS NULL OR p.tenant_id = ?)
                 ORDER BY p.code
                 """;
-        return jdbc.query(sql, ProjectService::project, actor, actor, sqlArray(Set.of("TENANT_ADMIN")), tenantId, tenantId);
+        return jdbc.query(sql, ProjectService::project, actor, tenantId, tenantId);
     }
 
     @Transactional(readOnly = true)
@@ -250,7 +247,8 @@ public class ProjectService {
                 UPDATE project_member SET revoked_at = CURRENT_TIMESTAMP, valid_until = CURRENT_TIMESTAMP,
                     row_version = row_version + 1,
                     authorization_version = authorization_version + 1, updated_at = CURRENT_TIMESTAMP
-                WHERE tenant_id = ? AND project_id = ? AND principal_id = ? AND revoked_at IS NULL
+                WHERE tenant_id = ? AND project_id = ? AND principal_id = ?
+                  AND revoked_at IS NULL AND (valid_until IS NULL OR valid_until > CURRENT_TIMESTAMP)
                 """, project.tenantId(), project.id(), principalId);
         audit(project.tenantId(), project.id(), actor, "project.member.revoked", "project_member", principalId,
                 memberVersion(project.tenantId(), project.id(), principalId));
@@ -284,10 +282,12 @@ public class ProjectService {
     }
 
     private void requireProjectAdmin(UUID actor, UUID tenantId, UUID projectId) {
+        requireTenantMember(actor, tenantId);
         if (!hasRole(actor, tenantId, projectId, PROJECT_ADMINS, true)) throw ProjectAccessException.forbidden();
     }
 
     private void requireProjectAccess(UUID actor, UUID tenantId, UUID projectId) {
+        requireTenantMember(actor, tenantId);
         if (!hasRole(actor, tenantId, projectId, PROJECT_ADMINS, true)
                 && !hasRole(actor, tenantId, projectId, PROJECT_ROLES, true)) throw ProjectAccessException.forbidden();
     }
@@ -341,7 +341,8 @@ public class ProjectService {
     private boolean memberIsActive(UUID tenantId, UUID projectId, UUID principalId) {
         Integer count = jdbc.queryForObject("""
                 SELECT COUNT(*) FROM project_member
-                WHERE tenant_id = ? AND project_id = ? AND principal_id = ? AND revoked_at IS NULL
+                WHERE tenant_id = ? AND project_id = ? AND principal_id = ?
+                  AND revoked_at IS NULL AND (valid_until IS NULL OR valid_until > CURRENT_TIMESTAMP)
                 """, Integer.class, tenantId, projectId, principalId);
         return count != null && count > 0;
     }

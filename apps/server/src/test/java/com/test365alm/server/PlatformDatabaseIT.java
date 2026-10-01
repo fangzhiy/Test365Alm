@@ -1,6 +1,7 @@
 package com.test365alm.server;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.net.URI;
@@ -12,6 +13,7 @@ import java.sql.SQLException;
 import java.util.HashSet;
 import java.util.UUID;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.Test;
@@ -29,6 +31,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 import com.test365alm.server.identity.PrincipalRepository;
+import com.test365alm.server.project.ProjectAccessException;
 import com.test365alm.server.project.ProjectService;
 
 @ActiveProfiles("integration")
@@ -176,6 +179,8 @@ class PlatformDatabaseIT {
         try (var connection = DriverManager.getConnection(
                 POSTGRES.getJdbcUrl(), "test365alm_runtime", "r03_isolated_test_role_only")) {
             connection.setAutoCommit(false);
+            // A tenant context alone is not authorization.  The runtime role
+            // must also carry a verified principal with an active membership.
             assertEquals(0, count(connection, "tenant"));
             assertEquals(0, count(connection, "domain"));
             assertEquals(0, count(connection, "tenant_member"));
@@ -183,6 +188,17 @@ class PlatformDatabaseIT {
             assertEquals(0, count(connection, "project_member"));
             assertEquals(0, count(connection, "audit_event"));
 
+            setTenant(connection, tenantA);
+            assertEquals(0, count(connection, "tenant"));
+            assertEquals(0, count(connection, "domain"));
+            assertEquals(0, count(connection, "tenant_member"));
+            assertEquals(0, count(connection, "project"));
+            assertEquals(0, count(connection, "project_member"));
+            assertEquals(0, count(connection, "audit_event"));
+            assertEquals(0, countProject(connection, projectA));
+            connection.commit();
+
+            setPrincipal(connection, principalA);
             setTenant(connection, tenantA);
             assertEquals(1, count(connection, "tenant"));
             assertEquals(1, count(connection, "domain"));
@@ -194,15 +210,26 @@ class PlatformDatabaseIT {
             assertEquals(0, countProject(connection, projectB));
             connection.commit();
 
-            setTenant(connection, tenantB);
-            assertEquals(1, count(connection, "tenant"));
-            assertEquals(1, count(connection, "domain"));
-            assertEquals(1, count(connection, "tenant_member"));
-            assertEquals(1, count(connection, "project"));
-            assertEquals(1, count(connection, "project_member"));
-            assertEquals(1, count(connection, "audit_event"));
+            jdbcTemplate.update("UPDATE tenant_member SET revoked_at = CURRENT_TIMESTAMP, valid_until = CURRENT_TIMESTAMP, "
+                    + "authorization_version = authorization_version + 1 WHERE tenant_id = ? AND principal_id = ?",
+                    tenantA, principalA);
+            setPrincipal(connection, principalA);
+            setTenant(connection, tenantA);
+            assertEquals(0, count(connection, "tenant"));
+            assertEquals(0, count(connection, "project"));
             assertEquals(0, countProject(connection, projectA));
-            assertEquals(1, countProject(connection, projectB));
+            connection.commit();
+
+            setPrincipal(connection, principalA);
+            setTenant(connection, tenantB);
+            assertEquals(0, count(connection, "tenant"));
+            assertEquals(0, count(connection, "domain"));
+            assertEquals(0, count(connection, "tenant_member"));
+            assertEquals(0, count(connection, "project"));
+            assertEquals(0, count(connection, "project_member"));
+            assertEquals(0, count(connection, "audit_event"));
+            assertEquals(0, countProject(connection, projectA));
+            assertEquals(0, countProject(connection, projectB));
             connection.rollback();
         }
     }
@@ -229,10 +256,132 @@ class PlatformDatabaseIT {
                 Integer.class, project.id()) >= 1);
     }
 
+    @Test
+    void tenantAdminOnlySeesProjectsWhereTheyAreExplicitlyJoined() {
+        UUID tenantAdmin = principals.upsertVerified("https://project-fix.example",
+                "tenant-admin-" + UUID.randomUUID(), "Tenant Admin").id();
+        UUID otherAdmin = principals.upsertVerified("https://project-fix.example",
+                "other-admin-" + UUID.randomUUID(), "Other Admin").id();
+        var tenant = projects.createTenant(tenantAdmin, "fix-tenant-" + UUID.randomUUID(), "Fix Tenant");
+        var domain = projects.createDomain(tenantAdmin, tenant.id(), "Fix Domain");
+        jdbcTemplate.update("INSERT INTO tenant_member (tenant_id, principal_id, roles) VALUES (?, ?, ARRAY['TENANT_ADMIN']::text[])",
+                tenant.id(), otherAdmin);
+        var joined = projects.createProject(tenantAdmin, tenant.id(), domain.id(), "joined-" + UUID.randomUUID(), "Joined");
+        var unjoined = projects.createProject(otherAdmin, tenant.id(), domain.id(), "unjoined-" + UUID.randomUUID(), "Unjoined");
+
+        assertEquals(java.util.List.of(joined.id()), projects.listProjects(tenantAdmin, tenant.id()).stream()
+                .map(ProjectService.ProjectView::id).toList());
+        assertThrows(ProjectAccessException.class, () -> projects.getProject(tenantAdmin, unjoined.id()));
+    }
+
+    @Test
+    void revokedTenantMembershipInvalidatesExistingProjectMembership() {
+        UUID admin = principals.upsertVerified("https://project-fix.example",
+                "revocation-admin-" + UUID.randomUUID(), "Revocation Admin").id();
+        UUID member = principals.upsertVerified("https://project-fix.example",
+                "revocation-member-" + UUID.randomUUID(), "Revocation Member").id();
+        var tenant = projects.createTenant(admin, "revocation-tenant-" + UUID.randomUUID(), "Revocation Tenant");
+        var domain = projects.createDomain(admin, tenant.id(), "Revocation Domain");
+        var project = projects.createProject(admin, tenant.id(), domain.id(), "revocation-project-" + UUID.randomUUID(), "Revocation");
+        jdbcTemplate.update("INSERT INTO tenant_member (tenant_id, principal_id, roles) VALUES (?, ?, ARRAY['MEMBER']::text[])",
+                tenant.id(), member);
+        projects.putMember(admin, project.id(), member, java.util.List.of("PROJECT_VIEWER"));
+
+        jdbcTemplate.update("UPDATE tenant_member SET revoked_at = CURRENT_TIMESTAMP, valid_until = CURRENT_TIMESTAMP, "
+                + "authorization_version = authorization_version + 1 WHERE tenant_id = ? AND principal_id = ?",
+                tenant.id(), member);
+
+        assertThrows(ProjectAccessException.class, () -> projects.getProject(member, project.id()));
+        assertThrows(ProjectAccessException.class, () -> projects.permissions(member, project.id()));
+        assertThrows(ProjectAccessException.class, () -> projects.listProjects(member, tenant.id()));
+    }
+
+    @Test
+    void authorizationVersionLastAdminAndAuditAreTransactional() {
+        UUID admin = principals.upsertVerified("https://project-fix.example",
+                "version-admin-" + UUID.randomUUID(), "Version Admin").id();
+        UUID secondAdmin = principals.upsertVerified("https://project-fix.example",
+                "version-second-admin-" + UUID.randomUUID(), "Second Admin").id();
+        var tenant = projects.createTenant(admin, "version-tenant-" + UUID.randomUUID(), "Version Tenant");
+        var domain = projects.createDomain(admin, tenant.id(), "Version Domain");
+        var project = projects.createProject(admin, tenant.id(), domain.id(), "version-project-" + UUID.randomUUID(), "Version");
+        jdbcTemplate.update("INSERT INTO tenant_member (tenant_id, principal_id, roles) VALUES (?, ?, ARRAY['TENANT_ADMIN']::text[])",
+                tenant.id(), secondAdmin);
+
+        var granted = projects.putMember(admin, project.id(), secondAdmin, java.util.List.of("PROJECT_ADMIN"));
+        assertEquals(1L, granted.authorizationVersion());
+        var demoted = projects.putMember(admin, project.id(), secondAdmin, java.util.List.of("PROJECT_VIEWER"), 1L);
+        assertEquals(2L, demoted.authorizationVersion());
+        jdbcTemplate.update("UPDATE project_member SET valid_until = CURRENT_TIMESTAMP - INTERVAL '1 second' "
+                + "WHERE tenant_id = ? AND project_id = ? AND principal_id = ?", tenant.id(), project.id(), secondAdmin);
+        var renewed = projects.putMember(admin, project.id(), secondAdmin, java.util.List.of("PROJECT_VIEWER"), 2L);
+        assertEquals(3L, renewed.authorizationVersion());
+        int auditBeforeLastAdmin = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM audit_event WHERE project_id = ? "
+                + "AND action = 'project.member.revoked'", Integer.class, project.id());
+        assertThrows(ProjectAccessException.class, () -> projects.revokeMember(admin, project.id(), admin));
+        assertEquals(auditBeforeLastAdmin, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM audit_event WHERE project_id = ? "
+                + "AND action = 'project.member.revoked'", Integer.class, project.id()));
+
+        var revoked = projects.revokeMember(admin, project.id(), secondAdmin);
+        assertEquals(4L, revoked.authorizationVersion());
+        assertEquals(4L, jdbcTemplate.queryForObject("SELECT authorization_version FROM project_member "
+                + "WHERE tenant_id = ? AND project_id = ? AND principal_id = ?", Long.class,
+                tenant.id(), project.id(), secondAdmin));
+        assertEquals(4L, jdbcTemplate.queryForObject("SELECT object_revision FROM audit_event WHERE tenant_id = ? "
+                + "AND project_id = ? AND action = 'project.member.revoked' ORDER BY at DESC, id DESC LIMIT 1", Long.class,
+                tenant.id(), project.id()));
+    }
+
+    @Test
+    void concurrentAdminRevokesRetainOneAdministrator() throws Exception {
+        UUID first = principals.upsertVerified("https://project-fix.example",
+                "concurrent-first-" + UUID.randomUUID(), "Concurrent First").id();
+        UUID second = principals.upsertVerified("https://project-fix.example",
+                "concurrent-second-" + UUID.randomUUID(), "Concurrent Second").id();
+        var tenant = projects.createTenant(first, "concurrent-tenant-" + UUID.randomUUID(), "Concurrent Tenant");
+        var domain = projects.createDomain(first, tenant.id(), "Concurrent Domain");
+        var project = projects.createProject(first, tenant.id(), domain.id(), "concurrent-project-" + UUID.randomUUID(), "Concurrent");
+        jdbcTemplate.update("INSERT INTO tenant_member (tenant_id, principal_id, roles) VALUES (?, ?, ARRAY['TENANT_ADMIN']::text[])",
+                tenant.id(), second);
+        projects.putMember(first, project.id(), second, java.util.List.of("PROJECT_ADMIN"));
+
+        var pool = Executors.newFixedThreadPool(2);
+        try {
+            Future<Throwable> firstResult = pool.submit(() -> attemptRevoke(first, project.id(), second));
+            Future<Throwable> secondResult = pool.submit(() -> attemptRevoke(second, project.id(), first));
+            Throwable firstFailure = firstResult.get();
+            Throwable secondFailure = secondResult.get();
+            assertTrue((firstFailure == null) ^ (secondFailure == null),
+                    "exactly one concurrent revoke may remove the other administrator");
+            assertEquals(1, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM project_member WHERE tenant_id = ? "
+                    + "AND project_id = ? AND revoked_at IS NULL AND roles && ARRAY['PROJECT_ADMIN']::text[]", Integer.class,
+                    tenant.id(), project.id()));
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    private Throwable attemptRevoke(UUID actor, UUID projectId, UUID target) {
+        try {
+            projects.revokeMember(actor, projectId, target);
+            return null;
+        } catch (Throwable failure) {
+            return failure;
+        }
+    }
+
     private static void setTenant(java.sql.Connection connection, UUID tenantId) throws SQLException {
         try (var statement = connection.prepareStatement(
                 "SELECT set_config('test365alm.tenant_id', ?, true)")) {
             statement.setString(1, tenantId.toString());
+            statement.executeQuery();
+        }
+    }
+
+    private static void setPrincipal(java.sql.Connection connection, UUID principalId) throws SQLException {
+        try (var statement = connection.prepareStatement(
+                "SELECT set_config('test365alm.principal_id', ?, true)")) {
+            statement.setString(1, principalId.toString());
             statement.executeQuery();
         }
     }

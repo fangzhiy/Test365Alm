@@ -38,6 +38,12 @@ class CiWorkflowTests(unittest.TestCase):
         self.assertIn("verify_r03_project_access_report.py", workflow)
         self.assertIn("apps/server/project-access-report.txt", workflow)
 
+    def test_browser_job_requires_dual_user_project_access_evidence(self):
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("Require real dual-user project access browser report", workflow)
+        self.assertIn("verify_r03_project_browser_report.py", workflow)
+        self.assertIn("local-evidence/r03/project-browser-report.txt", workflow)
+
     def test_cleanup_command_requires_ownership_labels(self):
         cleanup = CLEANUP.read_text(encoding="utf-8")
         self.assertIn("cleanup_manifest", cleanup)

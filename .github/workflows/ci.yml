@@ -401,6 +401,12 @@ jobs:
       - name: Require real browser report
         if: always()
         run: python tools/verify_r03_report.py local-evidence/r03/playwright-results.xml
+      - name: Require real dual-user project access browser report
+        if: always()
+        run: |
+          set -o pipefail
+          python tools/verify_r03_project_browser_report.py local-evidence/r03/playwright-results.xml \
+            2>&1 | tee local-evidence/r03/project-browser-report.txt
       - name: Upload R03 browser evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -415,6 +421,7 @@ jobs:
             local-evidence/r03/browser-install.txt
             local-evidence/r03/e2e.log
             local-evidence/r03/playwright-results.xml
+            local-evidence/r03/project-browser-report.txt
             local-evidence/r03/import-permissions.txt
             local-evidence/r03/image-user.txt
             local-evidence/r03/containers.txt

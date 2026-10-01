@@ -6,6 +6,7 @@ from tools.redact_r03_logs import redact
 from tools.verify_r03_report import count_results
 from tools.verify_r03_oidc_http_report import REQUIRED_TESTS, verify
 from tools.verify_r03_project_access_report import REQUIRED_PROJECT_TESTS, verify_project_access
+from tools.verify_r03_project_browser_report import REQUIRED_TEST as REQUIRED_PROJECT_BROWSER_TEST, verify as verify_project_browser
 
 
 class R03CiEvidenceTests(unittest.TestCase):
@@ -67,6 +68,25 @@ class R03CiEvidenceTests(unittest.TestCase):
                 '</testsuite>'
             )
             valid, _ = verify_project_access(Path(directory))
+            self.assertFalse(valid)
+
+    def test_requires_real_dual_user_project_browser_case(self):
+        with tempfile.TemporaryDirectory() as directory:
+            report = Path(directory) / "results.xml"
+            report.write_text(
+                '<testsuites><testsuite tests="1" failures="0" errors="0" skipped="0">'
+                f'<testcase name="{REQUIRED_PROJECT_BROWSER_TEST}" />'
+                '</testsuite></testsuites>'
+            )
+            valid, summary = verify_project_browser(report)
+            self.assertTrue(valid, summary)
+
+            report.write_text(
+                '<testsuites><testsuite tests="1" failures="0" errors="0" skipped="1">'
+                f'<testcase name="{REQUIRED_PROJECT_BROWSER_TEST}"><skipped /></testcase>'
+                '</testsuite></testsuites>'
+            )
+            valid, _ = verify_project_browser(report)
             self.assertFalse(valid)
 
 
