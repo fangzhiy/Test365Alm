@@ -1,5 +1,6 @@
 import '@testing-library/jest-dom/vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { StrictMode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import ProjectAccessPanel from './ProjectAccessPanel'
 
@@ -10,8 +11,21 @@ const domain = { id: 'domain-1', tenantId: 'tenant-1', name: 'Quality', status: 
 const member = { principalId: 'principal-1', displayName: 'A Tester', roles: ['PROJECT_MEMBER'], state: 'ACTIVE', authorizationVersion: 1 }
 const secondProject = { id: 'project-2', tenantId: 'tenant-1', domainId: 'domain-1', code: 'api', name: 'API quality', state: 'ACTIVE', rowVersion: 0 }
 const secondMember = { principalId: 'principal-2', displayName: 'Second Tester', roles: ['PROJECT_MEMBER'], state: 'ACTIVE', authorizationVersion: 1 }
+const tenantB = { id: 'tenant-2', code: 'beta', name: 'Beta', status: 'ACTIVE', rowVersion: 0, canCreateProject: false }
+const projectB = { id: 'project-b', tenantId: 'tenant-2', domainId: 'domain-b', code: 'beta-api', name: 'Beta API', state: 'ACTIVE', rowVersion: 0 }
+const domainB = { id: 'domain-b', tenantId: 'tenant-2', name: 'Beta quality', status: 'ACTIVE', rowVersion: 0 }
 
-afterEach(() => { cleanup(); vi.unstubAllGlobals() })
+const deferred = <T,>() => {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
+afterEach(() => { vi.useRealTimers(); cleanup(); vi.unstubAllGlobals() })
 
 describe('project access management', () => {
   it('loads tenant, project, members and effective permissions from the API', async () => {
@@ -32,6 +46,152 @@ describe('project access management', () => {
     expect(screen.getByText('A Tester')).toBeVisible()
     expect(screen.getByText('项目成员', { selector: 'strong' })).toBeVisible()
     expect(screen.getByText(/项目管理员 · 权限：project:read、project:manage-members/)).toBeVisible()
+  })
+
+  it('finishes loading after switching tenants while the default tenant is still pending', async () => {
+    const oldDomains = deferred<Response>()
+    const oldProjects = deferred<Response>()
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const path = String(input)
+      if (path.endsWith('/tenants')) return json([tenant, tenantB])
+      if (path === '/api/v1/domains?tenantId=tenant-1') return oldDomains.promise
+      if (path === '/api/v1/projects?tenantId=tenant-1') return oldProjects.promise
+      if (path === '/api/v1/domains?tenantId=tenant-2') return json([domainB])
+      if (path === '/api/v1/projects?tenantId=tenant-2') return json([projectB])
+      if (path === '/api/v1/projects/project-b') return json(projectB)
+      if (path.endsWith('/member-candidates') || path.endsWith('/members')) return json([])
+      return json({ tenantId: tenantB.id, projectId: projectB.id, principalId: 'viewer-b', roles: ['PROJECT_VIEWER'], permissions: ['project:read'] })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<ProjectAccessPanel />)
+    fireEvent.click(screen.getByRole('button', { name: '加载访问范围' }))
+
+    const tenantSelect = await screen.findByLabelText('租户')
+    fireEvent.change(tenantSelect, { target: { value: tenantB.id } })
+    expect(await screen.findByText('Beta API（beta-api）')).toBeVisible()
+    expect(screen.getByRole('button', { name: '加载访问范围' })).toBeEnabled()
+
+    oldDomains.resolve(json([domain]))
+    oldProjects.resolve(json([project]))
+    await waitFor(() => expect(screen.getByLabelText('租户')).toHaveValue(tenantB.id))
+    expect(screen.getByText('Beta API（beta-api）')).toBeVisible()
+    expect(screen.queryByText('Web quality（web）')).not.toBeInTheDocument()
+  })
+
+  it('keeps the new tenant ready when the previous tenant eventually fails', async () => {
+    const oldDomains = deferred<Response>()
+    const oldProjects = deferred<Response>()
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const path = String(input)
+      if (path.endsWith('/tenants')) return json([tenant, tenantB])
+      if (path === '/api/v1/domains?tenantId=tenant-1') return oldDomains.promise
+      if (path === '/api/v1/projects?tenantId=tenant-1') return oldProjects.promise
+      if (path === '/api/v1/domains?tenantId=tenant-2') return json([domainB])
+      if (path === '/api/v1/projects?tenantId=tenant-2') return json([projectB])
+      if (path === '/api/v1/projects/project-b') return json(projectB)
+      if (path.endsWith('/member-candidates') || path.endsWith('/members')) return json([])
+      return json({ tenantId: tenantB.id, projectId: projectB.id, principalId: 'viewer-b', roles: ['PROJECT_VIEWER'], permissions: ['project:read'] })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<ProjectAccessPanel />)
+    fireEvent.click(screen.getByRole('button', { name: '加载访问范围' }))
+    const tenantSelect = await screen.findByLabelText('租户')
+    fireEvent.change(tenantSelect, { target: { value: tenantB.id } })
+    expect(await screen.findByText('Beta API（beta-api）')).toBeVisible()
+    expect(screen.getByRole('button', { name: '加载访问范围' })).toBeEnabled()
+
+    oldDomains.resolve(json([domain]))
+    oldProjects.reject(new Error('old tenant failed late'))
+    await waitFor(() => expect(screen.getByLabelText('租户')).toHaveValue(tenantB.id))
+    expect(screen.getByText('Beta API（beta-api）')).toBeVisible()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('leaves a failed tenant switch in a retryable state', async () => {
+    const oldDomains = deferred<Response>()
+    const oldProjects = deferred<Response>()
+    let betaAvailable = false
+    let tenantReads = 0
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const path = String(input)
+      if (path.endsWith('/tenants')) return json(tenantReads++ === 0 ? [tenant, tenantB] : [tenantB])
+      if (path === '/api/v1/domains?tenantId=tenant-1') return oldDomains.promise
+      if (path === '/api/v1/projects?tenantId=tenant-1') return oldProjects.promise
+      if (path === '/api/v1/domains?tenantId=tenant-2') return json([domainB])
+      if (path === '/api/v1/projects?tenantId=tenant-2') return betaAvailable ? json([projectB]) : json({ code: 'HTTP_503', message: 'Beta 暂不可用' }, 503)
+      if (path === '/api/v1/projects/project-b') return json(projectB)
+      if (path.endsWith('/member-candidates') || path.endsWith('/members')) return json([])
+      return json({ tenantId: tenantB.id, projectId: projectB.id, principalId: 'viewer-b', roles: ['PROJECT_VIEWER'], permissions: ['project:read'] })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<ProjectAccessPanel />)
+    fireEvent.click(screen.getByRole('button', { name: '加载访问范围' }))
+    fireEvent.change(await screen.findByLabelText('租户'), { target: { value: tenantB.id } })
+    expect(await screen.findByRole('alert')).toHaveTextContent('Beta 暂不可用')
+    expect(screen.getByRole('button', { name: '加载访问范围' })).toBeEnabled()
+
+    oldDomains.resolve(json([domain]))
+    oldProjects.reject(new Error('old tenant failed late'))
+    betaAvailable = true
+    fireEvent.click(screen.getByRole('button', { name: '加载访问范围' }))
+    expect(await screen.findByText('Beta API（beta-api）')).toBeVisible()
+    expect(screen.getByRole('button', { name: '加载访问范围' })).toBeEnabled()
+  })
+
+  it('treats an empty tenant list as ready and retryable', async () => {
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => String(input).endsWith('/tenants') ? json([]) : json([])))
+    render(<ProjectAccessPanel />)
+    fireEvent.click(screen.getByRole('button', { name: '加载访问范围' }))
+    expect(await screen.findByText('当前会话没有可管理的租户')).toBeVisible()
+    expect(screen.getByRole('button', { name: '加载访问范围' })).toBeEnabled()
+  })
+
+  it('exits loading on timeout and keeps the retry button enabled', async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (!String(input).endsWith('/tenants')) return json([])
+      return new Promise<Response>((_, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true })
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<ProjectAccessPanel />)
+    fireEvent.click(screen.getByRole('button', { name: '加载访问范围' }))
+    await act(async () => { await vi.advanceTimersByTimeAsync(3001) })
+    vi.useRealTimers()
+    expect(await screen.findByRole('alert')).toHaveTextContent('访问范围加载超时')
+    expect(screen.getByRole('button', { name: '加载访问范围' })).toBeEnabled()
+  })
+
+  it('aborts a pending request when the panel is unmounted', async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (!String(input).endsWith('/tenants')) return json([])
+      return new Promise<Response>((_, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true })
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const { unmount } = render(<ProjectAccessPanel />)
+    fireEvent.click(screen.getByRole('button', { name: '加载访问范围' }))
+    unmount()
+    await act(async () => { await vi.advanceTimersByTimeAsync(3001) })
+    vi.useRealTimers()
+  })
+
+  it('keeps the latest scope state under React StrictMode', async () => {
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+      const path = String(input)
+      if (path.endsWith('/tenants')) return json([tenant])
+      if (path.includes('/domains?')) return json([domain])
+      if (path.includes('/projects?')) return json([project])
+      if (path === '/api/v1/projects/project-1') return json(project)
+      return json({ tenantId: tenant.id, projectId: project.id, principalId: member.principalId, roles: ['PROJECT_VIEWER'], permissions: ['project:read'] })
+    }))
+    render(<StrictMode><ProjectAccessPanel /></StrictMode>)
+    fireEvent.click(screen.getByRole('button', { name: '加载访问范围' }))
+    expect(await screen.findByText('Web quality（web）')).toBeVisible()
+    expect(screen.getByRole('button', { name: '加载访问范围' })).toBeEnabled()
   })
 
   it('upserts a member and revokes access through the project endpoints', async () => {

@@ -7,7 +7,10 @@ type PanelState = 'idle' | 'loading' | 'ready' | 'error'
 type ProjectAccessPanelProps = { resetSignal?: number }
 const roles: ProjectRole[] = ['PROJECT_ADMIN', 'PROJECT_MEMBER', 'PROJECT_VIEWER']
 const roleLabel: Record<ProjectRole, string> = { PROJECT_ADMIN: '项目管理员', PROJECT_MEMBER: '项目成员', PROJECT_VIEWER: '项目查看者' }
-const messageFor = (error: unknown) => typeof error === 'object' && error !== null && 'message' in error && typeof error.message === 'string' ? error.message : '访问范围加载失败，请稍后重试'
+const messageFor = (error: unknown) => {
+  if (typeof error === 'object' && error !== null && 'name' in error && error.name === 'AbortError') return '访问范围加载超时，请稍后重试'
+  return typeof error === 'object' && error !== null && 'message' in error && typeof error.message === 'string' ? error.message : '访问范围加载失败，请稍后重试'
+}
 const codeFor = (error: unknown) => typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string' ? error.code : ''
 const canManageMembers = (value: ProjectAccess) => value.roles.includes('PROJECT_ADMIN') || value.permissions.some((permission) => permission === 'project:manage-members' || permission === 'project.members.write')
 
@@ -170,6 +173,7 @@ export default function ProjectAccessPanel({ resetSignal = 0 }: ProjectAccessPan
 
   const loadProject = async (nextProjectId: string): Promise<boolean> => {
     const request = beginRequestRound()
+    setState('loading')
     setProjectId(nextProjectId)
     setNotice('')
     setSelectedProject(null)
@@ -178,14 +182,17 @@ export default function ProjectAccessPanel({ resetSignal = 0 }: ProjectAccessPan
     setCandidates([])
     setAccess(null)
     if (!nextProjectId) {
+      if (request.isCurrent()) setState('ready')
       finishRequestRound(request.round)
       return true
     }
     try {
       await loadProjectInternal(nextProjectId, request)
+      if (request.isCurrent()) setState('ready')
     } catch (error) {
       if (request.isCurrent()) {
         clearProjectData()
+        setState('error')
         setNotice(messageFor(error))
       }
       return false
@@ -197,14 +204,17 @@ export default function ProjectAccessPanel({ resetSignal = 0 }: ProjectAccessPan
 
   const loadTenant = async (nextTenantId: string) => {
     const request = beginRequestRound()
+    setState('loading')
     setNotice('')
     try {
       await loadTenantInternal(nextTenantId, request)
+      if (request.isCurrent()) setState('ready')
     } catch (error) {
       if (request.isCurrent()) {
         setProjects([])
         setDomains([])
         clearProjectData()
+        setState('error')
         setNotice(messageFor(error))
       }
     } finally {
