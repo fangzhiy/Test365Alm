@@ -188,6 +188,11 @@ class PlatformDatabaseIT {
             assertEquals(0, count(connection, "project_member"));
             assertEquals(0, count(connection, "audit_event"));
 
+            setPrincipal(connection, principalA);
+            assertEquals(0, count(connection, "project"));
+            assertEquals(0, countProject(connection, projectA));
+            connection.rollback();
+
             setTenant(connection, tenantA);
             assertEquals(0, count(connection, "tenant"));
             assertEquals(0, count(connection, "domain"));

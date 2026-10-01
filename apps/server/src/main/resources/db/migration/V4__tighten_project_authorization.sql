@@ -144,6 +144,7 @@ CREATE POLICY tenant_scope ON tenant USING (
 DROP POLICY domain_scope ON domain;
 CREATE POLICY domain_scope ON domain USING (
     app_has_active_tenant_member(tenant_id, NULLIF(current_setting('test365alm.principal_id', true), '')::UUID)
+    AND tenant_id::TEXT = NULLIF(current_setting('test365alm.tenant_id', true), '')
 ) WITH CHECK (
     tenant_id::TEXT = NULLIF(current_setting('test365alm.tenant_id', true), '')
     AND app_has_active_tenant_member(tenant_id, NULLIF(current_setting('test365alm.principal_id', true), '')::UUID)
@@ -154,8 +155,13 @@ CREATE POLICY tenant_member_scope ON tenant_member USING (
     app_has_active_tenant_member(tenant_id, NULLIF(current_setting('test365alm.principal_id', true), '')::UUID)
     AND (
         principal_id::TEXT = NULLIF(current_setting('test365alm.principal_id', true), '')
-        OR app_has_tenant_admin(tenant_id, NULLIF(current_setting('test365alm.principal_id', true), '')::UUID)
-        OR app_has_any_project_admin(tenant_id, NULLIF(current_setting('test365alm.principal_id', true), '')::UUID)
+        OR (
+            tenant_id::TEXT = NULLIF(current_setting('test365alm.tenant_id', true), '')
+            AND (
+                app_has_tenant_admin(tenant_id, NULLIF(current_setting('test365alm.principal_id', true), '')::UUID)
+                OR app_has_any_project_admin(tenant_id, NULLIF(current_setting('test365alm.principal_id', true), '')::UUID)
+            )
+        )
     )
 ) WITH CHECK (
     tenant_id::TEXT = NULLIF(current_setting('test365alm.tenant_id', true), '')
@@ -168,6 +174,10 @@ CREATE POLICY tenant_member_scope ON tenant_member USING (
 DROP POLICY project_scope ON project;
 CREATE POLICY project_scope ON project USING (
     app_has_active_project_member(tenant_id, id, NULLIF(current_setting('test365alm.principal_id', true), '')::UUID)
+    AND (
+        tenant_id::TEXT = NULLIF(current_setting('test365alm.tenant_id', true), '')
+        OR id::TEXT = NULLIF(current_setting('test365alm.project_id', true), '')
+    )
 ) WITH CHECK (
     tenant_id::TEXT = NULLIF(current_setting('test365alm.tenant_id', true), '')
     AND app_has_active_tenant_member(tenant_id, NULLIF(current_setting('test365alm.principal_id', true), '')::UUID)
@@ -175,10 +185,16 @@ CREATE POLICY project_scope ON project USING (
 
 DROP POLICY project_member_scope ON project_member;
 CREATE POLICY project_member_scope ON project_member USING (
-    app_has_project_admin(tenant_id, project_id, NULLIF(current_setting('test365alm.principal_id', true), '')::UUID)
-    OR (
-        principal_id = NULLIF(current_setting('test365alm.principal_id', true), '')::UUID
-        AND app_has_active_tenant_member(tenant_id, principal_id)
+    (
+        tenant_id::TEXT = NULLIF(current_setting('test365alm.tenant_id', true), '')
+        OR project_id::TEXT = NULLIF(current_setting('test365alm.project_id', true), '')
+    )
+    AND (
+        app_has_project_admin(tenant_id, project_id, NULLIF(current_setting('test365alm.principal_id', true), '')::UUID)
+        OR (
+            principal_id = NULLIF(current_setting('test365alm.principal_id', true), '')::UUID
+            AND app_has_active_tenant_member(tenant_id, principal_id)
+        )
     )
 ) WITH CHECK (
     tenant_id::TEXT = NULLIF(current_setting('test365alm.tenant_id', true), '')
@@ -196,6 +212,10 @@ CREATE POLICY project_member_scope ON project_member USING (
 DROP POLICY audit_event_scope ON audit_event;
 CREATE POLICY audit_event_scope ON audit_event USING (
     app_has_active_tenant_member(tenant_id, NULLIF(current_setting('test365alm.principal_id', true), '')::UUID)
+    AND (
+        tenant_id::TEXT = NULLIF(current_setting('test365alm.tenant_id', true), '')
+        OR project_id::TEXT = NULLIF(current_setting('test365alm.project_id', true), '')
+    )
     AND (
         project_id IS NULL
         OR app_has_active_project_member(tenant_id, project_id,

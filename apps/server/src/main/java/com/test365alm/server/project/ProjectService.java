@@ -359,8 +359,11 @@ public class ProjectService {
     private ProjectView findProject(UUID actor, UUID projectId) {
         // The id is globally unique, but the runtime role is still protected
         // by RLS. The principal context lets the policy resolve its memberships
-        // before a tenant context is known.
+        // before a tenant context is known; the project context keeps this
+        // lookup narrow instead of exposing every project in the principal's
+        // tenants when a tenant has not yet been selected.
         setPrincipalContext(actor);
+        setProjectContext(projectId);
         List<ProjectView> values = jdbc.query("""
                 SELECT id, tenant_id, domain_id, code, name, state, schema_version, row_version
                 FROM project WHERE id = ?
@@ -386,6 +389,11 @@ public class ProjectService {
     private void setPrincipalContext(UUID actor) {
         jdbc.queryForObject("SELECT set_config('test365alm.principal_id', ?, true)", String.class,
                 actor == null ? "" : actor.toString());
+    }
+
+    private void setProjectContext(UUID projectId) {
+        jdbc.queryForObject("SELECT set_config('test365alm.project_id', ?, true)", String.class,
+                projectId == null ? "" : projectId.toString());
     }
 
     private SqlArrayValue sqlArray(String role) {
