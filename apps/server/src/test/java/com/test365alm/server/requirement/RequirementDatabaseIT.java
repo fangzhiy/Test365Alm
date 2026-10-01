@@ -146,13 +146,15 @@ class RequirementDatabaseIT {
 
     private UUID principal(String kind) throws SQLException {
         UUID id = UUID.randomUUID();
-        execute(ownerConnection(), "INSERT INTO principal (id, issuer, subject, display_name) VALUES (?, ?, ?, ?)",
-                id, "https://requirement-it.example/realm", kind + "-" + id, kind);
+        try (Connection connection = ownerConnection()) {
+            execute(connection, "INSERT INTO principal (id, issuer, subject, display_name) VALUES (?, ?, ?, ?)",
+                    id, "https://requirement-it.example/realm", kind + "-" + id, kind);
+        }
         return id;
     }
 
     private static void execute(Connection connection, String sql, Object... values) throws SQLException {
-        try (connection; var statement = connection.prepareStatement(sql)) {
+        try (var statement = connection.prepareStatement(sql)) {
             for (int i = 0; i < values.length; i++) statement.setObject(i + 1, values[i]);
             statement.executeUpdate();
         }
