@@ -283,7 +283,7 @@ jobs:
         run: |
           set -o pipefail
           ./mvnw -B -ntp package -DskipTests "-Dbuild.commit=${GITHUB_SHA}" 2>&1 | tee migration-build.txt
-      - name: Verify formal V6 then intentional V7 migration startup failure
+      - name: Verify formal V7 then intentional V8 migration startup failure
         run: |
           set +e
           python -u tools/verify_r02_migration_failure.py --env-file .env.r02-test --compose-project "test365alm-r02-migration-${GITHUB_RUN_ID}" --server-port 18082 --wait-seconds 90 2>&1 | tee migration-failure.txt
@@ -296,7 +296,7 @@ jobs:
             summary=$(tr '\n' ' ' < migration-failure.txt | cut -c1-4000)
             echo "::error title=migration-failure::${summary:-no output captured}"
           else
-            echo "Formal V6 migration and intentional V7 failure were detected for ${GITHUB_SHA}"
+            echo "Formal V7 migration and intentional V8 failure were detected for ${GITHUB_SHA}"
           fi
           exit "$status"
       - name: Upload migration evidence

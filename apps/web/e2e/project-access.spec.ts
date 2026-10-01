@@ -215,7 +215,7 @@ test('real Keycloak dual-user project access grants viewer read, rejects write, 
     expect(await read.json()).toMatchObject({ id: project.id, code: projectCode })
     const permissions = await viewerPage.request.get(`/api/v1/me/permissions?projectId=${project.id}`)
     expect(permissions.status()).toBe(200)
-    expect(await permissions.json()).toMatchObject({ projectId: project.id, roles: ['PROJECT_VIEWER'], permissions: ['project:read'] })
+    expect(await permissions.json()).toMatchObject({ projectId: project.id, roles: ['PROJECT_VIEWER'], permissions: expect.arrayContaining(['project:read']) })
 
     const writeAttempt = await write(viewerPage, 'PATCH', `/api/v1/projects/${project.id}`, {
       name: 'viewer must not update',

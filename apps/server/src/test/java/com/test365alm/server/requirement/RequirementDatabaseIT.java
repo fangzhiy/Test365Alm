@@ -27,7 +27,7 @@ import org.testcontainers.utility.DockerImageName;
 
 /** Real PostgreSQL proof for requirement revisions, CAS and idempotency. */
 @ActiveProfiles("integration")
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Testcontainers
 @Timeout(180)
 class RequirementDatabaseIT {

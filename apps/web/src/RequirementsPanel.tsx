@@ -90,7 +90,7 @@ export default function RequirementsPanel({ projectId, access, resetSignal = 0 }
     event.preventDefault()
     if (!selected || !can(access, 'requirement:update') || saving) return
     const input = { title: title.trim(), body }; setSaving(true); setNotice('');
-    try { const updated = await requirementsApi.update(projectId, selected, input); setItems((current) => current.map((item) => item.id === updated.id ? updated : item)); setSelected(updated); setDraft(null); setConflict(false); setNotice('需求已保存'); await selectRequirement(updated) }
+    try { const updated = await requirementsApi.update(projectId, selected, input); setItems((current) => current.map((item) => item.id === updated.id ? updated : item)); setSelected(updated); setDraft(null); setConflict(false); await selectRequirement(updated); setNotice('需求已保存') }
     catch (error) { if (codeFor(error) === 'HTTP_412' || codeFor(error) === 'STALE_VERSION' || codeFor(error) === 'PRECONDITION_FAILED') { setDraft(input); setConflict(true); setNotice('需求已被其他人更新。草稿已保留，请查看最新版本后再决定如何修改。') } else setNotice(messageFor(error)) }
     finally { setSaving(false) }
   }
