@@ -158,8 +158,8 @@ test('real Keycloak UI project flow shows scoped viewer controls and clears revo
     await page.getByLabel('显示名称').fill('R03 UI private project')
     await page.getByRole('button', { name: '创建项目' }).click()
     await expect(page.getByLabel('项目').locator('option').filter({ hasText: `R03 UI private project（${ungrantedCode}）` })).toHaveCount(1)
-    const grantedOption = page.getByLabel('项目').locator('option').filter({ hasText: `R03 concurrent update（${projectCode}）` })
-    await page.getByLabel('项目').selectOption((await grantedOption.getAttribute('value')) ?? '')
+    if (!uiProjectId) throw new Error('Created project option did not expose an ID')
+    await page.getByLabel('项目').selectOption(uiProjectId)
     await expect(page.getByRole('region', { name: '项目详情' })).toContainText('R03 concurrent update')
 
     await viewerPage.getByRole('button', { name: '加载访问范围' }).click()
