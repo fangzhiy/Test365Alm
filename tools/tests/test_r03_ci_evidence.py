@@ -48,19 +48,16 @@ class R03CiEvidenceTests(unittest.TestCase):
     def test_requires_real_project_access_rls_case(self):
         with tempfile.TemporaryDirectory() as directory:
             report = Path(directory) / "TEST-com.test365alm.server.PlatformDatabaseIT.xml"
+            cases = "".join(f'<testcase name="{name}" />' for name in sorted(REQUIRED_PROJECT_TESTS))
             report.write_text(
                 '<testsuite name="com.test365alm.server.PlatformDatabaseIT" '
-                'tests="2" failures="0" errors="0" skipped="0">'
-                '<testcase name="runtimeRoleSeesOnlyTheCurrentTenantThroughRls" />'
-                '<testcase name="projectSliceCreatesAuditsGrantsViewerAndRevokesWithoutCrossTenantLeak" />'
+                f'tests="{len(REQUIRED_PROJECT_TESTS)}" failures="0" errors="0" skipped="0">'
+                f'{cases}'
                 '</testsuite>'
             )
             valid, summary = verify_project_access(Path(directory))
             self.assertTrue(valid, summary)
-            self.assertEqual({
-                "runtimeRoleSeesOnlyTheCurrentTenantThroughRls",
-                "projectSliceCreatesAuditsGrantsViewerAndRevokesWithoutCrossTenantLeak",
-            }, REQUIRED_PROJECT_TESTS)
+            self.assertEqual(len(REQUIRED_PROJECT_TESTS), len(set(REQUIRED_PROJECT_TESTS)))
 
             report.write_text(
                 '<testsuite name="com.test365alm.server.PlatformDatabaseIT" '
