@@ -3,17 +3,17 @@
 ## R04-M07-001 当前状态
 
 - 本轮从实际分支 `feat/r03-m03-002` 的 `07224db903b542318472fdd52ca2f7fb7d3d7aca` 创建 `feat/r04-m07-001`，未回退或覆盖既有 R03 修改。PR #3 仍为 Open、未合并（base `feat/r03-m03-001`）；本轮 PR 以其实际分支为依赖 base，不把需求代码追加到 PR #3。Windows `git fetch origin --prune` 仍因 Schannel `SEC_E_NO_CREDENTIALS (0x8009030E)` 未完成，远端状态以 GitHub API/推送核对为准。
-- 已实现项目根级需求最小闭环（代码提交 `befe29449434af5b43b6135504bf8b76e333eee2`）：V7 受控迁移、项目成员权限边界、稳定 UUID 与项目内显示编号、行锁编号分配、幂等创建、具体 `If-Match` 编辑、追加且只读修订历史、审计与 Outbox 同事务、运行时 RLS/列级授权，以及前端真实项目上下文工作台。未实现需求树、富文本、附件、评审、追踪、删除、导入导出或 AI。
+- 已实现项目根级需求最小闭环（初始代码提交 `befe29449434af5b43b6135504bf8b76e333eee2`，最终代码测试提交 `b6337dcfdf95f0f790f0af0ff125f334a7145d49`）：V7 受控迁移、项目成员权限边界、稳定 UUID 与项目内显示编号、行锁编号分配、幂等创建、具体 `If-Match` 编辑、追加且只读修订历史、审计与 Outbox 同事务、运行时 RLS/列级授权，以及前端真实项目上下文工作台。未实现需求树、富文本、附件、评审、追踪、删除、导入导出或 AI。
 - API 为 `POST/GET /api/v1/projects/{projectId}/requirements`、`GET/PATCH /{requirementId}`、`GET /{requirementId}/revisions` 和单修订查询；前端不接受手工 scope，PROJECT_VIEWER 只读，412 保留编辑草稿。
 - 本机工具：Java `17.0.2`、Maven `3.9.14`（POM 编译目标仍为 Java 17）、Node `v26.0.0`、npm `11.12.1`、Python `3.12`。CI 既有基线使用 Java 21/Node 24；本机版本差异不写成目标环境已验证。
 - 已实际通过：后端 Surefire 19 个、前端 5 个文件/45 个测试、Python 工具 52 个、前端 lint（仅既有 React effect 警告）、前端构建、后端 test-compile、契约 JSON 和敏感信息扫描。`npm ci` 首次受 Windows 全局缓存 EPERM 影响失败，改用仓库内临时缓存后成功；Maven Wrapper 本机 PowerShell 脚本以 `icm : Cannot index into a null array` 退出码 1，系统 Maven 19/0 结果单独记录，未混写为 Wrapper 成功。
-- 本机真实 PostgreSQL/Testcontainers 集成在 Failsafe 启动前因 Windows JNA `jnidispatch.dll`/Docker named pipe 权限失败，不能写成数据库验收通过；`RequirementDatabaseIT` 的 3 个真实场景已编译并由 CI 负责隔离执行。真实 Keycloak 浏览器验收同样依赖 CI-owned 隔离栈，本机未运行。
-- I01-I10：I01 `BLOCKED`（本机 Docker/Testcontainers）；I02 `BLOCKED`；I03 `BLOCKED`；I04 `NOT_RUN`（需真实并发 PostgreSQL）；I05 `NOT_RUN`（HTTP/CSRF 真实栈）；I06 `BLOCKED`；I07 `BLOCKED`；I08 `BLOCKED`；I09 `NOT_RUN`（Keycloak 浏览器）；I10 `PENDING`（待本轮推送后的 Push/PR CI）。这些状态不把单元测试或文档校验扩大为业务验收。
+- 本机真实 PostgreSQL/Testcontainers 集成仍在 Failsafe 启动前因 Windows JNA `jnidispatch.dll`/Docker named pipe 权限失败；CI 已在隔离 Ubuntu 上执行 `RequirementDatabaseIT` 3/3、升级、迁移失败和 readiness 恢复。真实 Keycloak 浏览器验收本机未运行，CI 已完成真实需求 UI 流程。
+- I01/I02/I03/I06/I07/I08/I09/I10 已由 Push/PR CI 实际通过；I04（真实并发 PostgreSQL）与 I05（完整 If-Match/CSRF HTTP 场景）仍为 `NOT_RUN`。本机 Docker 阻塞仍保留，不把本地未运行写成通过。
 - 本轮不标记 P0、M07 或完整 R04 完成；旧 ALM 样本、完整需求能力和生产部署继续保留为未验证/后续范围。
 
 最后更新：2026-10-01
 当前轮次：`R04-M07-001`
-状态：`IMPLEMENTED_LOCAL_UNIT_PASS / REAL_DB_AND_BROWSER_BLOCKED_LOCAL / CI_PENDING`
+状态：`IMPLEMENTED / LOCAL_DOCKER_BLOCKED / PUSH_AND_PR_CI_PASS`
 
 ## R03-M03-002-FIX03 当前状态
 
