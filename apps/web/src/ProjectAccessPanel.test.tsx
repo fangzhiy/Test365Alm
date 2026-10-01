@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import ProjectAccessPanel from './ProjectAccessPanel'
 
 const json = (body: unknown, status = 200) => Promise.resolve(new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }))
-const tenant = { id: 'tenant-1', code: 'acme', name: 'Acme', status: 'ACTIVE', rowVersion: 0 }
+const tenant = { id: 'tenant-1', code: 'acme', name: 'Acme', status: 'ACTIVE', rowVersion: 0, canCreateProject: true }
 const project = { id: 'project-1', tenantId: 'tenant-1', domainId: 'domain-1', code: 'web', name: 'Web quality', state: 'ACTIVE', rowVersion: 0 }
 const domain = { id: 'domain-1', tenantId: 'tenant-1', name: 'Quality', status: 'ACTIVE', rowVersion: 0 }
 const member = { principalId: 'principal-1', displayName: 'A Tester', roles: ['PROJECT_MEMBER'], state: 'ACTIVE', authorizationVersion: 1 }
@@ -72,7 +72,7 @@ describe('project access management', () => {
   it('loads a read-only project without treating admin-only member endpoints as a fatal error', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const path = String(input)
-      if (path.endsWith('/tenants')) return json([tenant])
+      if (path.endsWith('/tenants')) return json([{ ...tenant, canCreateProject: false }])
       if (path.includes('/domains?')) return json([domain])
       if (path.includes('/projects?')) return json([project])
       if (path === '/api/v1/projects/project-1') return json(project)
@@ -119,7 +119,7 @@ describe('project access management', () => {
   it('keeps viewer project details read-only and does not render admin controls', async () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const path = String(input)
-      if (path.endsWith('/tenants')) return json([tenant])
+      if (path.endsWith('/tenants')) return json([{ ...tenant, canCreateProject: false }])
       if (path.includes('/domains?')) return json([domain])
       if (path.includes('/projects?')) return json([project])
       if (path === '/api/v1/projects/project-1') return json(project)
@@ -134,7 +134,29 @@ describe('project access management', () => {
     expect(screen.queryByRole('button', { name: '保存成员' })).not.toBeInTheDocument()
   })
 
+  it('uses the server tenant capability to hide project creation when it is disabled', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const path = String(input)
+      if (path.endsWith('/tenants')) return json([{ ...tenant, canCreateProject: false }])
+      if (path.includes('/domains?')) return json([domain])
+      if (path.includes('/projects?')) return json([project])
+      if (path === '/api/v1/projects/project-1') return json(project)
+      if (path.endsWith('/member-candidates')) return json([])
+      if (path.endsWith('/members')) return json([member])
+      return json({ tenantId: tenant.id, projectId: project.id, principalId: member.principalId, roles: ['PROJECT_ADMIN'], permissions: ['project:manage-members'] })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<ProjectAccessPanel />)
+    fireEvent.click(screen.getByRole('button', { name: '加载访问范围' }))
+    await screen.findByRole('region', { name: '项目详情' })
+    expect(screen.queryByRole('button', { name: '创建项目' })).not.toBeInTheDocument()
+    expect(screen.queryByText('新建项目')).not.toBeInTheDocument()
+    expect(fetchMock).not.toHaveBeenCalledWith('/api/v1/projects', expect.objectContaining({ method: 'POST' }))
+  })
+
   it('shows a stale-version conflict without replacing the current project detail', async () => {
+    let projectReads = 0
+    const refreshedProject = { ...project, name: 'Concurrent update', rowVersion: 1 }
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input)
       if (path.endsWith('/csrf')) return json({ headerName: 'X-CSRF-TOKEN', token: 'csrf-test' })
@@ -142,7 +164,7 @@ describe('project access management', () => {
       if (path.includes('/domains?')) return json([domain])
       if (path.includes('/projects?')) return json([project])
       if (path === '/api/v1/projects/project-1' && init?.method === 'PATCH') return json({ code: 'STALE_VERSION', message: '项目已被其他请求更新' }, 409)
-      if (path === '/api/v1/projects/project-1') return json(project)
+      if (path === '/api/v1/projects/project-1') return json(projectReads++ === 0 ? project : refreshedProject)
       if (path.endsWith('/member-candidates')) return json([])
       if (path.endsWith('/members')) return json([member])
       return json({ tenantId: tenant.id, projectId: project.id, principalId: member.principalId, roles: ['PROJECT_ADMIN'], permissions: ['project:read', 'project:write', 'project:manage-members'] })
@@ -154,7 +176,8 @@ describe('project access management', () => {
     fireEvent.change(screen.getByLabelText('项目名称'), { target: { value: 'stale edit' } })
     fireEvent.click(screen.getByRole('button', { name: '保存项目' }))
     expect(await screen.findByText('项目已被其他请求更新')).toBeVisible()
-    expect(screen.getByRole('region', { name: '项目详情' })).toHaveTextContent('Web quality')
+    expect(screen.getByRole('region', { name: '项目详情' })).toHaveTextContent('Concurrent update')
+    expect(screen.getByRole('region', { name: '项目详情' })).toHaveTextContent('版本 1')
   })
 
   it('does not let a slow response for the previous project replace the selected project', async () => {

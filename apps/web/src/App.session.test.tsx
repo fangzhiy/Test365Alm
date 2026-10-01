@@ -5,7 +5,7 @@ import App from './App'
 
 const json = (body: unknown, status = 200) => Promise.resolve(new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }))
 const me = { id: 'principal-1', issuer: 'https://issuer.example', subject: 'sub-1', displayName: 'A Tester' }
-const tenant = { id: 'tenant-1', code: 'acme', name: 'Acme', status: 'ACTIVE' }
+const tenant = { id: 'tenant-1', code: 'acme', name: 'Acme', status: 'ACTIVE', rowVersion: 0, canCreateProject: true }
 const project = { id: 'project-1', tenantId: 'tenant-1', domainId: 'domain-1', code: 'web', name: 'Web quality', state: 'ACTIVE', rowVersion: 0 }
 const domain = { id: 'domain-1', tenantId: 'tenant-1', name: 'Quality', status: 'ACTIVE', rowVersion: 0 }
 const member = { principalId: 'principal-1', displayName: 'A Tester', roles: ['PROJECT_ADMIN'], state: 'ACTIVE', authorizationVersion: 1 }

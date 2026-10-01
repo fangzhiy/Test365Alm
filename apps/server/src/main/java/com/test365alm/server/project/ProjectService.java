@@ -36,12 +36,14 @@ public class ProjectService {
         UUID id = UUID.randomUUID();
         setContext(id, actor);
         try {
-            jdbc.update("INSERT INTO tenant (id, code, name) VALUES (?, ?, ?)", id, safeCode, safeName);
+            jdbc.update("INSERT INTO tenant (id, code, name, created_by) VALUES (?, ?, ?, ?)",
+                    id, safeCode, safeName, actor);
             jdbc.update("INSERT INTO tenant_member (tenant_id, principal_id, roles) VALUES (?, ?, ?)",
                     id, actor, sqlArray("TENANT_ADMIN"));
             audit(id, null, actor, "tenant.created", "tenant", id, 0);
             return jdbc.queryForObject("""
-                    SELECT id, code, name, status, row_version FROM tenant WHERE id = ?
+                    SELECT id, code, name, status, row_version, TRUE AS can_create_project
+                    FROM tenant WHERE id = ?
                     """, ProjectService::tenant, id);
         } catch (DataIntegrityViolationException ex) {
             throw ProjectAccessException.conflict("TENANT_CODE_EXISTS", "Tenant code is already in use");
@@ -52,14 +54,21 @@ public class ProjectService {
     public List<TenantView> listTenants(UUID actor) {
         setPrincipalContext(actor);
         return jdbc.query("""
-                SELECT t.id, t.code, t.name, t.status, t.row_version
+                SELECT t.id, t.code, t.name, t.status, t.row_version,
+                       EXISTS (SELECT 1 FROM tenant_member admin_tm
+                               JOIN principal admin_p ON admin_p.id = admin_tm.principal_id
+                               WHERE admin_tm.tenant_id = t.id AND admin_tm.principal_id = ?
+                                 AND admin_tm.revoked_at IS NULL
+                                 AND (admin_tm.valid_until IS NULL OR admin_tm.valid_until > CURRENT_TIMESTAMP)
+                                 AND admin_p.disabled_at IS NULL
+                                 AND admin_tm.roles && ARRAY['TENANT_ADMIN']::text[]) AS can_create_project
                 FROM tenant t JOIN tenant_member tm ON tm.tenant_id = t.id
                     JOIN principal p ON p.id = tm.principal_id
                 WHERE tm.principal_id = ? AND tm.revoked_at IS NULL
                   AND p.disabled_at IS NULL
                   AND (tm.valid_until IS NULL OR tm.valid_until > CURRENT_TIMESTAMP)
                 ORDER BY t.code
-                """, ProjectService::tenant, actor);
+                """, ProjectService::tenant, actor, actor);
     }
 
     @Transactional(readOnly = true)
@@ -75,6 +84,7 @@ public class ProjectService {
     @Transactional
     public DomainView createDomain(UUID actor, UUID tenantId, String name) {
         requireTenantAdmin(actor, tenantId);
+        requireTenantActive(tenantId);
         setContext(tenantId, actor);
         try {
             UUID id = UUID.randomUUID();
@@ -92,6 +102,8 @@ public class ProjectService {
     @Transactional
     public ProjectView createProject(UUID actor, UUID tenantId, UUID domainId, String code, String name) {
         requireTenantAdmin(actor, tenantId);
+        requireTenantActive(tenantId);
+        requireDomainActive(tenantId, domainId);
         setContext(tenantId, actor);
         UUID id = UUID.randomUUID();
         try {
@@ -140,6 +152,7 @@ public class ProjectService {
     public ProjectView updateProject(UUID actor, UUID projectId, String name, Long rowVersion) {
         ProjectView project = findProject(actor, projectId);
         requireProjectAdmin(actor, project.tenantId(), project.id());
+        requireProjectActive(project);
         if (rowVersion == null || rowVersion < 0) throw ProjectAccessException.invalid("rowVersion is required");
         setContext(project.tenantId(), actor);
         int changed = jdbc.update("""
@@ -207,6 +220,8 @@ public class ProjectService {
         requireProjectAdmin(actor, project.tenantId(), project.id());
         setContext(project.tenantId(), actor);
         lockProjectMembers(project.tenantId(), project.id());
+        recheckProjectAdminAfterLock(actor, project);
+        requireProjectActive(project);
         if (jdbc.queryForObject("SELECT COUNT(*) FROM principal WHERE id = ? AND disabled_at IS NULL", Integer.class, principalId) == 0) {
             throw ProjectAccessException.notFound();
         }
@@ -237,6 +252,9 @@ public class ProjectService {
         }
         Set<String> beforeRoles = currentRoles;
         long beforeVersion = currentVersion;
+        long nextVersion = currentVersion == 0 ? 1 : currentVersion + 1;
+        audit(project.tenantId(), project.id(), actor, "project.member.granted", "project_member", principalId,
+                nextVersion, beforeRoles, roles, beforeVersion, nextVersion);
         jdbc.update("""
                 INSERT INTO project_member (tenant_id, project_id, principal_id, roles, revoked_at, valid_until)
                 VALUES (?, ?, ?, ?, NULL, NULL)
@@ -246,9 +264,6 @@ public class ProjectService {
                     authorization_version = project_member.authorization_version + 1,
                     updated_at = CURRENT_TIMESTAMP
                 """, project.tenantId(), project.id(), principalId, sqlArray(roles));
-        audit(project.tenantId(), project.id(), actor, "project.member.granted", "project_member", principalId,
-                memberVersion(project.tenantId(), project.id(), principalId), beforeRoles, roles, beforeVersion,
-                memberVersion(project.tenantId(), project.id(), principalId));
         return member(project.tenantId(), project.id(), principalId);
     }
 
@@ -267,8 +282,11 @@ public class ProjectService {
             boolean allowMissingVersion) {
         ProjectView project = findProject(actor, projectId);
         requireProjectAdmin(actor, project.tenantId(), project.id());
+        requireProjectActive(project);
         setContext(project.tenantId(), actor);
         lockProjectMembers(project.tenantId(), project.id());
+        recheckProjectAdminAfterLock(actor, project);
+        requireProjectActive(project);
         Set<String> current = currentRoles(project.tenantId(), project.id(), principalId);
         if (current.isEmpty()) throw ProjectAccessException.notFound();
         long currentVersion = memberVersion(project.tenantId(), project.id(), principalId);
@@ -284,6 +302,9 @@ public class ProjectService {
         if (isAdminRoles(current, PROJECT_ADMINS) && countActiveAdmins(project.tenantId(), project.id(), principalId) == 0) {
             throw ProjectAccessException.conflict("LAST_ADMIN", "A project must retain one active administrator");
         }
+        long nextVersion = currentVersion + 1;
+        audit(project.tenantId(), project.id(), actor, "project.member.revoked", "project_member", principalId,
+                nextVersion, current, current, currentVersion, nextVersion);
         jdbc.update("""
                 UPDATE project_member SET revoked_at = CURRENT_TIMESTAMP, valid_until = CURRENT_TIMESTAMP,
                     row_version = row_version + 1,
@@ -291,9 +312,6 @@ public class ProjectService {
                 WHERE tenant_id = ? AND project_id = ? AND principal_id = ?
                   AND revoked_at IS NULL AND (valid_until IS NULL OR valid_until > CURRENT_TIMESTAMP)
                 """, project.tenantId(), project.id(), principalId);
-        audit(project.tenantId(), project.id(), actor, "project.member.revoked", "project_member", principalId,
-                memberVersion(project.tenantId(), project.id(), principalId), current, current,
-                currentVersion, memberVersion(project.tenantId(), project.id(), principalId));
         return member(project.tenantId(), project.id(), principalId);
     }
 
@@ -327,6 +345,42 @@ public class ProjectService {
     private void requireProjectAdmin(UUID actor, UUID tenantId, UUID projectId) {
         requireTenantMember(actor, tenantId);
         if (!hasRole(actor, tenantId, projectId, PROJECT_ADMINS, true)) throw ProjectAccessException.forbidden();
+    }
+
+    private void recheckProjectAdminAfterLock(UUID actor, ProjectView project) {
+        // The first authorization check happens before waiting on the project
+        // lock.  Membership can be revoked while this transaction waits, so
+        // evaluate the effective tenant and project roles again after lock
+        // acquisition and before reading or mutating the target member.
+        requireTenantMember(actor, project.tenantId());
+        if (!hasRole(actor, project.tenantId(), project.id(), PROJECT_ADMINS, true)) {
+            throw ProjectAccessException.forbidden();
+        }
+    }
+
+    private void requireTenantActive(UUID tenantId) {
+        String status = jdbc.queryForObject("SELECT status FROM tenant WHERE id = ?", String.class, tenantId);
+        if (!"ACTIVE".equals(status)) {
+            throw ProjectAccessException.conflict("TENANT_NOT_ACTIVE", "Tenant is not active");
+        }
+    }
+
+    private void requireDomainActive(UUID tenantId, UUID domainId) {
+        Integer count = jdbc.queryForObject("""
+                SELECT COUNT(*) FROM domain
+                WHERE tenant_id = ? AND id = ? AND status = 'ACTIVE'
+                """, Integer.class, tenantId, domainId);
+        if (count == null || count == 0) {
+            throw ProjectAccessException.conflict("DOMAIN_NOT_ACTIVE", "Domain is not active in the tenant");
+        }
+    }
+
+    private void requireProjectActive(ProjectView project) {
+        String state = jdbc.queryForObject("SELECT state FROM project WHERE tenant_id = ? AND id = ?",
+                String.class, project.tenantId(), project.id());
+        if (!"ACTIVE".equals(state)) {
+            throw ProjectAccessException.conflict("PROJECT_NOT_ACTIVE", "Project is not active");
+        }
     }
 
     private void requireProjectAccess(UUID actor, UUID tenantId, UUID projectId) {
@@ -537,7 +591,7 @@ public class ProjectService {
 
     private static TenantView tenant(ResultSet rs, int row) throws SQLException {
         return new TenantView(rs.getObject("id", UUID.class), rs.getString("code"), rs.getString("name"),
-                rs.getString("status"), rs.getLong("row_version"));
+                rs.getString("status"), rs.getLong("row_version"), rs.getBoolean("can_create_project"));
     }
 
     private static DomainView domain(ResultSet rs, int row) throws SQLException {
@@ -566,7 +620,8 @@ public class ProjectService {
         return (String[]) array.getArray();
     }
 
-    public record TenantView(UUID id, String code, String name, String status, long rowVersion) { }
+    public record TenantView(UUID id, String code, String name, String status, long rowVersion,
+            boolean canCreateProject) { }
     public record DomainView(UUID id, UUID tenantId, String name, String status, long rowVersion) { }
     public record ProjectView(UUID id, UUID tenantId, UUID domainId, String code, String name, String state,
             int schemaVersion, long rowVersion) { }

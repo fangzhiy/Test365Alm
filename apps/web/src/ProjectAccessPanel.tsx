@@ -8,6 +8,7 @@ type ProjectAccessPanelProps = { resetSignal?: number }
 const roles: ProjectRole[] = ['PROJECT_ADMIN', 'PROJECT_MEMBER', 'PROJECT_VIEWER']
 const roleLabel: Record<ProjectRole, string> = { PROJECT_ADMIN: '项目管理员', PROJECT_MEMBER: '项目成员', PROJECT_VIEWER: '项目查看者' }
 const messageFor = (error: unknown) => typeof error === 'object' && error !== null && 'message' in error && typeof error.message === 'string' ? error.message : '访问范围加载失败，请稍后重试'
+const codeFor = (error: unknown) => typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string' ? error.code : ''
 const canManageMembers = (value: ProjectAccess) => value.roles.includes('PROJECT_ADMIN') || value.permissions.some((permission) => permission === 'project:manage-members' || permission === 'project.members.write')
 
 type RequestRound = { round: number; signal: AbortSignal; isCurrent: () => boolean }
@@ -163,7 +164,7 @@ export default function ProjectAccessPanel({ resetSignal = 0 }: ProjectAccessPan
     await loadProjectInternal(nextProjectId, request)
   }
 
-  const loadProject = async (nextProjectId: string) => {
+  const loadProject = async (nextProjectId: string): Promise<boolean> => {
     const request = beginRequestRound()
     setProjectId(nextProjectId)
     setNotice('')
@@ -174,7 +175,7 @@ export default function ProjectAccessPanel({ resetSignal = 0 }: ProjectAccessPan
     setAccess(null)
     if (!nextProjectId) {
       finishRequestRound(request.round)
-      return
+      return true
     }
     try {
       await loadProjectInternal(nextProjectId, request)
@@ -183,9 +184,11 @@ export default function ProjectAccessPanel({ resetSignal = 0 }: ProjectAccessPan
         clearProjectData()
         setNotice(messageFor(error))
       }
+      return false
     } finally {
       finishRequestRound(request.round)
     }
+    return true
   }
 
   const loadTenant = async (nextTenantId: string) => {
@@ -241,12 +244,23 @@ export default function ProjectAccessPanel({ resetSignal = 0 }: ProjectAccessPan
       setMembers((current) => [...current.filter((item) => item.principalId !== member.principalId), member])
       setPrincipalId('')
       setNotice('成员授权已保存')
-    } catch (error) { if (mountedRef.current && requestRoundRef.current === requestRound) setNotice(messageFor(error)) }
+    } catch (error) {
+      if (!mountedRef.current || requestRoundRef.current !== requestRound) return
+      if (codeFor(error) === 'STALE_VERSION') {
+        const refreshed = await loadProject(selectedProjectId)
+        // Keep the conflict visible after replacing stale detail/member data.
+        // A failed refresh already clears the selected project and reports its
+        // own error, so do not overwrite that state with the old conflict.
+        if (refreshed && mountedRef.current && projectId === selectedProjectId) setNotice(messageFor(error))
+        return
+      }
+      setNotice(messageFor(error))
+    }
   }
 
   const createProject = async (event: FormEvent) => {
     event.preventDefault()
-    if (!tenantId) return
+    if (!tenantId || !canCreateProject) return
     const requestRound = requestRoundRef.current
     const selectedTenantId = tenantId
     try {
@@ -272,7 +286,15 @@ export default function ProjectAccessPanel({ resetSignal = 0 }: ProjectAccessPan
       setProjects((current) => current.map((item) => item.id === updated.id ? updated : item))
       setEditProjectName(updated.name)
       setNotice('项目已更新')
-    } catch (error) { if (mountedRef.current && requestRoundRef.current === requestRound) setNotice(messageFor(error)) }
+    } catch (error) {
+      if (!mountedRef.current || requestRoundRef.current !== requestRound) return
+      if (codeFor(error) === 'STALE_VERSION') {
+        const refreshed = await loadProject(selectedProjectId)
+        if (refreshed && mountedRef.current && projectId === selectedProjectId) setNotice(messageFor(error))
+        return
+      }
+      setNotice(messageFor(error))
+    }
   }
 
   const revoke = async (member: ProjectMember) => {
@@ -288,6 +310,11 @@ export default function ProjectAccessPanel({ resetSignal = 0 }: ProjectAccessPan
   }
 
   const writable = access !== null && canManageMembers(access)
+  // Project creation is a tenant-level server capability.  Do not infer it
+  // from access to whichever project happens to be selected (a new tenant can
+  // legitimately have no projects yet).
+  const selectedTenant = tenants.find((tenant) => tenant.id === tenantId)
+  const canCreateProject = selectedTenant?.canCreateProject === true
 
   return <section className="access-panel" aria-labelledby="access-heading">
     <div className="access-panel-header"><div><span className="panel-label">项目访问管理</span><h2 id="access-heading">租户、项目与成员</h2><p>所有列表和授权动作都由服务端按当前会话过滤。</p></div><button type="button" className="secondary-button" onClick={() => void load()} disabled={state === 'loading'}>{state === 'loading' ? '加载中…' : '加载访问范围'}</button></div>
@@ -295,7 +322,7 @@ export default function ProjectAccessPanel({ resetSignal = 0 }: ProjectAccessPan
     {state === 'error' && <p className="access-error" role="alert">{notice}</p>}
     {state !== 'idle' && state !== 'error' && <>
       <div className="management-forms">
-        {tenantId && writable && <form className="compact-form" onSubmit={(event) => void createProject(event)}><strong>新建项目</strong>{domains.length > 0 ? <label>域<select aria-label="项目域" value={domainId} onChange={(event) => setDomainId(event.target.value)} required><option value="">选择域</option>{domains.map((domain) => <option key={domain.id} value={domain.id}>{domain.name}</option>)}</select></label> : <label>域 ID<input value={domainId} onChange={(event) => setDomainId(event.target.value)} placeholder="domain UUID" required /></label>}<label>项目代码<input value={projectCode} onChange={(event) => setProjectCode(event.target.value)} required /></label><label>显示名称<input value={projectName} onChange={(event) => setProjectName(event.target.value)} required /></label><button type="submit" className="primary-button">创建项目</button></form>}
+        {tenantId && canCreateProject && <form className="compact-form" onSubmit={(event) => void createProject(event)}><strong>新建项目</strong>{domains.length > 0 ? <label>域<select aria-label="项目域" value={domainId} onChange={(event) => setDomainId(event.target.value)} required><option value="">选择域</option>{domains.map((domain) => <option key={domain.id} value={domain.id}>{domain.name}</option>)}</select></label> : <label>域 ID<input value={domainId} onChange={(event) => setDomainId(event.target.value)} placeholder="domain UUID" required /></label>}<label>项目代码<input value={projectCode} onChange={(event) => setProjectCode(event.target.value)} required /></label><label>显示名称<input value={projectName} onChange={(event) => setProjectName(event.target.value)} required /></label><button type="submit" className="primary-button">创建项目</button></form>}
       </div>
       <div className="access-selects">
         <label>租户<select value={tenantId} onChange={(event) => void loadTenant(event.target.value)}><option value="">选择租户</option>{tenants.map((tenant) => <option key={tenant.id} value={tenant.id}>{tenant.name}（{tenant.code}）</option>)}</select></label>

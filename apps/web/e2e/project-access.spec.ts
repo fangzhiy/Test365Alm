@@ -123,6 +123,30 @@ test('real Keycloak UI project flow shows scoped viewer controls and clears revo
     await expect(page.getByText(`R03 UI project（${projectCode}）`)).toBeVisible()
     await expect(page.getByRole('region', { name: '项目详情' })).toContainText('R03 UI project')
 
+    // Exercise the browser edit path, then force a concurrent update so the
+    // stale row-version response is observed through the real UI. The direct
+    // request is only the second writer used to create the conflict; the
+    // operation under test is the DOM form submission below.
+    const uiProjectOption = page.getByLabel('项目').locator('option').filter({ hasText: `R03 UI project（${projectCode}）` })
+    const uiProjectId = await uiProjectOption.getAttribute('value')
+    expect(uiProjectId).toBeTruthy()
+    await page.getByLabel('项目名称').fill('R03 UI edited project')
+    await page.getByRole('button', { name: '保存项目' }).click()
+    await expect(page.getByText('项目已更新')).toBeVisible()
+    await expect(page.getByRole('region', { name: '项目详情' })).toContainText('R03 UI edited project')
+    const currentProjectResponse = await page.request.get(`/api/v1/projects/${uiProjectId}`)
+    expect(currentProjectResponse.status()).toBe(200)
+    const currentProject = await currentProjectResponse.json() as { rowVersion: number }
+    const concurrentUpdate = await write(page, 'PATCH', `/api/v1/projects/${uiProjectId}`, {
+      name: 'R03 concurrent update',
+      rowVersion: currentProject.rowVersion,
+    })
+    expect(concurrentUpdate.status()).toBe(200)
+    await page.getByLabel('项目名称').fill('R03 stale browser edit')
+    await page.getByRole('button', { name: '保存项目' }).click()
+    await expect(page.getByText(/项目已被其他请求更新|版本冲突|changed|stale|version|modified|concurrent/i)).toBeVisible()
+    await expect(page.getByRole('region', { name: '项目详情' })).toContainText('R03 concurrent update')
+
     const candidate = page.getByLabel('同租户候选主体')
     await candidate.selectOption(viewerId)
     await page.getByLabel('固定角色').selectOption('PROJECT_VIEWER')
@@ -134,14 +158,18 @@ test('real Keycloak UI project flow shows scoped viewer controls and clears revo
     await page.getByLabel('显示名称').fill('R03 UI private project')
     await page.getByRole('button', { name: '创建项目' }).click()
     await expect(page.getByText(`R03 UI private project（${ungrantedCode}）`)).toBeVisible()
-    const grantedOption = page.getByLabel('项目').locator('option').filter({ hasText: `R03 UI project（${projectCode}）` })
+    const grantedOption = page.getByLabel('项目').locator('option').filter({ hasText: `R03 concurrent update（${projectCode}）` })
     await page.getByLabel('项目').selectOption((await grantedOption.getAttribute('value')) ?? '')
-    await expect(page.getByRole('region', { name: '项目详情' })).toContainText('R03 UI project')
+    await expect(page.getByRole('region', { name: '项目详情' })).toContainText('R03 concurrent update')
 
     await viewerPage.getByRole('button', { name: '加载访问范围' }).click()
-    await expect(viewerPage.getByLabel('项目')).toContainText(`R03 UI project`)
+    // Select the tenant returned by the isolated seed explicitly.  A user may
+    // belong to more than one tenant and the first list entry is not a stable
+    // project-access scope for this scenario.
+    await viewerPage.getByLabel('租户').selectOption(tenantId)
+    await expect(viewerPage.getByLabel('项目')).toContainText(`R03 concurrent update`)
     await expect(viewerPage.getByLabel('项目')).not.toContainText('R03 UI private project')
-    await expect(viewerPage.getByRole('region', { name: '项目详情' })).toContainText('R03 UI project')
+    await expect(viewerPage.getByRole('region', { name: '项目详情' })).toContainText('R03 concurrent update')
     await expect(viewerPage.getByRole('button', { name: '创建项目' })).not.toBeVisible()
     await expect(viewerPage.getByRole('button', { name: '保存成员' })).not.toBeVisible()
 
@@ -153,6 +181,7 @@ test('real Keycloak UI project flow shows scoped viewer controls and clears revo
     await expect(page.getByText('R03 Viewer 已撤销项目访问')).toBeVisible()
 
     await viewerPage.getByRole('button', { name: '加载访问范围' }).click()
+    await viewerPage.getByLabel('租户').selectOption(tenantId)
     await expect(viewerPage.getByLabel('项目')).toHaveValue('')
     await expect(viewerPage.getByRole('region', { name: '项目详情' })).not.toBeVisible()
     await viewerPage.getByRole('button', { name: '退出登录' }).click()

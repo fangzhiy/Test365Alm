@@ -5,7 +5,9 @@ export type Tenant = {
   code: string
   name: string
   status: 'ACTIVE' | 'SUSPENDED' | 'ARCHIVED'
-  rowVersion?: number
+  rowVersion: number
+  /** Server-authoritative capability; never infer create access from project roles. */
+  canCreateProject: boolean
 }
 
 export type Domain = {
@@ -92,10 +94,10 @@ const requestJson = async (input: RequestInfo | URL, init?: RequestInit, options
 }
 
 const parseTenant = (value: unknown): Tenant | null => {
-  if (!isRecord(value) || !isString(value.id) || !isString(value.code) || !isString(value.name) || !isNonNegativeInteger(value.rowVersion)) return null
+  if (!isRecord(value) || !isString(value.id) || !isString(value.code) || !isString(value.name) || !isNonNegativeInteger(value.rowVersion) || typeof value.canCreateProject !== 'boolean') return null
   const status = value.status
   if (status !== 'ACTIVE' && status !== 'SUSPENDED' && status !== 'ARCHIVED') return null
-  return { id: value.id, code: value.code, name: value.name, status, rowVersion: value.rowVersion }
+  return { id: value.id, code: value.code, name: value.name, status, rowVersion: value.rowVersion, canCreateProject: value.canCreateProject }
 }
 
 const parseProject = (value: unknown): Project | null => {

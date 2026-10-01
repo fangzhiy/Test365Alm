@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify formal Flyway V5, then a deliberate V6 startup failure in owned resources."""
+"""Verify formal Flyway V6, then a deliberate V7 startup failure in owned resources."""
 
 from __future__ import annotations
 
@@ -36,8 +36,8 @@ from tools.r02_resource_guard import (
     new_run_id,
 )
 
-FORMAL_MIGRATION_VERSION = "5"
-INTENTIONAL_FAILURE_VERSION = "6"
+FORMAL_MIGRATION_VERSION = "6"
+INTENTIONAL_FAILURE_VERSION = "7"
 INTENTIONAL_FAILURE_MARKER = "R03_INTENTIONAL_MIGRATION_FAILURE"
 
 
@@ -89,7 +89,7 @@ def main() -> int:
 
     with tempfile.TemporaryDirectory(prefix="test365alm-flyway-failure-") as migration_root:
         migration_dir = Path(migration_root)
-        # V5 is the current formal migration in the project-access slice.
+        # V6 is the current formal migration in the project-access slice.
         # Inject the deliberate failure at the next version so Flyway executes
         # all formal migrations before failing without colliding with a
         # production migration filename.
