@@ -134,6 +134,17 @@ jobs:
         run: |
           set -o pipefail
           ./mvnw -B -ntp -Pintegration verify "-Dbuild.commit=${GITHUB_SHA}" 2>&1 | tee integration-build.txt
+      - name: Summarize integration failures
+        if: failure()
+        run: |
+          set +e
+          summary=$(grep -E 'Failures:|Errors:|<<< FAILURE!|<<< ERROR!|Tests run:' integration-build.txt \
+            | tail -n 30 | tr '\n' ' ' | cut -c1-4000)
+          if [ -n "$summary" ]; then
+            echo "::error title=integration-test-failure::$summary"
+          else
+            echo "::error title=integration-test-failure::integration build failed without a test summary"
+          fi
       - name: Require real HTTP OIDC callback integration report
         if: always()
         run: |
