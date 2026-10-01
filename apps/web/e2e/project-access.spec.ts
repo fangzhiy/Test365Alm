@@ -43,6 +43,7 @@ function redactError(error: unknown): string {
 }
 
 class UiDiagnostics {
+  private static readonly snapshotTimeoutMs = 1_000
   private readonly events: UiStep[] = []
   private statuses: number[] = []
   private httpPaths: string[] = []
@@ -128,14 +129,14 @@ class UiDiagnostics {
     const refreshButton = await page.getByRole('button', { name: /加载访问范围|加载中/ }).first().evaluate((element) => ({
       label: element.textContent?.trim() || '',
       disabled: (element as HTMLButtonElement).disabled,
-    })).catch(() => undefined)
-    const alertText = await page.getByRole('alert').first().textContent().catch(() => null)
+    }), undefined, { timeout: UiDiagnostics.snapshotTimeoutMs }).catch(() => undefined)
+    const alertText = await page.getByRole('alert').first().textContent({ timeout: UiDiagnostics.snapshotTimeoutMs }).catch(() => null)
     const panelState = refreshButton?.label === '加载中…' ? 'loading' : alertText ? 'error' : refreshButton ? 'ready' : 'unknown'
     return { pathname, panelState, tenantId, projectId, refreshButton, ...(alertText ? { errorSummary: redactError(alertText) } : {}) }
   }
 
   private async inputValue(page: Page, label: string): Promise<string | undefined> {
-    return page.getByLabel(label).first().inputValue().catch(() => undefined)
+    return page.getByLabel(label).first().inputValue({ timeout: UiDiagnostics.snapshotTimeoutMs }).catch(() => undefined)
   }
 }
 
