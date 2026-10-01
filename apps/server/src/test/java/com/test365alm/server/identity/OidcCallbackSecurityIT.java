@@ -217,7 +217,10 @@ class OidcCallbackSecurityIT {
                 .header(csrfHeader, csrfToken)
                 .PUT(HttpRequest.BodyPublishers.ofString("{\"roles\":[\"PROJECT_VIEWER\"],\"authorizationVersion\":99}"))
                 .build();
-        assertEquals(409, flow.client.send(staleVersion, HttpResponse.BodyHandlers.ofString()).statusCode());
+        HttpResponse<String> visibleBeforeStale = get(flow.client, "/api/v1/projects/" + projectId);
+        assertEquals(200, visibleBeforeStale.statusCode(), visibleBeforeStale.body());
+        HttpResponse<String> stale = flow.client.send(staleVersion, HttpResponse.BodyHandlers.ofString());
+        assertEquals(409, stale.statusCode(), stale.body());
         HttpResponse<String> project = get(flow.client, "/api/v1/projects/" + projectId);
         assertEquals(200, project.statusCode());
         assertTrue(project.body().contains("HTTP Project"));

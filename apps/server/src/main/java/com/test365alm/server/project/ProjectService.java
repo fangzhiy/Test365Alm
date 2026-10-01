@@ -200,6 +200,7 @@ public class ProjectService {
      * overload above remains for existing internal bootstrap tests; it never
      * bypasses the row lock or the role checks.
      */
+    @Transactional
     public MemberView putMember(UUID actor, UUID projectId, UUID principalId, Collection<String> requestedRoles,
             Long expectedVersion, boolean allowMissingVersion) {
         ProjectView project = findProject(actor, projectId);

@@ -243,6 +243,10 @@ CREATE POLICY tenant_member_delete ON tenant_member FOR DELETE USING (
 
 CREATE POLICY project_select ON project FOR SELECT USING (
     app_has_active_project_member(tenant_id, id, NULLIF(current_setting('test365alm.principal_id', true), '')::UUID)
+    AND (
+        NULLIF(current_setting('test365alm.tenant_id', true), '') IS NOT NULL
+        OR NULLIF(current_setting('test365alm.project_id', true), '') IS NOT NULL
+    )
     AND tenant_id::TEXT = COALESCE(NULLIF(current_setting('test365alm.tenant_id', true), ''), tenant_id::TEXT)
     AND id::TEXT = COALESCE(NULLIF(current_setting('test365alm.project_id', true), ''), id::TEXT)
 );
