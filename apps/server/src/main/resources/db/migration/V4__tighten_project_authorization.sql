@@ -56,6 +56,24 @@ AS $$
     )
 $$;
 
+CREATE OR REPLACE FUNCTION app_has_any_project_admin(p_tenant_id UUID, p_principal_id UUID)
+RETURNS BOOLEAN
+LANGUAGE SQL
+STABLE
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+    SELECT app_has_active_tenant_member(p_tenant_id, p_principal_id)
+       AND EXISTS (
+        SELECT 1 FROM project_member pm
+        WHERE pm.tenant_id = p_tenant_id
+          AND pm.principal_id = p_principal_id
+          AND pm.revoked_at IS NULL
+          AND (pm.valid_until IS NULL OR pm.valid_until > CURRENT_TIMESTAMP)
+          AND pm.roles && ARRAY['PROJECT_ADMIN']::TEXT[]
+    )
+$$;
+
 CREATE OR REPLACE FUNCTION app_has_project_admin(p_tenant_id UUID, p_project_id UUID, p_principal_id UUID)
 RETURNS BOOLEAN
 LANGUAGE SQL
@@ -108,6 +126,7 @@ DO $$ BEGIN
         GRANT EXECUTE ON FUNCTION app_has_active_tenant_member(UUID, UUID) TO test365alm_runtime;
         GRANT EXECUTE ON FUNCTION app_has_active_project_member(UUID, UUID, UUID) TO test365alm_runtime;
         GRANT EXECUTE ON FUNCTION app_has_tenant_admin(UUID, UUID) TO test365alm_runtime;
+        GRANT EXECUTE ON FUNCTION app_has_any_project_admin(UUID, UUID) TO test365alm_runtime;
         GRANT EXECUTE ON FUNCTION app_has_project_admin(UUID, UUID, UUID) TO test365alm_runtime;
         GRANT EXECUTE ON FUNCTION app_project_has_member(UUID, UUID) TO test365alm_runtime;
         GRANT EXECUTE ON FUNCTION app_project_created_by(UUID, UUID, UUID) TO test365alm_runtime;
@@ -136,6 +155,7 @@ CREATE POLICY tenant_member_scope ON tenant_member USING (
     AND (
         principal_id::TEXT = NULLIF(current_setting('test365alm.principal_id', true), '')
         OR app_has_tenant_admin(tenant_id, NULLIF(current_setting('test365alm.principal_id', true), '')::UUID)
+        OR app_has_any_project_admin(tenant_id, NULLIF(current_setting('test365alm.principal_id', true), '')::UUID)
     )
 ) WITH CHECK (
     tenant_id::TEXT = NULLIF(current_setting('test365alm.tenant_id', true), '')
