@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest'
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 
@@ -33,6 +33,6 @@ describe('workbench session cleanup', () => {
     fireEvent.click(await screen.findByRole('button', { name: '退出登录' }))
     expect(await screen.findByText('未登录或会话已过期')).toBeVisible()
     expect(screen.getByText('登录后加载你有权查看的租户和项目。')).toBeVisible()
-    expect(screen.queryByText('Web quality（web）')).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByText('Web quality（web）')).not.toBeInTheDocument())
   })
 })
