@@ -120,7 +120,7 @@ test('real Keycloak UI project flow shows scoped viewer controls and clears revo
     await page.getByLabel('项目代码').fill(projectCode)
     await page.getByLabel('显示名称').fill('R03 UI project')
     await page.getByRole('button', { name: '创建项目' }).click()
-    await expect(page.getByText(`R03 UI project（${projectCode}）`)).toBeVisible()
+    await expect(page.getByLabel('项目').locator('option').filter({ hasText: `R03 UI project（${projectCode}）` })).toHaveCount(1)
     await expect(page.getByRole('region', { name: '项目详情' })).toContainText('R03 UI project')
 
     // Exercise the browser edit path, then force a concurrent update so the
