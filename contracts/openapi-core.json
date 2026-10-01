@@ -2334,26 +2334,17 @@
             "maxLength": 500
           },
           "body": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 100000
           },
-          "parentId": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "uuid"
-          },
-          "typeKey": {
-            "type": "string"
-          },
-          "attributes": {
-            "type": "object",
-            "additionalProperties": true
+          "priority": {
+            "type": "string",
+            "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"],
+            "default": "MEDIUM"
           }
         },
         "required": [
-          "title",
-          "typeKey"
+          "title"
         ],
         "additionalProperties": false
       },
@@ -2366,11 +2357,12 @@
             "maxLength": 500
           },
           "body": {
-            "type": "string"
+            "type": "string",
+            "maxLength": 100000
           },
-          "attributes": {
-            "type": "object",
-            "additionalProperties": true
+          "priority": {
+            "type": "string",
+            "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
           }
         },
         "required": [],
@@ -2388,11 +2380,9 @@
             "type": "string",
             "format": "uuid"
           },
-          "title": {
-            "type": "string"
-          },
-          "revision": {
-            "$ref": "#/components/schemas/RevisionRef"
+          "displayNumber": {
+            "type": "integer",
+            "minimum": 1
           },
           "rowVersion": {
             "type": "integer",
@@ -2401,15 +2391,42 @@
           "createdAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "createdBy": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "currentRevisionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "revisionNumber": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "title": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "string",
+            "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
           }
         },
         "required": [
           "id",
           "projectId",
-          "title",
-          "revision",
+          "displayNumber",
           "rowVersion",
-          "createdAt"
+          "createdAt",
+          "createdBy",
+          "currentRevisionId",
+          "revisionNumber",
+          "title",
+          "body",
+          "priority"
         ],
         "additionalProperties": false
       },

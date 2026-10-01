@@ -44,6 +44,11 @@ class CiWorkflowTests(unittest.TestCase):
         self.assertIn("verify_r03_oidc_http_report.py", workflow)
         self.assertIn("apps/server/oidc-http-report.txt", workflow)
 
+    def test_server_job_requires_requirement_integration_evidence(self):
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("verify_r04_requirement_report.py", workflow)
+        self.assertIn("apps/server/requirement-report.txt", workflow)
+
     def test_browser_job_requires_dual_user_project_access_evidence(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("Require real dual-user project access browser report", workflow)

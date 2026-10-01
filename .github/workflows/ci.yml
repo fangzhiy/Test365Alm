@@ -165,6 +165,11 @@ jobs:
         run: |
           set -o pipefail
           python ../../tools/verify_r03_project_access_report.py target/failsafe-reports 2>&1 | tee project-access-report.txt
+      - name: Require real PostgreSQL requirement integration report
+        if: always()
+        run: |
+          set -o pipefail
+          python ../../tools/verify_r04_requirement_report.py target/failsafe-reports 2>&1 | tee requirement-report.txt
       - name: Upload backend evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -178,6 +183,7 @@ jobs:
             apps/server/integration-build.txt
             apps/server/oidc-http-report.txt
             apps/server/project-access-report.txt
+            apps/server/requirement-report.txt
             apps/server/target/surefire-reports/**
             apps/server/target/failsafe-reports/**
           if-no-files-found: error
@@ -469,6 +475,8 @@ jobs:
             local-evidence/r03/e2e.log
             local-evidence/r03/project-ui-context-isolated.json
             local-evidence/r03/project-ui-context-full.json
+            local-evidence/r03/project-requirement-context-isolated.json
+            local-evidence/r03/project-requirement-context-full.json
             local-evidence/r03/playwright-results.xml
             local-evidence/r03/project-browser-report.txt
             local-evidence/r03/import-permissions.txt

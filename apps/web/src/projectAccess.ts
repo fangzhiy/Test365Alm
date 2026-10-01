@@ -44,8 +44,8 @@ export type ProjectAccess = {
   tenantId: string
   projectId: string
   principalId: string
-  roles: ProjectRole[]
-  permissions: string[]
+  roles: readonly ProjectRole[]
+  permissions: readonly string[]
 }
 
 export type AccessError = { code: string; message: string }
@@ -80,7 +80,7 @@ const csrfToken = async (signal?: AbortSignal): Promise<CsrfResponse> => {
   return { headerName: body.headerName, token: body.token }
 }
 
-const requestJson = async (input: RequestInfo | URL, init?: RequestInit, options?: AccessRequestOptions): Promise<unknown> => {
+export const requestJson = async (input: RequestInfo | URL, init?: RequestInit, options?: AccessRequestOptions): Promise<unknown> => {
   const method = (init?.method ?? 'GET').toUpperCase()
   const headers = new Headers(init?.headers)
   const signal = options?.signal ?? init?.signal ?? undefined

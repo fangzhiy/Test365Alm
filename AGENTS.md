@@ -11,7 +11,7 @@
 
 ## 项目状态
 
-- 当前目录包含规划与研发辅助工具，以及 R02 工程底座的 `apps/web` Vite 前端和 `apps/server` Spring Boot 服务；本轮只覆盖健康/版本接口、平台元数据迁移和状态工作台，不代表业务模块完成。
+- 当前目录包含规划与研发辅助工具，以及 R02 工程底座、R03 身份/项目访问切片和 R04-M07-001 需求最小切片的 `apps/web` Vite 前端与 `apps/server` Spring Boot 服务；需求切片不代表完整 M07、M03 或产品完成。
 - R03-M03-001 在独立 `feat/r03-m03-001` 分支增加本地 OIDC 首个切片；PR #1 未合并时，新 PR 依赖 `feat/r02-m02-001`。登录成功不代表已获得项目权限、RLS 或完整 M03。
 - 所有产品验收、迁移、兼容、安全和性能结论必须有真实证据。
 - `PLANNED`、`OPEN`、`BLOCKED`、`NOT_RUN` 不得被工具或文档改写成已完成。
@@ -36,6 +36,7 @@ python tools/verify_r03_oidc_http_report.py apps/server/target/failsafe-reports
 python tools/verify_r02_readiness.py --env-file .env.r02-test --compose-project test365alm-r02-manual --server-port 18081  # 构建 server jar 后，验证唯一临时 PostgreSQL 停止/恢复且后端不重启
 python tools/verify_r02_migration_failure.py --env-file .env.r02-test --compose-project test365alm-r02-migration-manual --server-port 18082  # 临时失败迁移启动验证
 python tools/verify_r03_project_access_report.py apps/server/target/failsafe-reports  # B 段 RLS/项目访问报告必须包含真实 PlatformDatabaseIT 场景
+python tools/verify_r04_requirement_report.py apps/server/target/failsafe-reports  # R04 需求真实 PostgreSQL 三用例报告门槛
 python tools/verify_r03_project_browser_report.py local-evidence/r03/playwright-results.xml  # CI-owned dual-user project grant/read/write-deny/revoke evidence
 python tools/verify_r02_preexisting_project.py --env-file .env.r02-test  # 一次性对照项目及两条哨兵数据；验证两套脚本先拒绝碰触预存资源
 python tools/prepare_r03_dev.py  # 仅首次生成被忽略的随机本地凭据和 Keycloak realm，不覆盖已有文件
@@ -81,3 +82,4 @@ Python 工具只使用标准库，支持 Python 3.10 及以上。新增工具必
 - R03 真实故障浏览器用例只在 CI 本轮唯一、带 `R03_RUN_ID` 资源标签的 Compose 项目中停启 Keycloak 或修改临时主体；普通 `npm run test:e2e` 不得触碰日常开发数据库或未知容器。CI 的 realm 导入文件仅容器 UID 1000 可读，`.env.r03` 与 realm 都是秘密；只上传脱敏的白名单证据和实际测试报告。
 - R03-M03-002 FIX01/FIX02 的双用户项目浏览器用例只在当前 CI-owned Compose 项目中播种 tenant/domain/member 数据；普通本机浏览器运行会因资源归属门禁跳过并返回非成功报告，不能写成真实项目验收通过。项目授权迁移只新增 V5、V6，不改写已执行 V1-V4；V6 进一步把租户 bootstrap 限定为迁移/fixture 所有者边界。
 - R03 FIX02 的 HTTP 回调测试必须保留真实应用过滤器链和同一 Cookie 容器；测试 IdP 只提供回环协议响应，不能用 `oidcLogin`、`@WithMockUser`、直接 SecurityContext 或 mock Principal/JWT 验证替代。每类非法 token 之后必须以独立 owner 连接比较 principal 全字段快照；只允许合成 subject 与 Testcontainers 临时 PostgreSQL，报告不得包含 Cookie、token、私钥或秘密。
+- R04-M07-001 的需求接口仅覆盖项目根级、纯文本 title/body 和固定 priority；稳定需求身份与追加修订分离。写操作必须经过项目成员权限、同源 CSRF、幂等键和具体 `If-Match`；revision 只允许 runtime INSERT/SELECT，不能通过应用接口更新或删除历史。V7 是新增权威迁移，不改写 V1-V6；完整 M07、需求树、评审、附件和追踪继续保持未完成。
