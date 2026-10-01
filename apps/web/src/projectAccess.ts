@@ -8,6 +8,14 @@ export type Tenant = {
   rowVersion?: number
 }
 
+export type Domain = {
+  id: string
+  tenantId: string
+  name: string
+  status: 'ACTIVE' | 'SUSPENDED' | 'ARCHIVED'
+  rowVersion?: number
+}
+
 export type Project = {
   id: string
   tenantId: string
@@ -24,6 +32,8 @@ export type ProjectMember = {
   roles: ProjectRole[]
   state: 'ACTIVE' | 'REVOKED' | 'DISABLED'
   rowVersion?: number
+  authorizationVersion?: number
+  validUntil?: string | null
 }
 
 export type MemberCandidate = { principalId: string; displayName: string }
@@ -42,6 +52,8 @@ export type AccessRequestOptions = { signal?: AbortSignal }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 const isString = (value: unknown): value is string => typeof value === 'string' && value.length > 0
+const isNonNegativeInteger = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value) && value >= 0
+const isPositiveInteger = (value: unknown): value is number => typeof value === 'number' && Number.isInteger(value) && value >= 1
 const isRole = (value: unknown): value is ProjectRole => value === 'PROJECT_ADMIN' || value === 'PROJECT_MEMBER' || value === 'PROJECT_VIEWER'
 
 const parseError = async (response: Response): Promise<AccessError> => {
@@ -80,24 +92,41 @@ const requestJson = async (input: RequestInfo | URL, init?: RequestInit, options
 }
 
 const parseTenant = (value: unknown): Tenant | null => {
-  if (!isRecord(value) || !isString(value.id) || !isString(value.code) || !isString(value.name)) return null
+  if (!isRecord(value) || !isString(value.id) || !isString(value.code) || !isString(value.name) || !isNonNegativeInteger(value.rowVersion)) return null
   const status = value.status
   if (status !== 'ACTIVE' && status !== 'SUSPENDED' && status !== 'ARCHIVED') return null
-  return { id: value.id, code: value.code, name: value.name, status, rowVersion: typeof value.rowVersion === 'number' ? value.rowVersion : undefined }
+  return { id: value.id, code: value.code, name: value.name, status, rowVersion: value.rowVersion }
 }
 
 const parseProject = (value: unknown): Project | null => {
-  if (!isRecord(value) || !isString(value.id) || !isString(value.tenantId) || !isString(value.code) || !isString(value.name)) return null
+  if (!isRecord(value) || !isString(value.id) || !isString(value.tenantId) || !isString(value.code) || !isString(value.name) || !isNonNegativeInteger(value.rowVersion)) return null
   const state = value.state
   if (state !== 'ACTIVE' && state !== 'SUSPENDED' && state !== 'ARCHIVED') return null
-  return { id: value.id, tenantId: value.tenantId, domainId: typeof value.domainId === 'string' ? value.domainId : null, code: value.code, name: value.name, state, rowVersion: typeof value.rowVersion === 'number' ? value.rowVersion : undefined }
+  if (!(typeof value.domainId === 'string' || value.domainId === null)) return null
+  return { id: value.id, tenantId: value.tenantId, domainId: value.domainId, code: value.code, name: value.name, state, rowVersion: value.rowVersion }
+}
+
+const parseDomain = (value: unknown): Domain | null => {
+  if (!isRecord(value) || !isString(value.id) || !isString(value.tenantId) || !isString(value.name) || !isNonNegativeInteger(value.rowVersion)) return null
+  const status = value.status
+  if (status !== 'ACTIVE' && status !== 'SUSPENDED' && status !== 'ARCHIVED') return null
+  return { id: value.id, tenantId: value.tenantId, name: value.name, status, rowVersion: value.rowVersion }
 }
 
 const parseMember = (value: unknown): ProjectMember | null => {
-  if (!isRecord(value) || !isString(value.principalId) || !isString(value.displayName) || !Array.isArray(value.roles) || !value.roles.every(isRole)) return null
+  if (!isRecord(value) || !isString(value.principalId) || !isString(value.displayName) || !Array.isArray(value.roles) || !value.roles.every(isRole) || !isPositiveInteger(value.authorizationVersion)) return null
   const state = value.state
   if (state !== 'ACTIVE' && state !== 'REVOKED' && state !== 'DISABLED') return null
-  return { principalId: value.principalId, displayName: value.displayName, roles: value.roles, state, rowVersion: typeof value.rowVersion === 'number' ? value.rowVersion : undefined }
+  if (!(value.validUntil === undefined || value.validUntil === null || typeof value.validUntil === 'string')) return null
+  return {
+    principalId: value.principalId,
+    displayName: value.displayName,
+    roles: value.roles,
+    state,
+    rowVersion: typeof value.rowVersion === 'number' ? value.rowVersion : undefined,
+    authorizationVersion: value.authorizationVersion,
+    validUntil: typeof value.validUntil === 'string' ? value.validUntil : value.validUntil === null ? null : undefined,
+  }
 }
 
 const parseCandidate = (value: unknown): MemberCandidate | null => {
@@ -115,6 +144,7 @@ const parseList = <T>(body: unknown, parser: (value: unknown) => T | null): T[] 
 
 export const accessApi = {
   async listTenants(options?: AccessRequestOptions): Promise<Tenant[]> { return parseList(await requestJson('/api/v1/tenants', undefined, options), parseTenant) },
+  async listDomains(tenantId: string, options?: AccessRequestOptions): Promise<Domain[]> { return parseList(await requestJson(`/api/v1/domains?tenantId=${encodeURIComponent(tenantId)}`, undefined, options), parseDomain) },
   async createProject(input: CreateProjectInput, options?: AccessRequestOptions): Promise<Project> {
     const body = await requestJson('/api/v1/projects', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey() }, body: JSON.stringify(input) }, options)
     const project = parseProject(body)
@@ -122,6 +152,17 @@ export const accessApi = {
     return project
   },
   async listProjects(tenantId: string, options?: AccessRequestOptions): Promise<Project[]> { return parseList(await requestJson(`/api/v1/projects?tenantId=${encodeURIComponent(tenantId)}`, undefined, options), parseProject) },
+  async getProject(projectId: string, options?: AccessRequestOptions): Promise<Project> {
+    const project = parseProject(await requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}`, undefined, options))
+    if (!project) throw { code: 'INVALID_RESPONSE', message: '服务返回了无效项目对象' } satisfies AccessError
+    return project
+  },
+  async updateProject(projectId: string, name: string, rowVersion: number, options?: AccessRequestOptions): Promise<Project> {
+    const body = await requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey() }, body: JSON.stringify({ name, rowVersion }) }, options)
+    const project = parseProject(body)
+    if (!project) throw { code: 'INVALID_RESPONSE', message: '服务返回了无效项目对象' } satisfies AccessError
+    return project
+  },
   async listMembers(projectId: string, options?: AccessRequestOptions): Promise<ProjectMember[]> { return parseList(await requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/members`, undefined, options), parseMember) },
   async listMemberCandidates(projectId: string, options?: AccessRequestOptions): Promise<MemberCandidate[]> { return parseList(await requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/member-candidates`, undefined, options), parseCandidate) },
   async getPermissions(projectId: string, options?: AccessRequestOptions): Promise<ProjectAccess> {
@@ -129,13 +170,16 @@ export const accessApi = {
     if (!isRecord(body) || !isString(body.tenantId) || !isString(body.projectId) || !isString(body.principalId) || !Array.isArray(body.roles) || !body.roles.every(isRole) || !Array.isArray(body.permissions) || !body.permissions.every(isString)) throw { code: 'INVALID_RESPONSE', message: '服务返回了无效权限对象' } satisfies AccessError
     return { tenantId: body.tenantId, projectId: body.projectId, principalId: body.principalId, roles: body.roles, permissions: body.permissions }
   },
-  async setMemberRoles(projectId: string, principalId: string, roles: ProjectRole[], options?: AccessRequestOptions): Promise<ProjectMember> {
-    const body = await requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(principalId)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey() }, body: JSON.stringify({ roles }) }, options)
+  async setMemberRoles(projectId: string, principalId: string, roles: ProjectRole[], authorizationVersion = 0, options?: AccessRequestOptions): Promise<ProjectMember> {
+    const body = await requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(principalId)}`, { method: 'PUT', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey() }, body: JSON.stringify({ roles, authorizationVersion }) }, options)
     const member = parseMember(body)
     if (!member) throw { code: 'INVALID_RESPONSE', message: '服务返回了无效成员对象' } satisfies AccessError
     return member
   },
-  async revokeMember(projectId: string, principalId: string, options?: AccessRequestOptions): Promise<void> {
-    await requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(principalId)}`, { method: 'DELETE', headers: { 'Idempotency-Key': idempotencyKey() } }, options)
+  async revokeMember(projectId: string, principalId: string, authorizationVersion: number, options?: AccessRequestOptions): Promise<ProjectMember> {
+    const body = await requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(principalId)}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey() }, body: JSON.stringify({ authorizationVersion }) }, options)
+    const member = parseMember(body)
+    if (!member) throw { code: 'INVALID_RESPONSE', message: '服务返回了无效成员对象' } satisfies AccessError
+    return member
   },
 }

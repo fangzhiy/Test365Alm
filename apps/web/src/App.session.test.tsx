@@ -6,8 +6,9 @@ import App from './App'
 const json = (body: unknown, status = 200) => Promise.resolve(new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }))
 const me = { id: 'principal-1', issuer: 'https://issuer.example', subject: 'sub-1', displayName: 'A Tester' }
 const tenant = { id: 'tenant-1', code: 'acme', name: 'Acme', status: 'ACTIVE' }
-const project = { id: 'project-1', tenantId: 'tenant-1', domainId: null, code: 'web', name: 'Web quality', state: 'ACTIVE' }
-const member = { principalId: 'principal-1', displayName: 'A Tester', roles: ['PROJECT_ADMIN'], state: 'ACTIVE' }
+const project = { id: 'project-1', tenantId: 'tenant-1', domainId: 'domain-1', code: 'web', name: 'Web quality', state: 'ACTIVE', rowVersion: 0 }
+const domain = { id: 'domain-1', tenantId: 'tenant-1', name: 'Quality', status: 'ACTIVE', rowVersion: 0 }
+const member = { principalId: 'principal-1', displayName: 'A Tester', roles: ['PROJECT_ADMIN'], state: 'ACTIVE', authorizationVersion: 1 }
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
@@ -22,7 +23,9 @@ describe('workbench session cleanup', () => {
       if (path.endsWith('/health/live')) return json({ status: 'UP' })
       if (path.endsWith('/health/ready')) return json({ status: 'UP', database: 'UP', migration: 'APPLIED' })
       if (path.endsWith('/tenants')) return json([tenant])
+      if (path.includes('/domains?')) return json([domain])
       if (path.includes('/projects?')) return json([project])
+      if (path === '/api/v1/projects/project-1') return json(project)
       if (path.endsWith('/member-candidates')) return json([])
       if (path.endsWith('/members')) return json([member])
       return json({ tenantId: 'tenant-1', projectId: 'project-1', principalId: 'principal-1', roles: ['PROJECT_ADMIN'], permissions: ['project:manage-members'] })

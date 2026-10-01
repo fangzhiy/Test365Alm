@@ -30,3 +30,9 @@ services:
       - ./local-evidence/r03/realm.json:/opt/keycloak/data/import/realm.json:ro
 volumes:
   r03-postgres-data:
+    labels:
+      test365alm.r03.run: ${R03_RUN_ID:-manual-unverified}
+networks:
+  default:
+    labels:
+      test365alm.r03.run: ${R03_RUN_ID:-manual-unverified}

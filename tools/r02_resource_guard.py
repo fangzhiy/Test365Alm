@@ -34,6 +34,9 @@ class ResourceManifest:
     networks: tuple[str, ...]
     volumes: tuple[str, ...]
     docker_engine: str = ""
+    # R02 manifests use the historical label below.  R03 callers can supply
+    # their own run-label key while reusing the same ownership checks.
+    run_label_key: str = RUN_LABEL
 
     def as_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -163,7 +166,8 @@ def _labels(kind: str, inspected: dict) -> Mapping[str, str]:
 
 
 def capture_manifest(project: str, run_id: str, context: str,
-                     environment: Mapping[str, str]) -> ResourceManifest:
+                     environment: Mapping[str, str],
+                     run_label_key: str = RUN_LABEL) -> ResourceManifest:
     """Capture and validate ids immediately after Compose creates resources."""
     verify_docker_engine(environment)
     resources = existing_resources(project, environment)
@@ -173,9 +177,9 @@ def capture_manifest(project: str, run_id: str, context: str,
                       ("volume", resources["volumes"])):
         for resource_id in ids:
             labels = _labels(kind, _inspect(kind, resource_id, environment))
-            if labels.get("com.docker.compose.project") != project or labels.get("com.test365alm.r02.run-id") != run_id:
+            if labels.get("com.docker.compose.project") != project or labels.get(run_label_key) != run_id:
                 raise ResourceOwnershipError(f"resource {resource_id} has unverified project/run ownership")
-    return ResourceManifest(project, run_id, context, resources["containers"], resources["networks"], resources["volumes"], docker_engine(environment))
+    return ResourceManifest(project, run_id, context, resources["containers"], resources["networks"], resources["volumes"], docker_engine(environment), run_label_key)
 
 
 def verify_manifest(manifest: ResourceManifest, environment: Mapping[str, str]) -> bool:
@@ -188,8 +192,8 @@ def verify_manifest(manifest: ResourceManifest, environment: Mapping[str, str]) 
                           ("volume", manifest.volumes)):
             for resource_id in ids:
                 labels = _labels(kind, _inspect(kind, resource_id, environment))
-                if (labels.get("com.docker.compose.project") != manifest.project or
-                        labels.get("com.test365alm.r02.run-id") != manifest.run_id):
+            if (labels.get("com.docker.compose.project") != manifest.project or
+                    labels.get(manifest.run_label_key) != manifest.run_id):
                     return False
         return True
     except ResourceOwnershipError:
@@ -232,7 +236,8 @@ def cleanup_manifest(manifest: ResourceManifest | None, environment: Mapping[str
         for resource_id in ids:
             try:
                 labels = _labels(kind, _inspect(kind, resource_id, environment))
-                if labels.get(PROJECT_LABEL) != manifest.project or labels.get(RUN_LABEL) != manifest.run_id:
+                if (labels.get(PROJECT_LABEL) != manifest.project or
+                        labels.get(manifest.run_label_key) != manifest.run_id):
                     return False
                 present_ids[kind].append(resource_id)
             except ResourceOwnershipError as error:

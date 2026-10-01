@@ -4,11 +4,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import ProjectAccessPanel from './ProjectAccessPanel'
 
 const json = (body: unknown, status = 200) => Promise.resolve(new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }))
-const tenant = { id: 'tenant-1', code: 'acme', name: 'Acme', status: 'ACTIVE' }
-const project = { id: 'project-1', tenantId: 'tenant-1', domainId: null, code: 'web', name: 'Web quality', state: 'ACTIVE' }
-const member = { principalId: 'principal-1', displayName: 'A Tester', roles: ['PROJECT_MEMBER'], state: 'ACTIVE' }
-const secondProject = { id: 'project-2', tenantId: 'tenant-1', domainId: null, code: 'api', name: 'API quality', state: 'ACTIVE' }
-const secondMember = { principalId: 'principal-2', displayName: 'Second Tester', roles: ['PROJECT_MEMBER'], state: 'ACTIVE' }
+const tenant = { id: 'tenant-1', code: 'acme', name: 'Acme', status: 'ACTIVE', rowVersion: 0 }
+const project = { id: 'project-1', tenantId: 'tenant-1', domainId: 'domain-1', code: 'web', name: 'Web quality', state: 'ACTIVE', rowVersion: 0 }
+const domain = { id: 'domain-1', tenantId: 'tenant-1', name: 'Quality', status: 'ACTIVE', rowVersion: 0 }
+const member = { principalId: 'principal-1', displayName: 'A Tester', roles: ['PROJECT_MEMBER'], state: 'ACTIVE', authorizationVersion: 1 }
+const secondProject = { id: 'project-2', tenantId: 'tenant-1', domainId: 'domain-1', code: 'api', name: 'API quality', state: 'ACTIVE', rowVersion: 0 }
+const secondMember = { principalId: 'principal-2', displayName: 'Second Tester', roles: ['PROJECT_MEMBER'], state: 'ACTIVE', authorizationVersion: 1 }
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
 
@@ -18,7 +19,9 @@ describe('project access management', () => {
       const path = String(input)
       if (path.endsWith('/csrf')) return json({ headerName: 'X-CSRF-TOKEN', token: 'csrf-test' })
       if (path.endsWith('/tenants')) return json([tenant])
+      if (path.includes('/domains?')) return json([domain])
       if (path.includes('/projects?')) return json([project])
+      if (path === '/api/v1/projects/project-1') return json(project)
       if (path.endsWith('/member-candidates')) return json([])
       if (path.endsWith('/members')) return json([member])
       return json({ tenantId: 'tenant-1', projectId: 'project-1', principalId: 'principal-1', roles: ['PROJECT_ADMIN'], permissions: ['project:read', 'project:manage-members'] })
@@ -36,10 +39,13 @@ describe('project access management', () => {
       const path = String(input)
       if (path.endsWith('/csrf')) return json({ headerName: 'X-CSRF-TOKEN', token: 'csrf-test' })
       if (path.endsWith('/tenants')) return json([tenant])
+      if (path.includes('/domains?')) return json([domain])
       if (path.includes('/projects?')) return json([project])
+      if (path === '/api/v1/projects/project-1') return json(project)
       if (path.endsWith('/member-candidates')) return json([])
       if (path.endsWith('/members')) return json([member])
       if (init?.method === 'PUT') return json({ ...member, principalId: 'principal-2', displayName: 'Second Tester', roles: ['PROJECT_VIEWER'] })
+      if (init?.method === 'DELETE') return json({ ...member, state: 'REVOKED', authorizationVersion: 2 })
       return json({ tenantId: 'tenant-1', projectId: 'project-1', principalId: 'principal-1', roles: ['PROJECT_ADMIN'], permissions: ['project.read', 'project.members.write'] })
     })
     vi.stubGlobal('fetch', fetchMock)
@@ -67,7 +73,9 @@ describe('project access management', () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const path = String(input)
       if (path.endsWith('/tenants')) return json([tenant])
+      if (path.includes('/domains?')) return json([domain])
       if (path.includes('/projects?')) return json([project])
+      if (path === '/api/v1/projects/project-1') return json(project)
       if (path.endsWith('/member-candidates') || path.endsWith('/members')) return json({ code: 'FORBIDDEN', message: '当前主体无权读取项目成员' }, 403)
       return json({ tenantId: 'tenant-1', projectId: 'project-1', principalId: 'principal-1', roles: ['PROJECT_VIEWER'], permissions: ['project:read'] })
     })
@@ -84,6 +92,71 @@ describe('project access management', () => {
     expect(fetchMock).not.toHaveBeenCalledWith('/api/v1/projects/project-1/member-candidates', expect.anything())
   })
 
+  it('renders project details and sends the selected row version for an admin edit', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input)
+      if (path.endsWith('/csrf')) return json({ headerName: 'X-CSRF-TOKEN', token: 'csrf-test' })
+      if (path.endsWith('/tenants')) return json([tenant])
+      if (path.includes('/domains?')) return json([domain])
+      if (path.includes('/projects?')) return json([project])
+      if (path === '/api/v1/projects/project-1' && init?.method === 'PATCH') return json({ ...project, name: 'Renamed project', rowVersion: 1 })
+      if (path === '/api/v1/projects/project-1') return json(project)
+      if (path.endsWith('/member-candidates')) return json([])
+      if (path.endsWith('/members')) return json([member])
+      return json({ tenantId: tenant.id, projectId: project.id, principalId: member.principalId, roles: ['PROJECT_ADMIN'], permissions: ['project:read', 'project:write', 'project:manage-members'] })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<ProjectAccessPanel />)
+    fireEvent.click(screen.getByRole('button', { name: '加载访问范围' }))
+    expect(await screen.findByRole('region', { name: '项目详情' })).toHaveTextContent('Web quality')
+    fireEvent.change(screen.getByLabelText('项目名称'), { target: { value: 'Renamed project' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存项目' }))
+    expect(await screen.findByText('项目已更新')).toBeVisible()
+    const patchCall = fetchMock.mock.calls.find(([input, init]) => String(input) === '/api/v1/projects/project-1' && init?.method === 'PATCH')
+    expect(patchCall?.[1]).toEqual(expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ name: 'Renamed project', rowVersion: 0 }) }))
+  })
+
+  it('keeps viewer project details read-only and does not render admin controls', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL) => {
+      const path = String(input)
+      if (path.endsWith('/tenants')) return json([tenant])
+      if (path.includes('/domains?')) return json([domain])
+      if (path.includes('/projects?')) return json([project])
+      if (path === '/api/v1/projects/project-1') return json(project)
+      return json({ tenantId: tenant.id, projectId: project.id, principalId: 'viewer-1', roles: ['PROJECT_VIEWER'], permissions: ['project:read'] })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<ProjectAccessPanel />)
+    fireEvent.click(screen.getByRole('button', { name: '加载访问范围' }))
+    expect(await screen.findByRole('region', { name: '项目详情' })).toHaveTextContent('Web quality')
+    expect(screen.queryByRole('button', { name: '保存项目' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '创建项目' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '保存成员' })).not.toBeInTheDocument()
+  })
+
+  it('shows a stale-version conflict without replacing the current project detail', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input)
+      if (path.endsWith('/csrf')) return json({ headerName: 'X-CSRF-TOKEN', token: 'csrf-test' })
+      if (path.endsWith('/tenants')) return json([tenant])
+      if (path.includes('/domains?')) return json([domain])
+      if (path.includes('/projects?')) return json([project])
+      if (path === '/api/v1/projects/project-1' && init?.method === 'PATCH') return json({ code: 'STALE_VERSION', message: '项目已被其他请求更新' }, 409)
+      if (path === '/api/v1/projects/project-1') return json(project)
+      if (path.endsWith('/member-candidates')) return json([])
+      if (path.endsWith('/members')) return json([member])
+      return json({ tenantId: tenant.id, projectId: project.id, principalId: member.principalId, roles: ['PROJECT_ADMIN'], permissions: ['project:read', 'project:write', 'project:manage-members'] })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    render(<ProjectAccessPanel />)
+    fireEvent.click(screen.getByRole('button', { name: '加载访问范围' }))
+    await screen.findByRole('region', { name: '项目详情' })
+    fireEvent.change(screen.getByLabelText('项目名称'), { target: { value: 'stale edit' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存项目' }))
+    expect(await screen.findByText('项目已被其他请求更新')).toBeVisible()
+    expect(screen.getByRole('region', { name: '项目详情' })).toHaveTextContent('Web quality')
+  })
+
   it('does not let a slow response for the previous project replace the selected project', async () => {
     let resolveOldMembers!: (value: Response) => void
     let resolveOldCandidates!: (value: Response) => void
@@ -94,7 +167,10 @@ describe('project access management', () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const path = String(input)
       if (path.endsWith('/tenants')) return json([tenant])
+      if (path.includes('/domains?')) return json([domain])
       if (path.includes('/projects?')) return json([project, secondProject])
+      if (path === '/api/v1/projects/project-1') return json(project)
+      if (path === '/api/v1/projects/project-2') return json(secondProject)
       if (path.endsWith('/members') && path.includes('/project-1/')) return oldMembers
       if (path.endsWith('/member-candidates') && path.includes('/project-1/')) return oldCandidates
       if (path.includes('/me/permissions?projectId=project-1')) return oldPermissions
@@ -122,7 +198,9 @@ describe('project access management', () => {
     const fetchMock = vi.fn((input: RequestInfo | URL) => {
       const path = String(input)
       if (path.endsWith('/tenants')) return json([tenant])
+      if (path.includes('/domains?')) return json([domain])
       if (path.includes('/projects?')) return json([project])
+      if (path === '/api/v1/projects/project-1') return json(project)
       if (path.endsWith('/member-candidates')) return json([])
       if (path.endsWith('/members')) return json([member])
       return json({ tenantId: 'tenant-1', projectId: 'project-1', principalId: 'principal-1', roles: ['PROJECT_ADMIN'], permissions: ['project:manage-members'] })

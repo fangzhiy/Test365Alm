@@ -38,11 +38,24 @@ class CiWorkflowTests(unittest.TestCase):
         self.assertIn("verify_r03_project_access_report.py", workflow)
         self.assertIn("apps/server/project-access-report.txt", workflow)
 
+    def test_server_job_requires_runtime_oidc_http_evidence(self):
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("Require real HTTP OIDC callback integration report", workflow)
+        self.assertIn("verify_r03_oidc_http_report.py", workflow)
+        self.assertIn("apps/server/oidc-http-report.txt", workflow)
+
     def test_browser_job_requires_dual_user_project_access_evidence(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("Require real dual-user project access browser report", workflow)
         self.assertIn("verify_r03_project_browser_report.py", workflow)
         self.assertIn("local-evidence/r03/project-browser-report.txt", workflow)
+
+    def test_browser_cleanup_uses_run_owned_manifest_not_compose_down(self):
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("tools/r03_resource_guard.py preflight", workflow)
+        self.assertIn("tools/r03_resource_guard.py capture", workflow)
+        self.assertIn("tools/cleanup_r02_resources.py --root local-evidence/r03", workflow)
+        self.assertNotIn('docker compose --env-file .env.r03 -f compose.r03.yaml -p "$project" down', workflow)
 
     def test_cleanup_command_requires_ownership_labels(self):
         cleanup = CLEANUP.read_text(encoding="utf-8")

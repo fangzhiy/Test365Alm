@@ -54,7 +54,9 @@ public class ProjectService {
         return jdbc.query("""
                 SELECT t.id, t.code, t.name, t.status, t.row_version
                 FROM tenant t JOIN tenant_member tm ON tm.tenant_id = t.id
+                    JOIN principal p ON p.id = tm.principal_id
                 WHERE tm.principal_id = ? AND tm.revoked_at IS NULL
+                  AND p.disabled_at IS NULL
                   AND (tm.valid_until IS NULL OR tm.valid_until > CURRENT_TIMESTAMP)
                 ORDER BY t.code
                 """, ProjectService::tenant, actor);
@@ -171,10 +173,12 @@ public class ProjectService {
                 SELECT tm.principal_id, p.display_name
                 FROM tenant_member tm JOIN principal p ON p.id = tm.principal_id
                 WHERE tm.tenant_id = ? AND tm.revoked_at IS NULL
+                  AND p.disabled_at IS NULL
                   AND (tm.valid_until IS NULL OR tm.valid_until > CURRENT_TIMESTAMP)
-                  AND NOT EXISTS (SELECT 1 FROM project_member pm
+                AND NOT EXISTS (SELECT 1 FROM project_member pm
                                   WHERE pm.tenant_id = tm.tenant_id AND pm.project_id = ?
-                                    AND pm.principal_id = tm.principal_id AND pm.revoked_at IS NULL)
+                                    AND pm.principal_id = tm.principal_id AND pm.revoked_at IS NULL
+                                    AND (pm.valid_until IS NULL OR pm.valid_until > CURRENT_TIMESTAMP))
                 ORDER BY p.display_name, tm.principal_id LIMIT 200
                 """, (rs, row) -> new MemberCandidateView(rs.getObject("principal_id", UUID.class),
                         rs.getString("display_name")), project.tenantId(), project.id());
@@ -188,16 +192,28 @@ public class ProjectService {
     @Transactional
     public MemberView putMember(UUID actor, UUID projectId, UUID principalId, Collection<String> requestedRoles,
             Long expectedVersion) {
+        return putMember(actor, projectId, principalId, requestedRoles, expectedVersion, expectedVersion == null);
+    }
+
+    /**
+     * HTTP commands use a required authorization version.  The compatibility
+     * overload above remains for existing internal bootstrap tests; it never
+     * bypasses the row lock or the role checks.
+     */
+    public MemberView putMember(UUID actor, UUID projectId, UUID principalId, Collection<String> requestedRoles,
+            Long expectedVersion, boolean allowMissingVersion) {
         ProjectView project = findProject(actor, projectId);
         requireProjectAdmin(actor, project.tenantId(), project.id());
         setContext(project.tenantId(), actor);
         lockProjectMembers(project.tenantId(), project.id());
-        if (jdbc.queryForObject("SELECT COUNT(*) FROM principal WHERE id = ?", Integer.class, principalId) == 0) {
+        if (jdbc.queryForObject("SELECT COUNT(*) FROM principal WHERE id = ? AND disabled_at IS NULL", Integer.class, principalId) == 0) {
             throw ProjectAccessException.notFound();
         }
         if (jdbc.queryForObject("""
-                SELECT COUNT(*) FROM tenant_member WHERE tenant_id = ? AND principal_id = ?
-                  AND revoked_at IS NULL AND (valid_until IS NULL OR valid_until > CURRENT_TIMESTAMP)
+                SELECT COUNT(*) FROM tenant_member tm
+                JOIN principal p ON p.id = tm.principal_id
+                WHERE tm.tenant_id = ? AND tm.principal_id = ? AND p.disabled_at IS NULL
+                  AND tm.revoked_at IS NULL AND (tm.valid_until IS NULL OR tm.valid_until > CURRENT_TIMESTAMP)
                 """, Integer.class, project.tenantId(), principalId) == 0) {
             throw ProjectAccessException.conflict("PRINCIPAL_NOT_TENANT_MEMBER",
                     "Project members must belong to the same tenant");
@@ -205,6 +221,9 @@ public class ProjectService {
         Set<String> roles = normalizeRoles(requestedRoles, PROJECT_ROLES);
         Set<String> currentRoles = currentRoles(project.tenantId(), project.id(), principalId);
         long currentVersion = memberVersion(project.tenantId(), project.id(), principalId);
+        if (!allowMissingVersion && expectedVersion == null) {
+            throw ProjectAccessException.invalid("authorizationVersion is required");
+        }
         if (expectedVersion != null && expectedVersion.longValue() != currentVersion) {
             throw ProjectAccessException.conflict("STALE_VERSION", "Membership was changed by another request");
         }
@@ -215,6 +234,8 @@ public class ProjectService {
                 && !isAdminRoles(roles, PROJECT_ADMINS) && countActiveAdmins(project.tenantId(), project.id(), principalId) == 0) {
             throw ProjectAccessException.conflict("LAST_ADMIN", "A project must retain one active administrator");
         }
+        Set<String> beforeRoles = currentRoles;
+        long beforeVersion = currentVersion;
         jdbc.update("""
                 INSERT INTO project_member (tenant_id, project_id, principal_id, roles, revoked_at, valid_until)
                 VALUES (?, ?, ?, ?, NULL, NULL)
@@ -225,18 +246,37 @@ public class ProjectService {
                     updated_at = CURRENT_TIMESTAMP
                 """, project.tenantId(), project.id(), principalId, sqlArray(roles));
         audit(project.tenantId(), project.id(), actor, "project.member.granted", "project_member", principalId,
+                memberVersion(project.tenantId(), project.id(), principalId), beforeRoles, roles, beforeVersion,
                 memberVersion(project.tenantId(), project.id(), principalId));
         return member(project.tenantId(), project.id(), principalId);
     }
 
     @Transactional
     public MemberView revokeMember(UUID actor, UUID projectId, UUID principalId) {
+        return revokeMember(actor, projectId, principalId, null, true);
+    }
+
+    /** Revoke with a required optimistic authorization version for HTTP callers. */
+    @Transactional
+    public MemberView revokeMember(UUID actor, UUID projectId, UUID principalId, Long expectedVersion) {
+        return revokeMember(actor, projectId, principalId, expectedVersion, false);
+    }
+
+    private MemberView revokeMember(UUID actor, UUID projectId, UUID principalId, Long expectedVersion,
+            boolean allowMissingVersion) {
         ProjectView project = findProject(actor, projectId);
         requireProjectAdmin(actor, project.tenantId(), project.id());
         setContext(project.tenantId(), actor);
         lockProjectMembers(project.tenantId(), project.id());
         Set<String> current = currentRoles(project.tenantId(), project.id(), principalId);
         if (current.isEmpty()) throw ProjectAccessException.notFound();
+        long currentVersion = memberVersion(project.tenantId(), project.id(), principalId);
+        if (!allowMissingVersion && expectedVersion == null) {
+            throw ProjectAccessException.invalid("authorizationVersion is required");
+        }
+        if (expectedVersion != null && expectedVersion.longValue() != currentVersion) {
+            throw ProjectAccessException.conflict("STALE_VERSION", "Membership was changed by another request");
+        }
         if (!isActiveMember(project.tenantId(), project.id(), principalId)) {
             return member(project.tenantId(), project.id(), principalId);
         }
@@ -251,7 +291,8 @@ public class ProjectService {
                   AND revoked_at IS NULL AND (valid_until IS NULL OR valid_until > CURRENT_TIMESTAMP)
                 """, project.tenantId(), project.id(), principalId);
         audit(project.tenantId(), project.id(), actor, "project.member.revoked", "project_member", principalId,
-                memberVersion(project.tenantId(), project.id(), principalId));
+                memberVersion(project.tenantId(), project.id(), principalId), current, current,
+                currentVersion, memberVersion(project.tenantId(), project.id(), principalId));
         return member(project.tenantId(), project.id(), principalId);
     }
 
@@ -276,7 +317,8 @@ public class ProjectService {
     private void requireTenantMember(UUID actor, UUID tenantId) {
         setContext(tenantId, actor);
         if (jdbc.queryForObject("""
-                SELECT COUNT(*) FROM tenant_member WHERE tenant_id = ? AND principal_id = ?
+                SELECT COUNT(*) FROM tenant_member tm JOIN principal p ON p.id = tm.principal_id
+                WHERE tm.tenant_id = ? AND tm.principal_id = ? AND p.disabled_at IS NULL
                   AND revoked_at IS NULL AND (valid_until IS NULL OR valid_until > CURRENT_TIMESTAMP)
                 """, Integer.class, tenantId, actor) == 0) throw ProjectAccessException.forbidden();
     }
@@ -293,12 +335,16 @@ public class ProjectService {
     }
 
     private boolean hasRole(UUID actor, UUID tenantId, UUID projectId, Set<String> roles, boolean project) {
-        String table = project ? "project_member" : "tenant_member";
-        String where = project ? "tenant_id = ? AND project_id = ? AND principal_id = ?" : "tenant_id = ? AND principal_id = ?";
+        String table = project ? "project_member pm JOIN principal p ON p.id = pm.principal_id JOIN tenant_member tm ON tm.tenant_id = pm.tenant_id AND tm.principal_id = pm.principal_id"
+                : "tenant_member tm JOIN principal p ON p.id = tm.principal_id";
+        String where = project ? "pm.tenant_id = ? AND pm.project_id = ? AND pm.principal_id = ? AND tm.revoked_at IS NULL AND (tm.valid_until IS NULL OR tm.valid_until > CURRENT_TIMESTAMP)"
+                : "tm.tenant_id = ? AND tm.principal_id = ?";
         Object[] args = project ? new Object[]{tenantId, projectId, actor} : new Object[]{tenantId, actor};
+        String alias = project ? "pm" : "tm";
         Integer count = jdbc.queryForObject("SELECT COUNT(*) FROM " + table + " WHERE " + where
-                + " AND revoked_at IS NULL AND (valid_until IS NULL OR valid_until > CURRENT_TIMESTAMP)"
-                + " AND roles && CAST(? AS text[])", Integer.class, append(args, sqlArray(roles)));
+                + " AND " + alias + ".revoked_at IS NULL AND (" + alias + ".valid_until IS NULL OR " + alias + ".valid_until > CURRENT_TIMESTAMP)"
+                + " AND p.disabled_at IS NULL"
+                + " AND " + alias + ".roles && CAST(? AS text[])", Integer.class, append(args, sqlArray(roles)));
         return count != null && count > 0;
     }
 
@@ -310,22 +356,37 @@ public class ProjectService {
 
     private int countActiveAdmins(UUID tenantId, UUID projectId, UUID excluded) {
         Integer count = jdbc.queryForObject("""
-                SELECT COUNT(*) FROM project_member WHERE tenant_id = ? AND project_id = ? AND principal_id <> ?
-                  AND revoked_at IS NULL AND (valid_until IS NULL OR valid_until > CURRENT_TIMESTAMP)
-                  AND roles && CAST(? AS text[])
+                SELECT COUNT(*) FROM project_member pm
+                JOIN principal p ON p.id = pm.principal_id
+                JOIN tenant_member tm ON tm.tenant_id = pm.tenant_id AND tm.principal_id = pm.principal_id
+                WHERE pm.tenant_id = ? AND pm.project_id = ? AND pm.principal_id <> ?
+                  AND p.disabled_at IS NULL AND pm.revoked_at IS NULL
+                  AND (pm.valid_until IS NULL OR pm.valid_until > CURRENT_TIMESTAMP)
+                  AND tm.revoked_at IS NULL AND (tm.valid_until IS NULL OR tm.valid_until > CURRENT_TIMESTAMP)
+                  AND pm.roles && CAST(? AS text[])
                 """, Integer.class, tenantId, projectId, excluded, sqlArray(PROJECT_ADMINS));
         return count == null ? 0 : count;
     }
 
     private boolean isActiveMember(UUID tenantId, UUID projectId, UUID principalId) {
         Integer count = jdbc.queryForObject("""
-                SELECT COUNT(*) FROM project_member WHERE tenant_id = ? AND project_id = ? AND principal_id = ?
-                  AND revoked_at IS NULL AND (valid_until IS NULL OR valid_until > CURRENT_TIMESTAMP)
+                SELECT COUNT(*) FROM project_member pm
+                JOIN principal p ON p.id = pm.principal_id
+                JOIN tenant_member tm ON tm.tenant_id = pm.tenant_id AND tm.principal_id = pm.principal_id
+                WHERE pm.tenant_id = ? AND pm.project_id = ? AND pm.principal_id = ?
+                  AND p.disabled_at IS NULL AND pm.revoked_at IS NULL
+                  AND (pm.valid_until IS NULL OR pm.valid_until > CURRENT_TIMESTAMP)
+                  AND tm.revoked_at IS NULL AND (tm.valid_until IS NULL OR tm.valid_until > CURRENT_TIMESTAMP)
                 """, Integer.class, tenantId, projectId, principalId);
         return count != null && count > 0;
     }
 
     private void lockProjectMembers(UUID tenantId, UUID projectId) {
+        // Lock the project row as well as existing memberships.  A target that
+        // is not yet a member has no row to lock; serializing on the project
+        // closes that optimistic-version race for concurrent first grants.
+        jdbc.query("SELECT id FROM project WHERE tenant_id = ? AND id = ? FOR UPDATE",
+                (rs, row) -> rs.getObject("id", UUID.class), tenantId, projectId);
         jdbc.query("SELECT principal_id FROM project_member WHERE tenant_id = ? AND project_id = ? FOR UPDATE",
                 (rs, row) -> rs.getObject("principal_id", UUID.class), tenantId, projectId);
     }
@@ -340,9 +401,13 @@ public class ProjectService {
 
     private boolean memberIsActive(UUID tenantId, UUID projectId, UUID principalId) {
         Integer count = jdbc.queryForObject("""
-                SELECT COUNT(*) FROM project_member
-                WHERE tenant_id = ? AND project_id = ? AND principal_id = ?
-                  AND revoked_at IS NULL AND (valid_until IS NULL OR valid_until > CURRENT_TIMESTAMP)
+                SELECT COUNT(*) FROM project_member pm
+                JOIN principal p ON p.id = pm.principal_id
+                JOIN tenant_member tm ON tm.tenant_id = pm.tenant_id AND tm.principal_id = pm.principal_id
+                WHERE pm.tenant_id = ? AND pm.project_id = ? AND pm.principal_id = ?
+                  AND p.disabled_at IS NULL AND pm.revoked_at IS NULL
+                  AND (pm.valid_until IS NULL OR pm.valid_until > CURRENT_TIMESTAMP)
+                  AND tm.revoked_at IS NULL AND (tm.valid_until IS NULL OR tm.valid_until > CURRENT_TIMESTAMP)
                 """, Integer.class, tenantId, projectId, principalId);
         return count != null && count > 0;
     }
@@ -374,21 +439,58 @@ public class ProjectService {
 
 
     private void audit(UUID tenantId, UUID projectId, UUID actor, String action, String type, UUID object, long revision) {
-        jdbc.update("""
-                INSERT INTO audit_event (tenant_id, project_id, actor_principal_id, action, object_type, object_id, object_revision)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-                """, tenantId, projectId, actor, action, type, object, revision);
+        audit(tenantId, projectId, actor, action, type, object, revision, null, null, null, null);
+    }
+
+    private void audit(UUID tenantId, UUID projectId, UUID actor, String action, String type, UUID object,
+            long revision, Collection<String> beforeRoles, Collection<String> afterRoles,
+            Long beforeVersion, Long afterVersion) {
+        jdbc.update(connection -> {
+            var statement = connection.prepareStatement("""
+                    INSERT INTO audit_event (tenant_id, project_id, actor_principal_id, action, object_type, object_id,
+                        object_revision, before_roles, after_roles, before_authorization_version,
+                        after_authorization_version)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """);
+            statement.setObject(1, tenantId);
+            statement.setObject(2, projectId);
+            statement.setObject(3, actor);
+            statement.setString(4, action);
+            statement.setString(5, type);
+            statement.setObject(6, object);
+            statement.setLong(7, revision);
+            if (beforeRoles == null) statement.setNull(8, java.sql.Types.ARRAY);
+            else statement.setArray(8, connection.createArrayOf("text", beforeRoles.toArray(String[]::new)));
+            if (afterRoles == null) statement.setNull(9, java.sql.Types.ARRAY);
+            else statement.setArray(9, connection.createArrayOf("text", afterRoles.toArray(String[]::new)));
+            if (beforeVersion == null) statement.setNull(10, java.sql.Types.BIGINT);
+            else statement.setLong(10, beforeVersion);
+            if (afterVersion == null) statement.setNull(11, java.sql.Types.BIGINT);
+            else statement.setLong(11, afterVersion);
+            return statement;
+        });
     }
 
     private void setContext(UUID tenantId, UUID actor) {
         jdbc.queryForObject("SELECT set_config('test365alm.tenant_id', ?, true)", String.class,
                 tenantId == null ? "" : tenantId.toString());
-        setPrincipalContext(actor);
+        setPrincipalOnly(actor);
+        clearProjectContext();
     }
 
     private void setPrincipalContext(UUID actor) {
+        jdbc.queryForObject("SELECT set_config('test365alm.tenant_id', ?, true)", String.class, "");
+        setPrincipalOnly(actor);
+        clearProjectContext();
+    }
+
+    private void setPrincipalOnly(UUID actor) {
         jdbc.queryForObject("SELECT set_config('test365alm.principal_id', ?, true)", String.class,
                 actor == null ? "" : actor.toString());
+    }
+
+    private void clearProjectContext() {
+        jdbc.queryForObject("SELECT set_config('test365alm.project_id', ?, true)", String.class, "");
     }
 
     private void setProjectContext(UUID projectId) {

@@ -78,13 +78,21 @@ public class ProjectController {
     @PutMapping("/projects/{projectId}/members/{principalId}")
     public ProjectService.MemberView putMember(Authentication authentication, @PathVariable UUID projectId,
             @PathVariable UUID principalId, @RequestBody MemberRequest request) {
-        return service.putMember(actors.requirePrincipal(authentication), projectId, principalId, request.roles(), request.rowVersion());
+        if (request == null || request.authorizationVersion() == null) {
+            throw ProjectAccessException.invalid("authorizationVersion is required");
+        }
+        return service.putMember(actors.requirePrincipal(authentication), projectId, principalId, request.roles(),
+                request.authorizationVersion(), false);
     }
 
     @DeleteMapping("/projects/{projectId}/members/{principalId}")
     public ProjectService.MemberView revokeMember(Authentication authentication, @PathVariable UUID projectId,
-            @PathVariable UUID principalId) {
-        return service.revokeMember(actors.requirePrincipal(authentication), projectId, principalId);
+            @PathVariable UUID principalId, @RequestBody(required = false) MemberVersionRequest request) {
+        if (request == null || request.authorizationVersion() == null) {
+            throw ProjectAccessException.invalid("authorizationVersion is required");
+        }
+        return service.revokeMember(actors.requirePrincipal(authentication), projectId, principalId,
+                request.authorizationVersion());
     }
 
     @GetMapping("/me/permissions")
@@ -94,5 +102,6 @@ public class ProjectController {
 
     public record ProjectRequest(UUID tenantId, UUID domainId, String code, String name) { }
     public record ProjectUpdate(String name, Long rowVersion) { }
-    public record MemberRequest(Collection<String> roles, Long rowVersion) { }
+    public record MemberRequest(Collection<String> roles, Long authorizationVersion) { }
+    public record MemberVersionRequest(Long authorizationVersion) { }
 }

@@ -4,7 +4,7 @@
 
 > **当前状态：R03 首个认证切片实施中。** R02 健康/版本、迁移和状态工作台保留；新增 OIDC 登录不代表项目授权、完整 M03、生产安全认证或完整 ALM 已完成。
 
-当前开发状态以 [development-status.md](docs/development-status.md) 和 [R03-M03-001-FIX01 验收补修记录](docs/progress/runs/R03-M03-001-FIX01.md) 为准；[R03-M03-001 原始记录](docs/progress/runs/R03-M03-001.md) 与 R02 历史记录保留供追溯。
+当前开发状态以 [development-status.md](docs/development-status.md) 和最新轮次记录为准；R03/R02 历史记录保留供追溯。
 
 ## R03-M03-002 项目访问最小切片
 
@@ -55,12 +55,12 @@ npm run dev
 curl.exe -i http://127.0.0.1:8080/health/ready
 curl.exe -i http://127.0.0.1:8080/api/v1/me
 docker compose --env-file .env.r03 -f compose.r03.yaml -p test365alm-r03-my-run ps
-docker compose --env-file .env.r03 -f compose.r03.yaml -p test365alm-r03-my-run down
+python tools/cleanup_r02_resources.py --root local-evidence/r03
 ```
 
-匿名 `/api/v1/me` 应返回 JSON 401；`/health/ready` 应返回 200。`down` 不删除数据卷；只有确认是本轮专用资源后才人工清理。改变 Keycloak、PostgreSQL 或前端端口时，必须同步更新 `.env.r03` 中的 JDBC/issuer、realm import 中的回调地址和前端代理；不要只改 Compose 发布端口。浏览器若显示登录失败，先检查 Keycloak discovery、固定回调、后端 OIDC profile 和本地角色迁移；不要关闭 issuer、签名、CSRF 校验。生产必须采用 HTTPS 与 Secure Cookie、正式 IdP、独立秘密管理和独立安全评审。
+匿名 `/api/v1/me` 应返回 JSON 401；`/health/ready` 应返回 200。清理只读取本轮 manifest，并在 Docker context、Engine、项目和 run 标签均匹配时删除记录资源；没有 manifest 或归属无法确认时返回非零，不能改用项目级 `down`。改变 Keycloak、PostgreSQL 或前端端口时，必须同步更新 `.env.r03` 中的 JDBC/issuer、realm import 中的回调地址和前端代理；不要只改 Compose 发布端口。浏览器若显示登录失败，先检查 Keycloak discovery、固定回调、后端 OIDC profile 和本地角色迁移；不要关闭 issuer、签名、CSRF 校验。生产必须采用 HTTPS 与 Secure Cookie、正式 IdP、独立秘密管理和独立安全评审。
 
-自动化回归：后端 `cd apps/server; .\mvnw.cmd -B -ntp -Pintegration verify` 使用 Testcontainers 的临时 PostgreSQL，并运行真实 HTTP OIDC 回调集成类 `OidcCallbackSecurityIT`（1 个合法对照、5 个非法令牌和 1 个失败后恢复场景）；可单独复跑 `.\mvnw.cmd -B -ntp -Pintegration verify '-Dit.test=OidcCallbackSecurityIT'`。前端 `cd apps/web; npm ci; npm run lint; npm run test:run; npm run build`。真实浏览器联调需先启动上述四个本地服务，再在 `apps/web` 执行 `. ..\..\tools\import_r03_env.ps1 -Path ..\..\.env.r03; npm run test:e2e`；本机可设置 `R03_E2E_BROWSER_CHANNEL=chrome` 使用已安装 Chrome，CI 安装隔离 Chromium。E2E 不用 mock 登录取代真实 Keycloak。
+自动化回归：后端 `cd apps/server; .\mvnw.cmd -B -ntp -Pintegration verify` 使用 Testcontainers 的临时 PostgreSQL，并运行真实 HTTP OIDC 回调集成类 `OidcCallbackSecurityIT`（10 个受门禁用例，含运行时账号、项目 HTTP 和未 bootstrap 拒绝场景）；可单独复跑 `.\mvnw.cmd -B -ntp -Pintegration verify '-Dit.test=OidcCallbackSecurityIT'`。前端 `cd apps/web; npm ci; npm run lint; npm run test:run; npm run build`。真实浏览器联调需先启动上述四个本地服务，再在 `apps/web` 执行 `. ..\..\tools\import_r03_env.ps1 -Path ..\..\.env.r03; npm run test:e2e`；本机可设置 `R03_E2E_BROWSER_CHANNEL=chrome` 使用已安装 Chrome，CI 安装隔离 Chromium。E2E 不用 mock 登录取代真实 Keycloak。
 
 FIX01 的双用户项目演示只在 CI 本轮拥有的隔离 Compose 项目中运行：测试用两个真实 Keycloak 用户建立本地 principal，由迁移账号在同一临时数据库播种 tenant/domain/tenant_member，然后通过真实浏览器会话完成“管理员创建项目 → 授权 `PROJECT_VIEWER` → 成员读取成功、直接更新返回 403 → 管理员撤权 → 成员原会话下一次权限请求返回 403/404”。`tools/verify_r03_project_browser_report.py` 要求该用例实际执行且无失败/错误/跳过；普通本机运行因资源归属门禁会跳过并返回非成功报告，不得把它当作真实项目验收通过。生成器不会覆盖已有 `.env.r03` 或 realm；若本地旧配置只有单用户，先确认归属后按隔离环境规则重新生成。
 

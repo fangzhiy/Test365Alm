@@ -11,6 +11,7 @@ REQUIRED_TEST = (
     "real Keycloak dual-user project access grants viewer read, rejects write, "
     "and revokes the live session"
 )
+REQUIRED_UI_TEST = "real Keycloak UI project flow shows scoped viewer controls and clears revoked access"
 
 
 def read_report(path: Path) -> tuple[int, int, int, int, set[str]]:
@@ -27,8 +28,9 @@ def read_report(path: Path) -> tuple[int, int, int, int, set[str]]:
 def verify(path: Path) -> tuple[bool, str]:
     tests, failures, errors, skipped, names = read_report(path)
     summary = f"project browser tests={tests} failures={failures} errors={errors} skipped={skipped}"
-    if REQUIRED_TEST not in names:
-        return False, summary + " missing=dual-user-project-access"
+    missing = [name for name in (REQUIRED_TEST, REQUIRED_UI_TEST) if name not in names]
+    if missing:
+        return False, summary + f" missing={','.join(missing)}"
     if failures or errors or skipped:
         return False, summary
     return True, summary

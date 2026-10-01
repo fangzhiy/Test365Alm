@@ -33,6 +33,8 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
@@ -48,6 +50,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -83,6 +87,16 @@ class OidcCallbackSecurityIT {
     @LocalServerPort
     private int appPort;
 
+    /**
+     * This is deliberately the application datasource, not the owner
+     * connection used by the fixture helpers below.  Keeping this assertion
+     * in the real HTTP callback suite prevents a test from accidentally
+     * passing while the application has silently fallen back to the migration
+     * owner.
+     */
+    @Autowired
+    private JdbcTemplate runtimeJdbc;
+
     @DynamicPropertySource
     static void registerProperties(DynamicPropertyRegistry registry) {
         registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
@@ -108,6 +122,136 @@ class OidcCallbackSecurityIT {
     @AfterAll
     static void stopProvider() {
         IDP.stop();
+    }
+
+    @Test
+    void realHttpApplicationUsesRestrictedRuntimeRole() {
+        Map<String, Object> role = runtimeJdbc.queryForMap(
+                "SELECT current_user AS username, r.rolsuper, r.rolbypassrls "
+                        + "FROM pg_roles r WHERE r.rolname = current_user");
+        assertEquals(RUNTIME_USER, role.get("username"));
+        assertEquals(Boolean.FALSE, role.get("rolsuper"));
+        assertEquals(Boolean.FALSE, role.get("rolbypassrls"));
+        assertTrue(runtimeJdbc.queryForObject("SELECT COUNT(*) FROM flyway_schema_history", Integer.class) >= 1);
+        org.springframework.dao.DataAccessException ddlFailure = null;
+        try {
+            runtimeJdbc.execute("CREATE TABLE r03_runtime_must_not_ddl (id integer)");
+        } catch (org.springframework.dao.DataAccessException expected) {
+            ddlFailure = expected;
+        }
+        assertNotNull(ddlFailure, "the HTTP application's runtime role must not be able to run DDL");
+    }
+
+    @Test
+    void realOidcSessionCanUseProjectHttpEndpointsThroughRuntimeDatasource() throws Exception {
+        String subject = uniqueSubject("project-http");
+        Flow flow = runAuthorization(Variant.VALID, subject);
+        UUID actor;
+        try (var connection = java.sql.DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+                var statement = connection.prepareStatement("SELECT id FROM principal WHERE issuer = ? AND subject = ?")) {
+            statement.setString(1, IDP.issuer());
+            statement.setString(2, subject);
+            try (var rows = statement.executeQuery()) {
+                assertTrue(rows.next(), "the real OIDC callback must persist the principal before project access");
+                actor = rows.getObject(1, UUID.class);
+            }
+        }
+        UUID tenant = UUID.randomUUID();
+        UUID domain = UUID.randomUUID();
+        try (var connection = java.sql.DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())) {
+            try (var statement = connection.prepareStatement("INSERT INTO tenant (id, code, name) VALUES (?, ?, ?)")) {
+                statement.setObject(1, tenant);
+                statement.setString(2, "http-tenant-" + tenant);
+                statement.setString(3, "HTTP Tenant");
+                statement.executeUpdate();
+            }
+            try (var statement = connection.prepareStatement("INSERT INTO domain (id, tenant_id, name) VALUES (?, ?, ?)")) {
+                statement.setObject(1, domain);
+                statement.setObject(2, tenant);
+                statement.setString(3, "HTTP Domain");
+                statement.executeUpdate();
+            }
+            try (var statement = connection.prepareStatement(
+                    "INSERT INTO tenant_member (tenant_id, principal_id, roles) VALUES (?, ?, ARRAY['TENANT_ADMIN']::text[])")) {
+                statement.setObject(1, tenant);
+                statement.setObject(2, actor);
+                statement.executeUpdate();
+            }
+        }
+        HttpResponse<String> tenants = get(flow.client, "/api/v1/tenants");
+        assertEquals(200, tenants.statusCode());
+        assertTrue(tenants.body().contains(tenant.toString()));
+        HttpResponse<String> domains = get(flow.client, "/api/v1/domains?tenantId=" + tenant);
+        assertEquals(200, domains.statusCode());
+        assertTrue(domains.body().contains(domain.toString()));
+
+        HttpResponse<String> csrf = get(flow.client, "/api/v1/csrf");
+        assertEquals(200, csrf.statusCode());
+        String csrfHeader = jsonField(csrf.body(), "headerName");
+        String csrfToken = jsonField(csrf.body(), "token");
+        HttpRequest create = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + appPort + "/api/v1/projects"))
+                .timeout(REQUEST_TIMEOUT)
+                .header("Content-Type", "application/json")
+                .header(csrfHeader, csrfToken)
+                .POST(HttpRequest.BodyPublishers.ofString("{\"tenantId\":\"" + tenant
+                        + "\",\"domainId\":\"" + domain + "\",\"code\":\"HTTP-PROJECT-"
+                        + tenant + "\",\"name\":\"HTTP Project\"}"))
+                .build();
+        HttpResponse<String> created = flow.client.send(create, HttpResponse.BodyHandlers.ofString());
+        assertEquals(201, created.statusCode(), created.body());
+        String projectId = jsonField(created.body(), "id");
+        HttpRequest missingVersion = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + appPort
+                + "/api/v1/projects/" + projectId + "/members/" + actor))
+                .timeout(REQUEST_TIMEOUT)
+                .header("Content-Type", "application/json")
+                .header(csrfHeader, csrfToken)
+                .PUT(HttpRequest.BodyPublishers.ofString("{\"roles\":[\"PROJECT_VIEWER\"]}"))
+                .build();
+        assertEquals(400, flow.client.send(missingVersion, HttpResponse.BodyHandlers.ofString()).statusCode());
+        HttpRequest staleVersion = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + appPort
+                + "/api/v1/projects/" + projectId + "/members/" + actor))
+                .timeout(REQUEST_TIMEOUT)
+                .header("Content-Type", "application/json")
+                .header(csrfHeader, csrfToken)
+                .PUT(HttpRequest.BodyPublishers.ofString("{\"roles\":[\"PROJECT_VIEWER\"],\"authorizationVersion\":99}"))
+                .build();
+        assertEquals(409, flow.client.send(staleVersion, HttpResponse.BodyHandlers.ofString()).statusCode());
+        HttpResponse<String> project = get(flow.client, "/api/v1/projects/" + projectId);
+        assertEquals(200, project.statusCode());
+        assertTrue(project.body().contains("HTTP Project"));
+    }
+
+    @Test
+    void unbootstrappedOidcSubjectCannotCreateTenantOrProjectAccess() throws Exception {
+        String subject = uniqueSubject("unbootstrapped");
+        PrincipalSnapshot before = snapshot();
+        int tenantsBefore = ownerCount("tenant");
+        int projectsBefore = ownerCount("project");
+        Flow flow = runAuthorization(Variant.VALID, subject);
+        assertEquals(200, get(flow.client, "/api/v1/me").statusCode());
+        HttpResponse<String> tenants = get(flow.client, "/api/v1/tenants");
+        assertEquals(200, tenants.statusCode());
+        assertEquals("[]", tenants.body().trim());
+        HttpResponse<String> csrf = get(flow.client, "/api/v1/csrf");
+        String csrfHeader = jsonField(csrf.body(), "headerName");
+        String csrfToken = jsonField(csrf.body(), "token");
+        HttpRequest create = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + appPort + "/api/v1/projects"))
+                .timeout(REQUEST_TIMEOUT)
+                .header("Content-Type", "application/json")
+                .header(csrfHeader, csrfToken)
+                .POST(HttpRequest.BodyPublishers.ofString("{\"tenantId\":\"" + UUID.randomUUID()
+                        + "\",\"domainId\":\"" + UUID.randomUUID()
+                        + "\",\"code\":\"UNBOOTSTRAPPED\",\"name\":\"Denied\"}"))
+                .build();
+        HttpResponse<String> denied = flow.client.send(create, HttpResponse.BodyHandlers.ofString());
+        assertEquals(403, denied.statusCode());
+        assertEquals(tenantsBefore, ownerCount("tenant"));
+        assertEquals(projectsBefore, ownerCount("project"));
+        PrincipalSnapshot after = snapshot();
+        assertEquals(before.rows.size() + 1, after.rows.size());
+        assertTrue(after.has(IDP.issuer(), subject));
     }
 
     @Test
@@ -322,10 +466,27 @@ class OidcCallbackSecurityIT {
         }
     }
 
+    private int ownerCount(String table) throws Exception {
+        if (!List.of("tenant", "project").contains(table)) throw new IllegalArgumentException("unexpected table");
+        try (var connection = java.sql.DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+                var statement = connection.createStatement();
+                var result = statement.executeQuery("SELECT COUNT(*) FROM " + table)) {
+            assertTrue(result.next());
+            return result.getInt(1);
+        }
+    }
+
     private HttpResponse<String> get(HttpClient client, String path) throws Exception {
         return client.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + appPort + path))
                 .timeout(REQUEST_TIMEOUT).GET().build(),
                 HttpResponse.BodyHandlers.ofString());
+    }
+
+    private static String jsonField(String body, String field) {
+        Matcher matcher = Pattern.compile("\\\"" + Pattern.quote(field) + "\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"").matcher(body);
+        assertTrue(matcher.find(), "missing JSON field " + field);
+        return matcher.group(1);
     }
 
     private static String uniqueSubject(String prefix) {

@@ -27,7 +27,7 @@ cd apps/web; npm ci; npm run lint; npm run test:run; npm run build
 cd apps/server; .\mvnw.cmd -B -ntp test
 # 集成测试由 Testcontainers 创建本轮唯一的临时 PostgreSQL；不读取日常 .env，也不设置 TEST365ALM_IT_DATASOURCE_*。
 cd apps/server; .\mvnw.cmd -B -ntp -Pintegration verify '-Dbuild.commit=local-r02'
-# R03 FIX02：真实 HTTP OIDC 授权码/回调/PKCE/JWKS 与临时 PostgreSQL 主体快照（7 个用例）
+# R03 FIX02：真实 HTTP OIDC 授权码/回调/PKCE/JWKS、运行时数据源与项目访问（10 个用例）
 cd apps/server; .\mvnw.cmd -B -ntp -Pintegration verify '-Dit.test=OidcCallbackSecurityIT' '-Dbuild.commit=local-r03-fix02'
 # CI/本地报告门槛：Failsafe 必须发现上述 7 个用例且 failures/errors/skipped 全为 0
 python tools/verify_r03_oidc_http_report.py apps/server/target/failsafe-reports
@@ -71,10 +71,10 @@ Python 工具只使用标准库，支持 Python 3.10 及以上。新增工具必
 - 健康接口只读；不得在探测、请求处理或测试脚本中执行 migrate、repair、clean 或自动修表。故障注入仅允许针对本轮隔离测试资源。
 - Testcontainers 集成测试必须使用测试类动态注入的临时数据源；破坏性测试不得连接日常 `.env`、未知 JDBC 地址或用户数据库。对照容器必须证明其数据未被目标故障注入改变。
 - 故障恢复/迁移失败脚本必须先确认端口、进程 PID、构建提交和 Compose 资源归属；无法验证监听或资源归属时记录 NOT_RUN/BLOCKED 并返回非成功状态，不得通过 observe/忽略错误判定通过。
-- R02 故障脚本及 CI 清理共用 `tools/r02_resource_guard.py`：首次 up 前检查预存容器/网络/卷，记录本轮不可复用 run ID、Docker context/Engine 和资源 ID；stop、start、cleanup 前核对身份。只删除 manifest 中仍带本轮标签的资源，禁止项目级 `down --volumes --remove-orphans`。
+- R02 故障脚本及 CI 清理共用 `tools/r02_resource_guard.py`；R03 浏览器作业通过 `tools/r03_resource_guard.py` 复用同一 manifest/归属校验：首次 up 前检查预存容器/网络/卷，记录本轮不可复用 run ID、Docker context/Engine 和资源 ID；stop、start、cleanup 前核对身份。只删除 manifest 中仍带本轮标签的资源，禁止项目级 `down --volumes --remove-orphans`。
 - 故障脚本的子进程环境只能保留必要运行时变量和专用测试配置；Flyway 与 datasource URL 必须指向同一临时数据库，启动 JVM 时限定 Spring 配置加载位置。测试 `.env.r02-test` 不能覆盖日常 `.env`，不得继承父进程 Spring/JVM/Compose 偏转项。
 - OIDC 身份只能由服务端验证的 issuer+subject 建立；不能信任请求头、前端 userId、邮箱或显示名合并。默认无 OIDC 配置时身份 API 拒绝访问。浏览器仅使用 HttpOnly 会话 Cookie；不得回传原始 OAuth token，退出必须有 CSRF，停用主体的下一次受保护请求必须失效。
 - R03 的 Compose 与测试账户只用于本地/CI 隔离环境；`.env.r03` 和 realm import 含随机测试秘密，不提交。运行账号与 Flyway 迁移账号分离，运行账号不拥有表、DDL、BYPASSRLS。R03-M03-002 只实现项目访问/RLS 最小切片，不能据此标为完整 M03。正式 V3 迁移后，R02 故意失败测试必须先确认正式 V3 成功，再使用独立 V4 专属错误标记。
 - R03 真实故障浏览器用例只在 CI 本轮唯一、带 `R03_RUN_ID` 资源标签的 Compose 项目中停启 Keycloak 或修改临时主体；普通 `npm run test:e2e` 不得触碰日常开发数据库或未知容器。CI 的 realm 导入文件仅容器 UID 1000 可读，`.env.r03` 与 realm 都是秘密；只上传脱敏的白名单证据和实际测试报告。
-- R03-M03-002 FIX01 的双用户项目浏览器用例只在当前 CI-owned Compose 项目中播种 tenant/domain/member 数据；普通本机浏览器运行会因资源归属门禁跳过并返回非成功报告，不能写成真实项目验收通过。项目授权迁移只新增 V4，不改写已执行 V1-V3。
+- R03-M03-002 FIX01/FIX02 的双用户项目浏览器用例只在当前 CI-owned Compose 项目中播种 tenant/domain/member 数据；普通本机浏览器运行会因资源归属门禁跳过并返回非成功报告，不能写成真实项目验收通过。项目授权迁移只新增 V5，不改写已执行 V1-V4。
 - R03 FIX02 的 HTTP 回调测试必须保留真实应用过滤器链和同一 Cookie 容器；测试 IdP 只提供回环协议响应，不能用 `oidcLogin`、`@WithMockUser`、直接 SecurityContext 或 mock Principal/JWT 验证替代。每类非法 token 之后必须以独立 owner 连接比较 principal 全字段快照；只允许合成 subject 与 Testcontainers 临时 PostgreSQL，报告不得包含 Cookie、token、私钥或秘密。

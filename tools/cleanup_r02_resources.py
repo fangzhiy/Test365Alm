@@ -16,7 +16,8 @@ from tools.r02_resource_guard import ResourceManifest, cleanup_manifest, isolate
 
 def _load(path: Path) -> ResourceManifest:
     data = json.loads(path.read_text(encoding="utf-8"))
-    values = {field.name: data[field.name] for field in fields(ResourceManifest)}
+    values = {field.name: data[field.name] for field in fields(ResourceManifest)
+              if field.name in data}
     values["containers"] = tuple(values["containers"])
     values["networks"] = tuple(values["networks"])
     values["volumes"] = tuple(values["volumes"])

@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { accessApi } from './projectAccess'
-import type { MemberCandidate, Project, ProjectAccess, ProjectMember, ProjectRole, Tenant } from './projectAccess'
+import type { Domain, MemberCandidate, Project, ProjectAccess, ProjectMember, ProjectRole, Tenant } from './projectAccess'
 
 type PanelState = 'idle' | 'loading' | 'ready' | 'error'
 type ProjectAccessPanelProps = { resetSignal?: number }
@@ -15,7 +15,9 @@ type RequestRound = { round: number; signal: AbortSignal; isCurrent: () => boole
 export default function ProjectAccessPanel({ resetSignal = 0 }: ProjectAccessPanelProps) {
   const [state, setState] = useState<PanelState>('idle')
   const [tenants, setTenants] = useState<Tenant[]>([])
+  const [domains, setDomains] = useState<Domain[]>([])
   const [projects, setProjects] = useState<Project[]>([])
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null)
   const [members, setMembers] = useState<ProjectMember[]>([])
   const [candidates, setCandidates] = useState<MemberCandidate[]>([])
   const [access, setAccess] = useState<ProjectAccess | null>(null)
@@ -26,6 +28,7 @@ export default function ProjectAccessPanel({ resetSignal = 0 }: ProjectAccessPan
   const [domainId, setDomainId] = useState('')
   const [projectCode, setProjectCode] = useState('')
   const [projectName, setProjectName] = useState('')
+  const [editProjectName, setEditProjectName] = useState('')
   const [notice, setNotice] = useState('')
   const mountedRef = useRef(false)
   const requestRoundRef = useRef(0)
@@ -63,7 +66,9 @@ export default function ProjectAccessPanel({ resetSignal = 0 }: ProjectAccessPan
 
   const clearData = () => {
     setTenants([])
+    setDomains([])
     setProjects([])
+    setSelectedProject(null)
     setMembers([])
     setCandidates([])
     setAccess(null)
@@ -73,7 +78,17 @@ export default function ProjectAccessPanel({ resetSignal = 0 }: ProjectAccessPan
     setDomainId('')
     setProjectCode('')
     setProjectName('')
+    setEditProjectName('')
     setNotice('')
+  }
+
+  const clearProjectData = () => {
+    setSelectedProject(null)
+    setMembers([])
+    setCandidates([])
+    setAccess(null)
+    setProjectId('')
+    setEditProjectName('')
   }
 
   useEffect(() => {
@@ -85,7 +100,7 @@ export default function ProjectAccessPanel({ resetSignal = 0 }: ProjectAccessPan
     }
   }, [])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (lastResetSignalRef.current === resetSignal) return
     lastResetSignalRef.current = resetSignal
     requestRoundRef.current += 1
@@ -96,6 +111,12 @@ export default function ProjectAccessPanel({ resetSignal = 0 }: ProjectAccessPan
 
   const loadProjectInternal = async (nextProjectId: string, request: RequestRound) => {
     if (!nextProjectId) return
+    const nextProject = await accessApi.getProject(nextProjectId, { signal: request.signal })
+    if (!request.isCurrent()) return
+    if (nextProject) {
+      setSelectedProject(nextProject)
+      setEditProjectName(nextProject.name)
+    }
     const nextAccess = await accessApi.getPermissions(nextProjectId, { signal: request.signal })
     if (!request.isCurrent()) return
     setAccess(nextAccess)
@@ -115,13 +136,26 @@ export default function ProjectAccessPanel({ resetSignal = 0 }: ProjectAccessPan
 
   const loadTenantInternal = async (nextTenantId: string, request: RequestRound) => {
     setTenantId(nextTenantId)
+    setDomains([])
     setProjects([])
     setProjectId('')
+    setSelectedProject(null)
     setMembers([])
     setCandidates([])
     setAccess(null)
     if (!nextTenantId) return
-    const nextProjects = await accessApi.listProjects(nextTenantId, { signal: request.signal })
+    const [domainResult, projectResult] = await Promise.allSettled([
+      accessApi.listDomains(nextTenantId, { signal: request.signal }),
+      accessApi.listProjects(nextTenantId, { signal: request.signal }),
+    ])
+    if (!request.isCurrent()) return
+    const nextDomains = domainResult.status === 'fulfilled' ? domainResult.value : []
+    if (nextDomains.length > 0) {
+      setDomains(nextDomains)
+      setDomainId((current) => nextDomains.some((domain) => domain.id === current) ? current : nextDomains[0].id)
+    }
+    if (projectResult.status === 'rejected') throw projectResult.reason
+    const nextProjects = projectResult.value
     if (!request.isCurrent()) return
     setProjects(nextProjects)
     const nextProjectId = nextProjects[0]?.id ?? ''
@@ -133,6 +167,8 @@ export default function ProjectAccessPanel({ resetSignal = 0 }: ProjectAccessPan
     const request = beginRequestRound()
     setProjectId(nextProjectId)
     setNotice('')
+    setSelectedProject(null)
+    setEditProjectName('')
     setMembers([])
     setCandidates([])
     setAccess(null)
@@ -143,7 +179,10 @@ export default function ProjectAccessPanel({ resetSignal = 0 }: ProjectAccessPan
     try {
       await loadProjectInternal(nextProjectId, request)
     } catch (error) {
-      if (request.isCurrent()) setNotice(messageFor(error))
+      if (request.isCurrent()) {
+        clearProjectData()
+        setNotice(messageFor(error))
+      }
     } finally {
       finishRequestRound(request.round)
     }
@@ -155,7 +194,12 @@ export default function ProjectAccessPanel({ resetSignal = 0 }: ProjectAccessPan
     try {
       await loadTenantInternal(nextTenantId, request)
     } catch (error) {
-      if (request.isCurrent()) setNotice(messageFor(error))
+      if (request.isCurrent()) {
+        setProjects([])
+        setDomains([])
+        clearProjectData()
+        setNotice(messageFor(error))
+      }
     } finally {
       finishRequestRound(request.round)
     }
@@ -175,6 +219,7 @@ export default function ProjectAccessPanel({ resetSignal = 0 }: ProjectAccessPan
       if (nextTenants.length === 0) setNotice('当前会话没有可管理的租户')
     } catch (error) {
       if (request.isCurrent()) {
+        clearData()
         setState('error')
         setNotice(messageFor(error))
       }
@@ -189,8 +234,9 @@ export default function ProjectAccessPanel({ resetSignal = 0 }: ProjectAccessPan
     const requestRound = requestRoundRef.current
     const selectedProjectId = projectId
     const selectedPrincipalId = principalId.trim()
+    const existingMember = members.find((item) => item.principalId === selectedPrincipalId)
     try {
-      const member = await accessApi.setMemberRoles(selectedProjectId, selectedPrincipalId, [role])
+      const member = await accessApi.setMemberRoles(selectedProjectId, selectedPrincipalId, [role], existingMember?.authorizationVersion ?? 0)
       if (!mountedRef.current || requestRoundRef.current !== requestRound || projectId !== selectedProjectId) return
       setMembers((current) => [...current.filter((item) => item.principalId !== member.principalId), member])
       setPrincipalId('')
@@ -214,19 +260,34 @@ export default function ProjectAccessPanel({ resetSignal = 0 }: ProjectAccessPan
     } catch (error) { if (mountedRef.current && requestRoundRef.current === requestRound) setNotice(messageFor(error)) }
   }
 
+  const updateProject = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!selectedProject || !editProjectName.trim() || selectedProject.rowVersion === undefined) return
+    const requestRound = requestRoundRef.current
+    const selectedProjectId = selectedProject.id
+    try {
+      const updated = await accessApi.updateProject(selectedProjectId, editProjectName.trim(), selectedProject.rowVersion)
+      if (!mountedRef.current || requestRoundRef.current !== requestRound || projectId !== selectedProjectId) return
+      setSelectedProject(updated)
+      setProjects((current) => current.map((item) => item.id === updated.id ? updated : item))
+      setEditProjectName(updated.name)
+      setNotice('项目已更新')
+    } catch (error) { if (mountedRef.current && requestRoundRef.current === requestRound) setNotice(messageFor(error)) }
+  }
+
   const revoke = async (member: ProjectMember) => {
     if (!projectId) return
     const requestRound = requestRoundRef.current
     const selectedProjectId = projectId
     try {
-      await accessApi.revokeMember(selectedProjectId, member.principalId)
+      const revoked = await accessApi.revokeMember(selectedProjectId, member.principalId, member.authorizationVersion ?? 0)
       if (!mountedRef.current || requestRoundRef.current !== requestRound || projectId !== selectedProjectId) return
-      setMembers((current) => current.map((item) => item.principalId === member.principalId ? { ...item, state: 'REVOKED' } : item))
+      setMembers((current) => current.map((item) => item.principalId === member.principalId ? { ...item, ...(revoked ?? {}), state: 'REVOKED' } : item))
       setNotice(`${member.displayName} 已撤销项目访问`)
     } catch (error) { if (mountedRef.current && requestRoundRef.current === requestRound) setNotice(messageFor(error)) }
   }
 
-  const writable = access === null || canManageMembers(access)
+  const writable = access !== null && canManageMembers(access)
 
   return <section className="access-panel" aria-labelledby="access-heading">
     <div className="access-panel-header"><div><span className="panel-label">项目访问管理</span><h2 id="access-heading">租户、项目与成员</h2><p>所有列表和授权动作都由服务端按当前会话过滤。</p></div><button type="button" className="secondary-button" onClick={() => void load()} disabled={state === 'loading'}>{state === 'loading' ? '加载中…' : '加载访问范围'}</button></div>
@@ -234,13 +295,14 @@ export default function ProjectAccessPanel({ resetSignal = 0 }: ProjectAccessPan
     {state === 'error' && <p className="access-error" role="alert">{notice}</p>}
     {state !== 'idle' && state !== 'error' && <>
       <div className="management-forms">
-        {tenantId && writable && <form className="compact-form" onSubmit={(event) => void createProject(event)}><strong>新建项目</strong><label>域 ID<input value={domainId} onChange={(event) => setDomainId(event.target.value)} placeholder="domain UUID" required /></label><label>项目代码<input value={projectCode} onChange={(event) => setProjectCode(event.target.value)} required /></label><label>显示名称<input value={projectName} onChange={(event) => setProjectName(event.target.value)} required /></label><button type="submit" className="primary-button">创建项目</button></form>}
+        {tenantId && writable && <form className="compact-form" onSubmit={(event) => void createProject(event)}><strong>新建项目</strong>{domains.length > 0 ? <label>域<select aria-label="项目域" value={domainId} onChange={(event) => setDomainId(event.target.value)} required><option value="">选择域</option>{domains.map((domain) => <option key={domain.id} value={domain.id}>{domain.name}</option>)}</select></label> : <label>域 ID<input value={domainId} onChange={(event) => setDomainId(event.target.value)} placeholder="domain UUID" required /></label>}<label>项目代码<input value={projectCode} onChange={(event) => setProjectCode(event.target.value)} required /></label><label>显示名称<input value={projectName} onChange={(event) => setProjectName(event.target.value)} required /></label><button type="submit" className="primary-button">创建项目</button></form>}
       </div>
       <div className="access-selects">
         <label>租户<select value={tenantId} onChange={(event) => void loadTenant(event.target.value)}><option value="">选择租户</option>{tenants.map((tenant) => <option key={tenant.id} value={tenant.id}>{tenant.name}（{tenant.code}）</option>)}</select></label>
         <label>项目<select value={projectId} onChange={(event) => void loadProject(event.target.value)}><option value="">选择项目</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}（{project.code}）</option>)}</select></label>
       </div>
       {notice && <p className="access-notice" role="status">{notice}</p>}
+      {selectedProject && <section className="project-detail" aria-label="项目详情"><div><span className="panel-label">项目详情</span><strong>{selectedProject.name}</strong><p>{selectedProject.code} · {selectedProject.state} · 版本 {selectedProject.rowVersion ?? 'unknown'}</p></div>{writable && selectedProject.rowVersion !== undefined && <form className="project-edit-form" onSubmit={(event) => void updateProject(event)}><label>项目名称<input aria-label="项目名称" value={editProjectName} onChange={(event) => setEditProjectName(event.target.value)} required /></label><button type="submit" className="secondary-button">保存项目</button></form>}</section>}
       {access && <p className="access-scope">当前角色：{access.roles.map((item) => roleLabel[item]).join('、') || '无'} · 权限：{access.permissions.join('、') || '无'}</p>}
       {projectId && writable && <>
         <form className="member-form" onSubmit={(event) => void mutateMember(event)}><label>同租户候选主体<select aria-label="同租户候选主体" value={principalId} onChange={(event) => setPrincipalId(event.target.value)}><option value="">选择主体（或手动输入 ID）</option>{candidates.map((candidate) => <option key={candidate.principalId} value={candidate.principalId}>{candidate.displayName}（{candidate.principalId}）</option>)}</select></label><label>主体 ID<input value={principalId} onChange={(event) => setPrincipalId(event.target.value)} placeholder="例如 principal-123" required /></label><label>固定角色<select value={role} onChange={(event) => setRole(event.target.value as ProjectRole)}>{roles.map((item) => <option key={item} value={item}>{roleLabel[item]}</option>)}</select></label><button type="submit" className="primary-button">保存成员</button></form>

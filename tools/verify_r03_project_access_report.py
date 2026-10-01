@@ -9,8 +9,13 @@ from pathlib import Path
 
 
 REQUIRED_PROJECT_TESTS = {
+    "runtimeRoleHasDmlButNoDdlOrBypassRls",
     "runtimeRoleSeesOnlyTheCurrentTenantThroughRls",
     "projectSliceCreatesAuditsGrantsViewerAndRevokesWithoutCrossTenantLeak",
+    "tenantAdminOnlySeesProjectsWhereTheyAreExplicitlyJoined",
+    "revokedTenantMembershipInvalidatesExistingProjectMembership",
+    "authorizationVersionLastAdminAndAuditAreTransactional",
+    "concurrentAdminRevokesRetainOneAdministrator",
 }
 SUITE_NAME = "com.test365alm.server.PlatformDatabaseIT"
 

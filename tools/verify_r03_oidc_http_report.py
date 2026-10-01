@@ -8,6 +8,9 @@ from pathlib import Path
 
 
 REQUIRED_TESTS = {
+    "realHttpApplicationUsesRestrictedRuntimeRole",
+    "realOidcSessionCanUseProjectHttpEndpointsThroughRuntimeDatasource",
+    "unbootstrappedOidcSubjectCannotCreateTenantOrProjectAccess",
     "legalTokenCompletesHttpCallbackAndPersistsPrincipal",
     "wrongSignatureIsRejectedAfterRealTokenExchangeWithoutPrincipalWrite",
     "wrongIssuerIsRejectedAfterRealTokenExchangeWithoutPrincipalWrite",
