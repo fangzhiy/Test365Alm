@@ -85,8 +85,7 @@ jobs:
         if: failure()
         run: |
           set +e
-          summary=$(grep -E 'FAIL|failed|AssertionError|Error:|Tests ' test-results.txt \
-            | tail -n 40 | tr '\n' ' ' | cut -c1-4000)
+          summary=$(tail -n 100 test-results.txt | tr '\n' ' ' | cut -c1-4000)
           if [ -n "$summary" ]; then
             echo "::error title=frontend-test-failure::$summary"
           else
