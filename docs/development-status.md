@@ -1,5 +1,18 @@
 # Test365Alm 开发状态
 
+## R03-M03-002-FIX03 当前状态
+
+- 本轮从审核交付 `b4b2486b801b529dfe0da04c16f843a62405115a` 继续，实际分支为 `feat/r03-m03-002`，PR #3 仍 Open、未合并，base 为 `feat/r03-m03-001`。Windows Git fetch 仍受 Schannel `SEC_E_NO_CREDENTIALS (0x8009030E)` 限制；未 reset、回退或强推，远端分支和 PR 使用 GitHub API/普通 push 核对。
+- 页面修复代码分组提交为 `d2f638d07510960b4f688c9564bf6a4a4e137bb6`、`cd18d3253a0ee9cabfc0fb421ff638f1cc0342a7`，最终诊断修正代码 SHA 为 `d21922eb2f87aedf3f8816a62badb0675809370a`。修复 `ProjectAccessPanel` 竞态下切换租户后 loading 永不结束的问题；项目 UI/完整浏览器套件固定单 worker、零重试；增加命名步骤、状态/HTTP/DOM/控制台脱敏上下文；诊断快照读取使用 1 秒有界超时，避免诊断本身耗尽测试预算。
+- 历史浏览器失败保留：`36834802125`/`36834808273` 的项目 UI 120 秒超时以及 `cd18d32` 的 `context.newPage()` 超时均已单独记录；后者根因是无界诊断快照读取阻塞 Playwright 协议队列，不把最终 `viewerContext.close()` 清理异常误写为首次业务失败。
+- 最终代码 Push CI [36846431316](https://github.com/fangzhiy/Test365Alm/actions/runs/36846431316) 六个 Job 全部 success，browser checkout 为 `d21922eb2f87aedf3f8816a62badb0675809370a`；PR CI [36846438107](https://github.com/fangzhiy/Test365Alm/actions/runs/36846438107) 六个 Job 全部 success，merge-ref checkout 为 `e61427a3fa4ac1e5f284485a5d9d4e7dedbe5d2d`。两次均有项目 UI 独立 1/1 与完整七用例 7/7（1 worker、0 failures/errors/skipped）报告，资源清理 PASS；浏览器制品分别为 `11153393376` 与 `11153811215`。
+- H11/H12：本轮 Push 与 PR merge-ref 均实际完整通过，更新为 `PASS`。固定代码/配置下未在本机或 CI 做三次独立完整套件重复运行，稳定性三次建议记为 `NOT_RUN`，不扩大 H11/H12 之外的结论。Windows Testcontainers/JNA 集成仍阻塞本机真实 PostgreSQL 复跑，Ubuntu CI 已提供隔离证据。
+- 本轮未进入需求、用例或缺陷模块；不代表完整 M03、生产安全审查、MFA、多节点会话、旧 ALM 兼容或生产部署完成。
+
+最后更新：2026-10-01
+当前轮次：`R03-M03-002-FIX03`
+状态：`CODE_PUSH_CI_PASS / PR_MERGE_CI_PASS / H11_H12_PASS`
+
 ## R03-M03-002-FIX02 当前状态
 
 - 本轮实际开始核对时分支为 `feat/r03-m03-002`，远端/本地 head 为 `648ee43e4cff787d5a06bbb354f21bf9167000e4`；历史审核基线 `0a03c357478574c91526e60adf3b76b61fd87abe` 和 PR #3（base `feat/r03-m03-001`）均保留。PR #3 仍 Open、未合并、未部署、未修改默认分支或保护规则。Windows Git fetch 继续受 `SEC_E_NO_CREDENTIALS (0x8009030E)` 限制，未 reset、回退或强推；远端 head、PR 和 CI 使用 GitHub API/普通 push 核对。
