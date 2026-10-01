@@ -380,9 +380,12 @@ jobs:
               > local-evidence/r03/containers-raw.log 2>&1 || status=1
             python tools/redact_r03_logs.py .env.r03 local-evidence/r03/containers-raw.txt local-evidence/r03/containers.txt || status=1
             python tools/redact_r03_logs.py .env.r03 local-evidence/r03/containers-raw.log local-evidence/r03/containers.log || status=1
-            rm -f local-evidence/r03/containers-raw.txt local-evidence/r03/containers-raw.log
             if [ -n "$web_pid" ]; then kill "$web_pid" 2>/dev/null || true; fi
             if [ -n "$backend_pid" ]; then kill "$backend_pid" 2>/dev/null || true; fi
+            python tools/redact_r03_logs.py .env.r03 local-evidence/r03/backend.log local-evidence/r03/backend-redacted.log || status=1
+            python tools/redact_r03_logs.py .env.r03 local-evidence/r03/web.log local-evidence/r03/web-redacted.log || status=1
+            rm -f local-evidence/r03/containers-raw.txt local-evidence/r03/containers-raw.log
+            rm -f local-evidence/r03/backend.log local-evidence/r03/web.log
             if [ -f local-evidence/r03/resource-manifest.json ]; then
               python tools/cleanup_r02_resources.py --root local-evidence/r03 || status=1
             else
@@ -425,7 +428,21 @@ jobs:
             if curl --silent --fail --max-time 2 http://127.0.0.1:5173/ >/dev/null; then break; fi
             sleep 1
           done
-          (cd apps/web && npm run test:e2e) 2>&1 | tee local-evidence/r03/e2e.log
+          set +e
+          isolated_status=0
+          (cd apps/web && R03_BROWSER_RUN_LABEL=isolated npx playwright test e2e/project-access.spec.ts \
+            --grep "real Keycloak UI project flow" --workers=1 --reporter=list) \
+            2>&1 | tee local-evidence/r03/project-ui-isolated.log
+          isolated_status=${PIPESTATUS[0]}
+          full_status=0
+          (cd apps/web && R03_BROWSER_RUN_LABEL=full npm run test:e2e) 2>&1 | tee local-evidence/r03/e2e.log
+          full_status=${PIPESTATUS[0]}
+          set -e
+          printf 'project_ui_isolated_exit=%s\nfull_suite_exit=%s\n' \
+            "$isolated_status" "$full_status" | tee local-evidence/r03/browser-status.txt
+          if [ "$isolated_status" -ne 0 ] || [ "$full_status" -ne 0 ]; then
+            exit 1
+          fi
       - name: Require real browser report
         if: always()
         run: python tools/verify_r03_report.py local-evidence/r03/playwright-results.xml
@@ -447,12 +464,18 @@ jobs:
             local-evidence/r03/python-version.txt
             local-evidence/r03/server-build.txt
             local-evidence/r03/browser-install.txt
+            local-evidence/r03/browser-status.txt
+            local-evidence/r03/project-ui-isolated.log
             local-evidence/r03/e2e.log
+            local-evidence/r03/project-ui-context-isolated.json
+            local-evidence/r03/project-ui-context-full.json
             local-evidence/r03/playwright-results.xml
             local-evidence/r03/project-browser-report.txt
             local-evidence/r03/import-permissions.txt
             local-evidence/r03/image-user.txt
             local-evidence/r03/containers.txt
             local-evidence/r03/containers.log
+            local-evidence/r03/backend-redacted.log
+            local-evidence/r03/web-redacted.log
             local-evidence/r03/resource-manifest.json
           if-no-files-found: error

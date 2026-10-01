@@ -43,6 +43,9 @@ docker compose --env-file .env.r03 -f compose.r03.yaml -p <本轮唯一项目名
 # PowerShell 后端：. ..\..\tools\import_r03_env.ps1 -Path ..\..\.env.r03; .\mvnw.cmd spring-boot:run
 # PowerShell 前端：$env:TEST365ALM_DEV_BACKEND_URL='http://127.0.0.1:8080'; npm run dev
 # 已启动隔离服务后，apps/web: npm run test:e2e
+# R03 FIX03：共享 Keycloak 的项目 UI 对照和完整七用例均固定单 worker、零重试；CI 另存脱敏 project-ui-context-isolated/full.json
+cd apps/web; npx playwright test e2e/project-access.spec.ts --grep "real Keycloak UI project flow" --workers=1 --retries=0
+cd apps/web; npm run test:e2e  # playwright.config.ts 固定 workers=1、retries=0
 # PowerShell: . .\tools\import_dev_env.ps1  # 从已有 .env 加载同一份开发配置，不覆盖它
 ```
 
