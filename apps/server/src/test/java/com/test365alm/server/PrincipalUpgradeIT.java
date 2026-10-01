@@ -45,7 +45,9 @@ class PrincipalUpgradeIT {
 
         var latest = Flyway.configure().dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
                 .locations("classpath:db/migration").load();
-        assertEquals(1, latest.migrate().migrationsExecuted);
+        // V3 and the current V4 authorization hardening are both pending
+        // after the V2 checkpoint; both must apply exactly once.
+        assertEquals(2, latest.migrate().migrationsExecuted);
         assertEquals(0, latest.migrate().migrationsExecuted);
         try (var connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
                 var statement = connection.createStatement()) {
