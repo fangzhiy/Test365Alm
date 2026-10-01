@@ -81,6 +81,16 @@ jobs:
       - run: |
           set -o pipefail
           npm run test:run -- --reporter=verbose 2>&1 | tee test-results.txt
+      - name: Summarize frontend failures
+        if: failure()
+        run: |
+          set +e
+          summary=$(tail -n 100 test-results.txt | tr '\n' ' ' | cut -c1-4000)
+          if [ -n "$summary" ]; then
+            echo "::error title=frontend-test-failure::$summary"
+          else
+            echo "::error title=frontend-test-failure::frontend test step failed without a test summary"
+          fi
       - run: |
           set -o pipefail
           npm run build 2>&1 | tee build.txt
@@ -134,11 +144,27 @@ jobs:
         run: |
           set -o pipefail
           ./mvnw -B -ntp -Pintegration verify "-Dbuild.commit=${GITHUB_SHA}" 2>&1 | tee integration-build.txt
+      - name: Summarize integration failures
+        if: failure()
+        run: |
+          set +e
+          summary=$(grep -E 'Failures:|Errors:|<<< FAILURE!|<<< ERROR!|Tests run:' integration-build.txt \
+            | tail -n 30 | tr '\n' ' ' | cut -c1-4000)
+          if [ -n "$summary" ]; then
+            echo "::error title=integration-test-failure::$summary"
+          else
+            echo "::error title=integration-test-failure::integration build failed without a test summary"
+          fi
       - name: Require real HTTP OIDC callback integration report
         if: always()
         run: |
           set -o pipefail
           python ../../tools/verify_r03_oidc_http_report.py target/failsafe-reports 2>&1 | tee oidc-http-report.txt
+      - name: Require project access and RLS integration report
+        if: always()
+        run: |
+          set -o pipefail
+          python ../../tools/verify_r03_project_access_report.py target/failsafe-reports 2>&1 | tee project-access-report.txt
       - name: Upload backend evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -151,6 +177,7 @@ jobs:
             apps/server/unit-tests.txt
             apps/server/integration-build.txt
             apps/server/oidc-http-report.txt
+            apps/server/project-access-report.txt
             apps/server/target/surefire-reports/**
             apps/server/target/failsafe-reports/**
           if-no-files-found: error
@@ -250,7 +277,7 @@ jobs:
         run: |
           set -o pipefail
           ./mvnw -B -ntp package -DskipTests "-Dbuild.commit=${GITHUB_SHA}" 2>&1 | tee migration-build.txt
-      - name: Verify intentional migration startup failure
+      - name: Verify formal V6 then intentional V7 migration startup failure
         run: |
           set +e
           python -u tools/verify_r02_migration_failure.py --env-file .env.r02-test --compose-project "test365alm-r02-migration-${GITHUB_RUN_ID}" --server-port 18082 --wait-seconds 90 2>&1 | tee migration-failure.txt
@@ -263,7 +290,7 @@ jobs:
             summary=$(tr '\n' ' ' < migration-failure.txt | cut -c1-4000)
             echo "::error title=migration-failure::${summary:-no output captured}"
           else
-            echo "Intentional migration failure was detected for ${GITHUB_SHA}"
+            echo "Formal V6 migration and intentional V7 failure were detected for ${GITHUB_SHA}"
           fi
           exit "$status"
       - name: Upload migration evidence
@@ -330,15 +357,15 @@ jobs:
             > local-evidence/r03/import-permissions.txt
           stat -c 'env uid=%u gid=%g mode=%a' .env.r03 \
             >> local-evidence/r03/import-permissions.txt
+          run_id="r03-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-$(date +%s%N)"
           project="test365alm-r03-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          export R03_RUN_ID="$run_id"
           export R03_COMPOSE_PROJECT="$project"
           export TEST365ALM_SESSION_TIMEOUT=1m
-          if [ -n "$(docker ps -aq --filter "label=com.docker.compose.project=${project}")" ] || \
-             [ -n "$(docker network ls -q --filter "label=com.docker.compose.project=${project}")" ] || \
-             [ -n "$(docker volume ls -q --filter "label=com.docker.compose.project=${project}")" ]; then
-            echo 'R03 project already has Docker resources; refusing to reuse it' >&2
-            exit 2
-          fi
+          export TEST365ALM_DOCKER_CONTEXT="$(docker context show)"
+          export DOCKER_CONTEXT="$TEST365ALM_DOCKER_CONTEXT"
+          export TEST365ALM_DOCKER_ENGINE="$(docker info --format '{{.ID}}')"
+          python tools/r03_resource_guard.py preflight --project "$project"
           backend_pid=''
           web_pid=''
           cleanup() {
@@ -353,14 +380,24 @@ jobs:
               > local-evidence/r03/containers-raw.log 2>&1 || status=1
             python tools/redact_r03_logs.py .env.r03 local-evidence/r03/containers-raw.txt local-evidence/r03/containers.txt || status=1
             python tools/redact_r03_logs.py .env.r03 local-evidence/r03/containers-raw.log local-evidence/r03/containers.log || status=1
-            rm -f local-evidence/r03/containers-raw.txt local-evidence/r03/containers-raw.log
             if [ -n "$web_pid" ]; then kill "$web_pid" 2>/dev/null || true; fi
             if [ -n "$backend_pid" ]; then kill "$backend_pid" 2>/dev/null || true; fi
-            docker compose --env-file .env.r03 -f compose.r03.yaml -p "$project" down || status=1
+            python tools/redact_r03_logs.py .env.r03 local-evidence/r03/backend.log local-evidence/r03/backend-redacted.log || status=1
+            python tools/redact_r03_logs.py .env.r03 local-evidence/r03/web.log local-evidence/r03/web-redacted.log || status=1
+            rm -f local-evidence/r03/containers-raw.txt local-evidence/r03/containers-raw.log
+            rm -f local-evidence/r03/backend.log local-evidence/r03/web.log
+            if [ -f local-evidence/r03/resource-manifest.json ]; then
+              python tools/cleanup_r02_resources.py --root local-evidence/r03 || status=1
+            else
+              echo 'FAIL: R03 resource manifest missing; refusing unscoped cleanup' >&2
+              status=1
+            fi
             exit "$status"
           }
           trap cleanup EXIT
           docker compose --env-file .env.r03 -f compose.r03.yaml -p "$project" up -d postgres keycloak
+          python tools/r03_resource_guard.py capture --project "$project" --run-id "$run_id" \
+            --context "$TEST365ALM_DOCKER_CONTEXT" --output local-evidence/r03/resource-manifest.json
           for i in $(seq 1 90); do
             container_id="$(docker compose --env-file .env.r03 -f compose.r03.yaml -p "$project" ps -q keycloak)"
             if [ -z "$container_id" ] || [ "$(docker inspect --format '{{.State.Running}}' "$container_id")" != true ]; then
@@ -391,10 +428,30 @@ jobs:
             if curl --silent --fail --max-time 2 http://127.0.0.1:5173/ >/dev/null; then break; fi
             sleep 1
           done
-          (cd apps/web && npm run test:e2e) 2>&1 | tee local-evidence/r03/e2e.log
+          set +e
+          isolated_status=0
+          (cd apps/web && R03_BROWSER_RUN_LABEL=isolated npx playwright test e2e/project-access.spec.ts \
+            --grep "real Keycloak UI project flow" --workers=1 --reporter=list) \
+            2>&1 | tee local-evidence/r03/project-ui-isolated.log
+          isolated_status=${PIPESTATUS[0]}
+          full_status=0
+          (cd apps/web && R03_BROWSER_RUN_LABEL=full npm run test:e2e) 2>&1 | tee local-evidence/r03/e2e.log
+          full_status=${PIPESTATUS[0]}
+          set -e
+          printf 'project_ui_isolated_exit=%s\nfull_suite_exit=%s\n' \
+            "$isolated_status" "$full_status" | tee local-evidence/r03/browser-status.txt
+          if [ "$isolated_status" -ne 0 ] || [ "$full_status" -ne 0 ]; then
+            exit 1
+          fi
       - name: Require real browser report
         if: always()
         run: python tools/verify_r03_report.py local-evidence/r03/playwright-results.xml
+      - name: Require real dual-user project access browser report
+        if: always()
+        run: |
+          set -o pipefail
+          python tools/verify_r03_project_browser_report.py local-evidence/r03/playwright-results.xml \
+            2>&1 | tee local-evidence/r03/project-browser-report.txt
       - name: Upload R03 browser evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -407,10 +464,18 @@ jobs:
             local-evidence/r03/python-version.txt
             local-evidence/r03/server-build.txt
             local-evidence/r03/browser-install.txt
+            local-evidence/r03/browser-status.txt
+            local-evidence/r03/project-ui-isolated.log
             local-evidence/r03/e2e.log
+            local-evidence/r03/project-ui-context-isolated.json
+            local-evidence/r03/project-ui-context-full.json
             local-evidence/r03/playwright-results.xml
+            local-evidence/r03/project-browser-report.txt
             local-evidence/r03/import-permissions.txt
             local-evidence/r03/image-user.txt
             local-evidence/r03/containers.txt
             local-evidence/r03/containers.log
+            local-evidence/r03/backend-redacted.log
+            local-evidence/r03/web-redacted.log
+            local-evidence/r03/resource-manifest.json
           if-no-files-found: error

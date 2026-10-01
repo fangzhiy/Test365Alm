@@ -3,6 +3,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import tools.verify_r02_migration_failure as migration
@@ -14,7 +15,7 @@ class FinishedProcess:
 
     def __init__(self, *args, **kwargs):
         stdout = kwargs["stdout"]
-        stdout.write(b"Flyway V3__intentional_failure R03_INTENTIONAL_MIGRATION_FAILURE\n")
+        stdout.write(b"Flyway V7__intentional_failure R03_INTENTIONAL_MIGRATION_FAILURE\n")
         stdout.flush()
 
     def poll(self):
@@ -67,7 +68,10 @@ class MigrationIsolationTests(unittest.TestCase):
                     patch.object(migration, "port_is_free", return_value=True), \
                     patch.object(migration, "free_ephemeral_port", return_value=55432), \
                     patch.object(migration, "assert_project_available", return_value=("desktop-linux", "test-engine")), \
-                    patch.object(migration, "run_compose"), \
+                    patch.object(migration, "run_compose", side_effect=[
+                        None,
+                        SimpleNamespace(stdout="6\n"),
+                    ]) as compose, \
                     patch.object(migration, "capture_manifest", return_value=manifest), \
                     patch.object(migration, "manifest_path"), \
                     patch.object(migration, "cleanup_manifest", return_value=True), \
@@ -87,6 +91,11 @@ class MigrationIsolationTests(unittest.TestCase):
             self.assertEqual("classpath:/application.properties", captured["SPRING_CONFIG_LOCATION"])
             for key in ("SPRING_DATASOURCE_URL", "SPRING_APPLICATION_JSON", "JAVA_TOOL_OPTIONS", "COMPOSE_FILE"):
                 self.assertNotIn(key, captured)
+            self.assertEqual(2, compose.call_count)
+            formal_v5_check = compose.call_args_list[1].args
+            self.assertEqual("exec", formal_v5_check[1])
+            self.assertIn("flyway_schema_history", formal_v5_check[-1])
+            self.assertIn("version = '6'", formal_v5_check[-1])
 
 
 if __name__ == "__main__":
