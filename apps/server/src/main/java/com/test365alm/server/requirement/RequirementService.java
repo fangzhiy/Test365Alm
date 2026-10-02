@@ -40,6 +40,7 @@ public class RequirementService {
 
     @Transactional
     public RequirementView create(UUID actor, UUID projectId, CreateCommand command, String idempotencyKey) {
+        lockProjectTransaction(projectId);
         ProjectService.ProjectView project = authorizedProject(actor, projectId, true);
         setContext(project.tenantId(), actor, projectId);
         validateIdempotencyKey(idempotencyKey);
@@ -143,6 +144,7 @@ public class RequirementService {
     @Transactional
     public RequirementView update(UUID actor, UUID projectId, UUID requirementId, UpdateCommand command,
             String ifMatch, String idempotencyKey) {
+        lockProjectTransaction(projectId);
         ProjectService.ProjectView project = authorizedProject(actor, projectId, true);
         setContext(project.tenantId(), actor, projectId);
         validateIdempotencyKey(idempotencyKey);
@@ -370,6 +372,11 @@ public class RequirementService {
         jdbc.queryForObject("SELECT set_config('test365alm.tenant_id', ?, true)", String.class, tenantId.toString());
         jdbc.queryForObject("SELECT set_config('test365alm.principal_id', ?, true)", String.class, actor.toString());
         jdbc.queryForObject("SELECT set_config('test365alm.project_id', ?, true)", String.class, projectId.toString());
+    }
+
+    private void lockProjectTransaction(UUID projectId) {
+        jdbc.query("SELECT pg_advisory_xact_lock(hashtextextended(?, 1))", rs -> { /* lock acquired */ },
+                projectId.toString());
     }
 
     private static CreateCommand normalizeCreate(CreateCommand command) {

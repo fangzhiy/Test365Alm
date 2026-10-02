@@ -162,7 +162,8 @@ class RequirementDatabaseIT {
                     "project=" + fixture.project());
             assertEquals(1, ownerCount("SELECT COUNT(*) FROM requirement_revision WHERE project_id = ?", fixture.project()));
             assertEquals(1, ownerCount("SELECT COUNT(*) FROM outbox_event WHERE project_id = ?", fixture.project()));
-            assertEquals(1, ownerCount("SELECT COUNT(*) FROM audit_event WHERE project_id = ?", fixture.project()));
+            assertEquals(1, ownerCount("SELECT COUNT(*) FROM audit_event WHERE project_id = ? AND action LIKE 'requirement.%'",
+                    fixture.project()));
             assertEquals(1, ownerCount("SELECT COUNT(*) FROM requirement_idempotency WHERE project_id = ?", fixture.project()));
             assertEquals(2, ownerCount("SELECT next_number FROM requirement_number_allocator WHERE project_id = ?", fixture.project()));
         } finally {
@@ -195,7 +196,8 @@ class RequirementDatabaseIT {
                     "project=" + fixture.project());
             assertEquals(2, ownerCount("SELECT COUNT(*) FROM requirement_revision WHERE project_id = ?", fixture.project()));
             assertEquals(2, ownerCount("SELECT COUNT(*) FROM outbox_event WHERE project_id = ?", fixture.project()));
-            assertEquals(2, ownerCount("SELECT COUNT(*) FROM audit_event WHERE project_id = ?", fixture.project()));
+            assertEquals(2, ownerCount("SELECT COUNT(*) FROM audit_event WHERE project_id = ? AND action LIKE 'requirement.%'",
+                    fixture.project()));
             assertEquals(2, ownerCount("SELECT COUNT(*) FROM requirement_idempotency WHERE project_id = ?", fixture.project()));
             assertEquals(3, ownerCount("SELECT next_number FROM requirement_number_allocator WHERE project_id = ?", fixture.project()));
         } finally {

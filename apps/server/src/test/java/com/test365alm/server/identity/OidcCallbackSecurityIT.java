@@ -503,6 +503,13 @@ class OidcCallbackSecurityIT {
         assertEquals(afterUpdate, requirementCounts(project),
                 "CSRF rejection must not claim idempotency or append business rows");
 
+        // A rejected token may rotate the session-bound CSRF value.  Refresh
+        // the legitimate token before continuing with JSON-boundary checks so
+        // those checks cannot be masked by the preceding negative cases.
+        memberCsrfJson = get(member.client, "/api/v1/csrf").body();
+        memberCsrfHeader = jsonField(memberCsrfJson, "headerName");
+        memberCsrf = jsonField(memberCsrfJson, "token");
+
         HttpResponse<String> unknownFields = postRequirement(member.client, requirementPath, memberCsrfHeader,
                 memberCsrf, "requirement-unknown-fields-" + UUID.randomUUID(),
                 "{\"title\":\"unknown fields\",\"parentId\":\"" + UUID.randomUUID()
