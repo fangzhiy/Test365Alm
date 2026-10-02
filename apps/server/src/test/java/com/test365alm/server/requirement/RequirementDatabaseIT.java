@@ -321,9 +321,9 @@ class RequirementDatabaseIT {
             assertSqlState("42501", () -> execute(connection, "INSERT INTO requirement"
                     + " (tenant_id, project_id, id, display_number, row_version, created_by) VALUES (?, ?, ?, 999999, 1, ?)",
                     fixture.tenant(), fixture.project(), UUID.randomUUID(), fixture.viewer()));
-            assertSqlState("42501", () -> execute(connection, "UPDATE requirement SET current_revision_id = current_revision_id"
+            assertRlsWriteDenied(() -> executeCount(connection, "UPDATE requirement SET current_revision_id = current_revision_id"
                     + " WHERE tenant_id = ? AND project_id = ? AND id = ?", fixture.tenant(), fixture.project(), created.id()));
-            assertSqlState("42501", () -> execute(connection, "UPDATE requirement_number_allocator SET next_number = next_number + 1"
+            assertRlsWriteDenied(() -> executeCount(connection, "UPDATE requirement_number_allocator SET next_number = next_number + 1"
                     + " WHERE tenant_id = ? AND project_id = ?", fixture.tenant(), fixture.project()));
             assertSqlState("42501", () -> execute(connection, "INSERT INTO requirement_revision"
                     + " (tenant_id, project_id, id, requirement_id, revision_no, title, body, priority, created_by)"
@@ -354,6 +354,21 @@ class RequirementDatabaseIT {
         assertEquals(expected, failure.getSQLState(), failure.getMessage());
     }
 
+    /**
+     * PostgreSQL RLS filters UPDATE/DELETE target rows and legitimately returns
+     * an update count of zero, while INSERT and privilege failures surface
+     * SQLSTATE 42501.  Both outcomes prove that the viewer did not write;
+     * accepting a zero count avoids mistaking silent RLS filtering for a
+     * successful mutation.
+     */
+    private void assertRlsWriteDenied(SqlCountOperation operation) throws Exception {
+        try {
+            assertEquals(0, operation.run(), "RLS must filter every viewer UPDATE");
+        } catch (SQLException failure) {
+            assertEquals("42501", failure.getSQLState(), failure.getMessage());
+        }
+    }
+
     private void setContext(Connection connection, UUID tenant, UUID project, UUID principal) throws SQLException {
         setConfig(connection, "test365alm.tenant_id", tenant.toString());
         setConfig(connection, "test365alm.project_id", project.toString());
@@ -380,6 +395,9 @@ class RequirementDatabaseIT {
 
     @FunctionalInterface
     private interface SqlOperation { void run() throws Exception; }
+
+    @FunctionalInterface
+    private interface SqlCountOperation { int run() throws Exception; }
 
     private Fixture fixture() throws SQLException {
         UUID admin = principal("admin");
@@ -412,9 +430,13 @@ class RequirementDatabaseIT {
     }
 
     private static void execute(Connection connection, String sql, Object... values) throws SQLException {
+        executeCount(connection, sql, values);
+    }
+
+    private static int executeCount(Connection connection, String sql, Object... values) throws SQLException {
         try (var statement = connection.prepareStatement(sql)) {
             for (int i = 0; i < values.length; i++) statement.setObject(i + 1, values[i]);
-            statement.executeUpdate();
+            return statement.executeUpdate();
         }
     }
 
