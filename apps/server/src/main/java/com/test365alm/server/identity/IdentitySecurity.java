@@ -66,9 +66,13 @@ public class IdentitySecurity {
                 .anyRequest().denyAll());
         http.exceptionHandling(errors -> errors
                 .authenticationEntryPoint((request, response, exception) -> json(response, 401, "UNAUTHENTICATED"))
-                .accessDeniedHandler((request, response, exception) -> json(response, 403,
-                        exception instanceof InvalidCsrfTokenException || exception instanceof MissingCsrfTokenException
-                                ? "CSRF_REJECTED" : "FORBIDDEN")));
+                .accessDeniedHandler((request, response, exception) -> {
+                    boolean csrf = exception instanceof InvalidCsrfTokenException
+                            || exception instanceof MissingCsrfTokenException;
+                    log.warn("HTTP access denied path={} reason={} csrf={}", request.getRequestURI(),
+                            exception.getClass().getSimpleName(), csrf);
+                    json(response, 403, csrf ? "CSRF_REJECTED" : "FORBIDDEN");
+                }));
         http.logout(logout -> logout.logoutUrl("/api/v1/auth/logout")
                 .logoutSuccessHandler((request, response, authentication) -> json(response, 200, "LOGGED_OUT"))
                 .invalidateHttpSession(true).clearAuthentication(true).deleteCookies("JSESSIONID"));
