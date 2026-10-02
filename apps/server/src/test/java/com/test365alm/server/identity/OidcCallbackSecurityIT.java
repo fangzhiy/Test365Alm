@@ -399,6 +399,171 @@ class OidcCallbackSecurityIT {
                 "tenant revocation invalidates an old session without requiring /me first");
     }
 
+    /**
+     * Requirement HTTP security matrix.  This deliberately stays on the
+     * real OIDC/random-port/runtime-datasource path above instead of mocking
+     * the controller or authorization service.  The owner connection is only
+     * used to prepare disposable fixtures and inspect side effects.
+     */
+    @Test
+    void realOidcRequirementHttpEnforcesStrongEtagsCsrfAndMembershipScope() throws Exception {
+        String adminSubject = uniqueSubject("requirement-http-admin");
+        String memberSubject = uniqueSubject("requirement-http-member");
+        String viewerSubject = uniqueSubject("requirement-http-viewer");
+        String outsiderSubject = uniqueSubject("requirement-http-outsider");
+        Flow admin = runAuthorization(Variant.VALID, adminSubject);
+        Flow member = runAuthorization(Variant.VALID, memberSubject);
+        Flow viewer = runAuthorization(Variant.VALID, viewerSubject);
+        Flow outsider = runAuthorization(Variant.VALID, outsiderSubject);
+        UUID adminId = principalId(adminSubject);
+        UUID memberId = principalId(memberSubject);
+        UUID viewerId = principalId(viewerSubject);
+        UUID outsiderId = principalId(outsiderSubject);
+        UUID tenant = UUID.randomUUID();
+        UUID domain = UUID.randomUUID();
+        UUID project = UUID.randomUUID();
+        try (var connection = ownerConnection()) {
+            insertTenantFixture(connection, tenant, "requirement-http-tenant-" + tenant, "Requirement HTTP tenant");
+            insertDomainFixture(connection, domain, tenant, "Requirement HTTP domain");
+            insertTenantMemberFixture(connection, tenant, adminId, "TENANT_ADMIN");
+            insertTenantMemberFixture(connection, tenant, memberId, "MEMBER");
+            insertTenantMemberFixture(connection, tenant, viewerId, "MEMBER");
+            insertTenantMemberFixture(connection, tenant, outsiderId, "MEMBER");
+            insertProjectFixture(connection, project, tenant, domain, "requirement-http-" + project,
+                    "Requirement HTTP project", adminId);
+            insertProjectMemberFixture(connection, tenant, project, adminId, "PROJECT_ADMIN");
+            insertProjectMemberFixture(connection, tenant, project, memberId, "PROJECT_MEMBER");
+            insertProjectMemberFixture(connection, tenant, project, viewerId, "PROJECT_VIEWER");
+        }
+
+        HttpResponse<String> memberIdentity = get(member.client, "/api/v1/me");
+        assertEquals(200, memberIdentity.statusCode(), memberIdentity.body());
+        assertEquals(memberId.toString(), jsonField(memberIdentity.body(), "id"));
+        HttpResponse<String> memberProject = get(member.client, "/api/v1/projects/" + project);
+        assertEquals(200, memberProject.statusCode(), memberProject.body());
+
+        String memberCsrfJson = get(member.client, "/api/v1/csrf").body();
+        String memberCsrfHeader = jsonField(memberCsrfJson, "headerName");
+        String memberCsrf = jsonField(memberCsrfJson, "token");
+        String requirementPath = "/api/v1/projects/" + project + "/requirements";
+        HttpResponse<String> created = postRequirement(member.client, requirementPath, memberCsrfHeader,
+                memberCsrf, "requirement-create-" + UUID.randomUUID(),
+                "{\"title\":\"HTTP requirement\",\"body\":\"body\",\"priority\":\"HIGH\"}");
+        assertEquals(201, created.statusCode(), created.body());
+        assertEquals("\"1\"", created.headers().firstValue("etag").orElseThrow());
+        UUID requirementId = UUID.fromString(jsonField(created.body(), "id"));
+        RequirementCounts afterCreate = requirementCounts(project);
+
+        HttpResponse<String> updated = patchRequirement(member.client, requirementPath + "/" + requirementId,
+                memberCsrfHeader, memberCsrf, "\"1\"", "requirement-update-" + UUID.randomUUID(),
+                "{\"title\":\"Edited over HTTP\"}");
+        assertEquals(200, updated.statusCode(), updated.body());
+        assertEquals("\"2\"", updated.headers().firstValue("etag").orElseThrow());
+        assertTrue(updated.body().contains("Edited over HTTP"));
+        RequirementCounts afterUpdate = requirementCounts(project);
+        assertEquals(afterCreate.requirements() + 0, afterUpdate.requirements());
+        assertEquals(afterCreate.revisions() + 1, afterUpdate.revisions());
+        assertEquals(afterCreate.auditEvents() + 1, afterUpdate.auditEvents());
+        assertEquals(afterCreate.outboxEvents() + 1, afterUpdate.outboxEvents());
+
+        assertEquals(401, get(newClientFixture().client(), requirementPath).statusCode());
+
+        assertRequirementError(patchRequirement(member.client, requirementPath + "/" + requirementId,
+                memberCsrfHeader, memberCsrf, null, "requirement-empty-etag-" + UUID.randomUUID(),
+                "{\"title\":\"rejected\"}"), 428, "PRECONDITION_REQUIRED");
+        assertRequirementError(patchRequirement(member.client, requirementPath + "/" + requirementId,
+                memberCsrfHeader, memberCsrf, "", "requirement-blank-etag-" + UUID.randomUUID(),
+                "{\"title\":\"rejected\"}"), 428, "PRECONDITION_REQUIRED");
+        assertRequirementError(patchRequirement(member.client, requirementPath + "/" + requirementId,
+                memberCsrfHeader, memberCsrf, "1", "requirement-bare-etag-" + UUID.randomUUID(),
+                "{\"title\":\"rejected\"}"), 400, "INVALID_REQUEST");
+        assertRequirementError(patchRequirement(member.client, requirementPath + "/" + requirementId,
+                memberCsrfHeader, memberCsrf, "W/\"2\"", "requirement-weak-etag-" + UUID.randomUUID(),
+                "{\"title\":\"rejected\"}"), 400, "INVALID_REQUEST");
+        assertRequirementError(patchRequirement(member.client, requirementPath + "/" + requirementId,
+                memberCsrfHeader, memberCsrf, "*", "requirement-wildcard-etag-" + UUID.randomUUID(),
+                "{\"title\":\"rejected\"}"), 428, "PRECONDITION_REQUIRED");
+        assertRequirementError(patchRequirement(member.client, requirementPath + "/" + requirementId,
+                memberCsrfHeader, memberCsrf, "\"2", "requirement-malformed-etag-" + UUID.randomUUID(),
+                "{\"title\":\"rejected\"}"), 400, "INVALID_REQUEST");
+        assertRequirementError(patchRequirement(member.client, requirementPath + "/" + requirementId,
+                memberCsrfHeader, memberCsrf, "\"1\"", "requirement-stale-etag-" + UUID.randomUUID(),
+                "{\"title\":\"rejected\"}"), 412, "STALE_VERSION");
+        assertEquals(afterUpdate, requirementCounts(project),
+                "rejected If-Match variants must not append requirement side effects");
+
+        HttpResponse<String> unknownFields = postRequirement(member.client, requirementPath, memberCsrfHeader,
+                memberCsrf, "requirement-unknown-fields-" + UUID.randomUUID(),
+                "{\"title\":\"unknown fields\",\"parentId\":\"" + UUID.randomUUID()
+                        + "\",\"authorId\":\"" + memberId + "\",\"permissions\":[\"ADMIN\"]}");
+        assertEquals(400, unknownFields.statusCode(), unknownFields.body());
+        HttpResponse<String> wrongJsonType = postRequirement(member.client, requirementPath, memberCsrfHeader,
+                memberCsrf, "requirement-wrong-type-" + UUID.randomUUID(),
+                "{\"title\":123,\"body\":\"body\"}");
+        assertEquals(400, wrongJsonType.statusCode(), wrongJsonType.body());
+        assertRequirementError(postRequirement(member.client, requirementPath, memberCsrfHeader, memberCsrf,
+                "requirement-empty-title-" + UUID.randomUUID(), "{\"title\":\"\",\"body\":\"body\"}"),
+                400, "INVALID_REQUEST");
+        assertRequirementError(postRequirement(member.client, requirementPath, memberCsrfHeader, memberCsrf,
+                "requirement-long-title-" + UUID.randomUUID(),
+                "{\"title\":\"" + "x".repeat(501) + "\",\"body\":\"body\"}"),
+                400, "INVALID_REQUEST");
+        assertRequirementError(postRequirement(member.client, requirementPath, memberCsrfHeader, memberCsrf,
+                "requirement-long-body-" + UUID.randomUUID(),
+                "{\"title\":\"valid\",\"body\":\"" + "x".repeat(100_001) + "\"}"),
+                400, "INVALID_REQUEST");
+        assertEquals(afterUpdate, requirementCounts(project),
+                "invalid JSON and validation requests must not append business rows");
+
+        HttpResponse<String> missingCsrf = postRequirement(member.client, requirementPath, null, null,
+                "requirement-missing-csrf-" + UUID.randomUUID(),
+                "{\"title\":\"csrf rejected\"}");
+        assertRequirementError(missingCsrf, 403, "CSRF_REJECTED");
+        HttpResponse<String> wrongCsrf = postRequirement(member.client, requirementPath, memberCsrfHeader,
+                "wrong-csrf-token", "requirement-wrong-csrf-" + UUID.randomUUID(),
+                "{\"title\":\"csrf rejected\"}");
+        assertRequirementError(wrongCsrf, 403, "CSRF_REJECTED");
+        assertEquals(afterUpdate, requirementCounts(project),
+                "CSRF rejection must not claim idempotency or append business rows");
+
+        String viewerCsrfJson = get(viewer.client, "/api/v1/csrf").body();
+        String viewerCsrfHeader = jsonField(viewerCsrfJson, "headerName");
+        String viewerCsrf = jsonField(viewerCsrfJson, "token");
+        HttpResponse<String> viewerWrite = postRequirement(viewer.client, requirementPath, viewerCsrfHeader,
+                viewerCsrf, "requirement-viewer-write-" + UUID.randomUUID(),
+                "{\"title\":\"viewer must not write\"}");
+        assertRequirementError(viewerWrite, 403, "FORBIDDEN");
+        assertEquals(afterUpdate, requirementCounts(project),
+                "viewer write rejection must not claim idempotency or append business rows");
+
+        assertEquals(404, get(outsider.client, requirementPath).statusCode(),
+                "a tenant member without project membership cannot discover requirements");
+        assertEquals(afterUpdate, requirementCounts(project));
+
+        try (var connection = ownerConnection();
+                var statement = connection.prepareStatement(
+                        "UPDATE project_member SET revoked_at = CURRENT_TIMESTAMP, valid_until = CURRENT_TIMESTAMP, "
+                                + "authorization_version = authorization_version + 1 "
+                                + "WHERE tenant_id = ? AND project_id = ? AND principal_id = ?")) {
+            statement.setObject(1, tenant);
+            statement.setObject(2, project);
+            statement.setObject(3, memberId);
+            statement.executeUpdate();
+        }
+        assertEquals(404, get(member.client, requirementPath).statusCode(),
+                "project revocation invalidates an existing OIDC session without /me");
+        assertEquals(afterUpdate, requirementCounts(project));
+
+        try (var connection = ownerConnection();
+                var statement = connection.prepareStatement(
+                        "UPDATE principal SET disabled_at = CURRENT_TIMESTAMP WHERE id = ?")) {
+            statement.setObject(1, memberId);
+            statement.executeUpdate();
+        }
+        assertRequirementError(get(member.client, requirementPath), 403, "FORBIDDEN");
+        assertEquals(afterUpdate, requirementCounts(project));
+    }
+
     @Test
     void legalTokenCompletesHttpCallbackAndPersistsPrincipal() throws Exception {
         String subject = uniqueSubject("legal");
@@ -706,6 +871,55 @@ class OidcCallbackSecurityIT {
         }
     }
 
+    private RequirementCounts requirementCounts(UUID projectId) throws Exception {
+        try (var connection = ownerConnection()) {
+            return new RequirementCounts(countRows(connection, "requirement", projectId),
+                    countRows(connection, "requirement_revision", projectId),
+                    countRows(connection, "audit_event", projectId), countRows(connection, "outbox_event", projectId),
+                    countRows(connection, "requirement_idempotency", projectId));
+        }
+    }
+
+    private static int countRows(java.sql.Connection connection, String table, UUID projectId) throws SQLException {
+        if (!List.of("requirement", "requirement_revision", "audit_event", "outbox_event",
+                "requirement_idempotency").contains(table)) {
+            throw new IllegalArgumentException("unexpected requirement table");
+        }
+        try (var statement = connection.prepareStatement("SELECT COUNT(*) FROM " + table + " WHERE project_id = ?")) {
+            statement.setObject(1, projectId);
+            try (var rows = statement.executeQuery()) {
+                assertTrue(rows.next());
+                return rows.getInt(1);
+            }
+        }
+    }
+
+    private static void assertRequirementError(HttpResponse<String> response, int status, String code) {
+        assertEquals(status, response.statusCode(), response.body());
+        assertEquals(code, jsonField(response.body(), "code"));
+    }
+
+    private HttpResponse<String> postRequirement(HttpClient client, String path, String csrfHeader, String csrfToken,
+            String idempotencyKey, String body) throws Exception {
+        var builder = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + appPort + path))
+                .timeout(REQUEST_TIMEOUT).header("Content-Type", "application/json")
+                .header("Idempotency-Key", idempotencyKey);
+        if (csrfHeader != null && csrfToken != null) builder.header(csrfHeader, csrfToken);
+        return client.send(builder.POST(HttpRequest.BodyPublishers.ofString(body)).build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> patchRequirement(HttpClient client, String path, String csrfHeader, String csrfToken,
+            String ifMatch, String idempotencyKey, String body) throws Exception {
+        var builder = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + appPort + path))
+                .timeout(REQUEST_TIMEOUT).header("Content-Type", "application/json")
+                .header("Idempotency-Key", idempotencyKey);
+        if (ifMatch != null) builder.header("If-Match", ifMatch);
+        if (csrfHeader != null && csrfToken != null) builder.header(csrfHeader, csrfToken);
+        return client.send(builder.method("PATCH", HttpRequest.BodyPublishers.ofString(body)).build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
     private HttpResponse<String> postJson(HttpClient client, String path, String csrfHeader, String csrfToken,
             String body) throws Exception {
         return client.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + appPort + path))
@@ -793,6 +1007,9 @@ class OidcCallbackSecurityIT {
         }
 
     }
+
+    private record RequirementCounts(int requirements, int revisions, int auditEvents, int outboxEvents,
+            int idempotency) { }
 
     private enum Variant { VALID, WRONG_SIGNATURE, WRONG_ISSUER, WRONG_AUDIENCE, EXPIRED, WRONG_NONCE }
 

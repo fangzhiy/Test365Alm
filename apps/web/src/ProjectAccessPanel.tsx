@@ -4,7 +4,7 @@ import { accessApi } from './projectAccess'
 import type { Domain, MemberCandidate, Project, ProjectAccess, ProjectMember, ProjectRole, Tenant } from './projectAccess'
 
 type PanelState = 'idle' | 'loading' | 'ready' | 'error'
-type ProjectAccessPanelProps = { resetSignal?: number }
+type ProjectAccessPanelProps = { resetSignal?: number; onSelectionChange?: (selection: { projectId: string; access: ProjectAccess | null }) => void }
 const roles: ProjectRole[] = ['PROJECT_ADMIN', 'PROJECT_MEMBER', 'PROJECT_VIEWER']
 const roleLabel: Record<ProjectRole, string> = { PROJECT_ADMIN: '项目管理员', PROJECT_MEMBER: '项目成员', PROJECT_VIEWER: '项目查看者' }
 const messageFor = (error: unknown) => {
@@ -16,7 +16,7 @@ const canManageMembers = (value: ProjectAccess) => value.roles.includes('PROJECT
 
 type RequestRound = { round: number; signal: AbortSignal; isCurrent: () => boolean }
 
-export default function ProjectAccessPanel({ resetSignal = 0 }: ProjectAccessPanelProps) {
+export default function ProjectAccessPanel({ resetSignal = 0, onSelectionChange }: ProjectAccessPanelProps) {
   const [state, setState] = useState<PanelState>('idle')
   const [tenants, setTenants] = useState<Tenant[]>([])
   const [domains, setDomains] = useState<Domain[]>([])
@@ -39,6 +39,8 @@ export default function ProjectAccessPanel({ resetSignal = 0 }: ProjectAccessPan
   const controllerRef = useRef<AbortController | null>(null)
   const timeoutRef = useRef<number | null>(null)
   const lastResetSignalRef = useRef(resetSignal)
+
+  useEffect(() => { onSelectionChange?.({ projectId, access }) }, [projectId, access, onSelectionChange])
 
   const clearRequest = () => {
     controllerRef.current?.abort()

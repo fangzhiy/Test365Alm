@@ -251,7 +251,8 @@ class PlatformDatabaseIT {
 
         projects.putMember(admin, project.id(), member, java.util.List.of("PROJECT_VIEWER"));
         assertEquals(1, projects.listProjects(member, tenant.id()).size());
-        assertEquals(java.util.List.of("project:read"), projects.permissions(member, project.id()).permissions());
+        assertTrue(projects.permissions(member, project.id()).permissions().containsAll(
+                java.util.List.of("project:read", "requirement:read", "requirement:history:read")));
         assertTrue(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM audit_event WHERE project_id = ?", Integer.class,
                 project.id()) >= 2);
 

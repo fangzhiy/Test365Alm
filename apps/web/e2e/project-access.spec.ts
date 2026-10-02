@@ -98,7 +98,7 @@ class UiDiagnostics {
     }
   }
 
-  async write(testName: string, businessError?: unknown, cleanupError?: unknown): Promise<void> {
+  async write(testName: string, businessError?: unknown, cleanupError?: unknown, artifactPrefix = 'project-ui-context'): Promise<void> {
     const document: UiDiagnosticsDocument = {
       schemaVersion: 1,
       test: testName,
@@ -108,7 +108,8 @@ class UiDiagnostics {
       ...(cleanupError ? { cleanupError: redactError(cleanupError) } : {}),
     }
     const label = (process.env.R03_BROWSER_RUN_LABEL || 'full').replace(/[^a-zA-Z0-9_-]/g, '_')
-    const output = resolve(process.cwd(), `../../local-evidence/r03/project-ui-context-${label}.json`)
+    const safePrefix = artifactPrefix.replace(/[^a-zA-Z0-9_-]/g, '_')
+    const output = resolve(process.cwd(), `../../local-evidence/r03/${safePrefix}-${label}.json`)
     try {
       await mkdir(resolve(output, '..'), { recursive: true })
       await writeFile(output, `${JSON.stringify(document, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 })
@@ -157,14 +158,14 @@ async function login(page: Page, username: string, password: string, displayName
   return body.id
 }
 
-async function write(page: Page, method: string, path: string, data?: unknown, diagnostics?: UiDiagnostics): Promise<APIResponse> {
+async function write(page: Page, method: string, path: string, data?: unknown, diagnostics?: UiDiagnostics, extraHeaders: Record<string, string> = {}): Promise<APIResponse> {
   const csrfResponse = await page.request.get('/api/v1/csrf')
   diagnostics?.recordStatus(csrfResponse.status())
   expect(csrfResponse.status()).toBe(200)
   const csrf = await csrfResponse.json() as { headerName: string, token: string }
   const response = await page.request.fetch(path, {
     method,
-    headers: { [csrf.headerName]: csrf.token, 'Idempotency-Key': randomUUID() },
+    headers: { [csrf.headerName]: csrf.token, 'Idempotency-Key': randomUUID(), ...extraHeaders },
     data,
   })
   diagnostics?.recordStatus(response.status())
@@ -214,7 +215,7 @@ test('real Keycloak dual-user project access grants viewer read, rejects write, 
     expect(await read.json()).toMatchObject({ id: project.id, code: projectCode })
     const permissions = await viewerPage.request.get(`/api/v1/me/permissions?projectId=${project.id}`)
     expect(permissions.status()).toBe(200)
-    expect(await permissions.json()).toMatchObject({ projectId: project.id, roles: ['PROJECT_VIEWER'], permissions: ['project:read'] })
+    expect(await permissions.json()).toMatchObject({ projectId: project.id, roles: ['PROJECT_VIEWER'], permissions: expect.arrayContaining(['project:read']) })
 
     const writeAttempt = await write(viewerPage, 'PATCH', `/api/v1/projects/${project.id}`, {
       name: 'viewer must not update',
@@ -370,5 +371,145 @@ test('real Keycloak UI project flow shows scoped viewer controls and clears revo
   // Keep cleanup failures distinct in the diagnostic artifact, but fail the
   // test when cleanup is the only failure. A business assertion thrown above
   // already controls the test result and must not be replaced here.
+  if (!businessError && cleanupError) throw cleanupError
+})
+
+test('real Keycloak UI requirement flow creates edits and keeps viewer read-only', async ({ page, browser }) => {
+  test.skip(!isOwnedCiRun(), 'destructive requirement flow requires the current CI-owned R03 stack')
+  test.setTimeout(150_000)
+  const adminUser = process.env.R03_TEST_USER
+  const adminPassword = process.env.R03_TEST_USER_PASSWORD
+  const viewerUser = process.env.R03_VIEWER_USER
+  const viewerPassword = process.env.R03_VIEWER_PASSWORD
+  const diagnostics = new UiDiagnostics()
+  if (!adminUser || !adminPassword || !viewerUser || !viewerPassword) {
+    const error = new Error('Both isolated R03 test credentials are required')
+    await diagnostics.write(test.info().title, error, undefined, 'project-requirement-context')
+    throw error
+  }
+
+  let businessError: unknown
+  let cleanupError: unknown
+  let viewerContext: import('@playwright/test').BrowserContext | undefined
+  try {
+    const adminId = await diagnostics.step(page, 'requirement login (admin)', () => login(page, adminUser, adminPassword, 'R03 Tester', diagnostics))
+    const context = await browser.newContext()
+    viewerContext = context
+    const viewerPage = await context.newPage()
+    const viewerId = await diagnostics.step(viewerPage, 'requirement login (viewer)', () => login(viewerPage, viewerUser, viewerPassword, 'R03 Viewer', diagnostics))
+    const { tenantId } = seedProjectAccessScope(adminId, viewerId)
+    const projectCode = `R04-E2E-${Date.now()}`
+    const requirementTitle = `R04 login requirement ${Date.now()}`
+    const updatedRequirementTitle = `${requirementTitle} updated`
+    const accessRegion = page.getByRole('region', { name: '租户、项目与成员' })
+    const viewerAccessRegion = viewerPage.getByRole('region', { name: '租户、项目与成员' })
+    const projectSelect = accessRegion.locator('.access-selects select').nth(1)
+    const viewerProjectSelect = viewerAccessRegion.locator('.access-selects select').nth(1)
+
+    await diagnostics.step(page, 'requirement load scope', async () => {
+      await page.getByRole('button', { name: '加载访问范围' }).click()
+      await accessRegion.getByRole('combobox').first().selectOption(tenantId)
+      await expect(page.getByLabel('项目域')).toBeVisible()
+    })
+    await page.getByLabel('项目代码').fill(projectCode)
+    await page.getByLabel('显示名称').fill('R04 requirement project')
+    await diagnostics.step(page, 'requirement create project', async () => {
+      await page.getByRole('button', { name: '创建项目' }).click()
+      await expect(projectSelect.locator('option').filter({ hasText: `R04 requirement project（${projectCode}）` })).toHaveCount(1)
+      await expect(page.getByRole('region', { name: '项目详情' })).toContainText('R04 requirement project')
+    })
+    const projectId = await projectSelect.locator('option').filter({ hasText: `R04 requirement project（${projectCode}）` }).getAttribute('value')
+    expect(projectId).toMatch(/^[0-9a-f-]{36}$/)
+
+    const requirementsPanel = page.locator('section.requirements-panel')
+    await diagnostics.step(page, 'requirement create', async () => {
+      await expect(requirementsPanel.getByLabel('需求标题')).toBeVisible()
+      await requirementsPanel.getByLabel('需求标题').fill(requirementTitle)
+      await requirementsPanel.getByLabel('需求正文').fill('The first requirement is persisted with an immutable revision.')
+      await requirementsPanel.getByRole('button', { name: '创建需求' }).click()
+      await expect(requirementsPanel).toContainText('需求已创建')
+      await expect(requirementsPanel.locator('.requirement-row').first()).toContainText(requirementTitle)
+      await expect(requirementsPanel.locator('.revision-row')).toHaveCount(1)
+      await expect(requirementsPanel.locator('.revision-row').first()).toContainText('修订 1')
+    })
+    const listResponse = await page.request.get(`/api/v1/projects/${projectId}/requirements`)
+    diagnostics.recordStatus(listResponse.status())
+    expect(listResponse.status()).toBe(200)
+    const listBody = await listResponse.json() as { items: Array<{ id: string, title: string }> }
+    const requirementId = listBody.items.find((item) => item.title === requirementTitle)?.id
+    expect(requirementId).toMatch(/^[0-9a-f-]{36}$/)
+
+    await diagnostics.step(page, 'requirement edit', async () => {
+      await requirementsPanel.locator('.requirement-row').first().click()
+      await expect(requirementsPanel.getByLabel('编辑需求标题')).toHaveValue(requirementTitle)
+      await requirementsPanel.getByLabel('编辑需求标题').fill(updatedRequirementTitle)
+      await requirementsPanel.getByLabel('编辑需求正文').fill('The edited body is revision two.')
+      await requirementsPanel.getByRole('button', { name: '保存需求' }).click()
+      await expect(requirementsPanel).toContainText('需求已保存')
+      await expect(requirementsPanel).toContainText('2 个修订')
+      await expect(requirementsPanel.locator('.revision-row').filter({ hasText: '修订 1' })).toBeVisible()
+      await requirementsPanel.locator('.revision-row').filter({ hasText: '修订 1' }).click()
+      await expect(requirementsPanel.locator('.revision-readonly')).toContainText(requirementTitle)
+    })
+
+    await diagnostics.step(page, 'requirement authorization', async () => {
+      const candidate = page.getByLabel('同租户候选主体')
+      await candidate.selectOption(viewerId)
+      await page.getByLabel('固定角色').selectOption('PROJECT_VIEWER')
+      await page.getByRole('button', { name: '保存成员' }).click()
+      await expect(page.getByText('成员授权已保存')).toBeVisible()
+    })
+
+    const viewerRequirements = viewerPage.locator('section.requirements-panel')
+    await diagnostics.step(viewerPage, 'requirement viewer read', async () => {
+      await viewerPage.getByRole('button', { name: '加载访问范围' }).click()
+      await viewerAccessRegion.getByRole('combobox').first().selectOption(tenantId)
+      await expect(viewerProjectSelect.locator('option').filter({ hasText: projectCode })).toHaveCount(1)
+      await viewerProjectSelect.selectOption(projectId as string)
+      await expect(viewerRequirements.locator('.requirement-row').first()).toContainText(updatedRequirementTitle)
+      await viewerRequirements.locator('.requirement-row').first().click()
+      await expect(viewerRequirements).toContainText('只读用户可以查看需求和历史，但不能创建或保存。')
+      await expect(viewerRequirements.locator('.revision-row')).toHaveCount(2)
+      await expect(viewerRequirements.getByRole('button', { name: '创建需求' })).not.toBeVisible()
+      await expect(viewerRequirements.getByRole('button', { name: '保存需求' })).not.toBeVisible()
+    })
+
+    await diagnostics.step(viewerPage, 'requirement viewer write denied', async () => {
+      const viewerCreate = await write(viewerPage, 'POST', `/api/v1/projects/${projectId}/requirements`, {
+        title: 'R04 viewer must not create', body: 'forbidden',
+      }, diagnostics)
+      expect(viewerCreate.status()).toBe(403)
+      const viewerEdit = await write(viewerPage, 'PATCH', `/api/v1/projects/${projectId}/requirements/${requirementId}`, {
+        title: 'R04 viewer must not edit', body: 'forbidden',
+      }, diagnostics, { 'If-Match': '"2"' })
+      expect([403, 404]).toContain(viewerEdit.status())
+    })
+
+    const revokeRow = page.locator('.member-row').filter({ hasText: 'R03 Viewer' })
+    await expect(revokeRow).toBeVisible()
+    await diagnostics.step(page, 'requirement revoke', async () => {
+      await revokeRow.getByRole('button', { name: '撤销访问' }).click()
+      await expect(page.getByText('R03 Viewer 已撤销项目访问')).toBeVisible()
+    })
+    await diagnostics.step(viewerPage, 'requirement access denied after revoke', async () => {
+      const afterRevoke = await viewerPage.request.get(`/api/v1/projects/${projectId}/requirements`)
+      diagnostics.recordStatus(afterRevoke.status())
+      expect([403, 404]).toContain(afterRevoke.status())
+      await expect(afterRevoke.json()).resolves.toMatchObject({ code: expect.stringMatching(/^(FORBIDDEN|NOT_FOUND)$/) })
+      await viewerPage.getByRole('button', { name: '刷新需求' }).click()
+      await expect(viewerPage.getByRole('alert')).toContainText(/权限|访问|forbidden|authorized|not found/i)
+      await expect(viewerRequirements.locator('.requirement-row')).toHaveCount(0)
+    })
+  } catch (error) {
+    businessError = error
+    throw error
+  } finally {
+    try {
+      await viewerContext?.close()
+    } catch (error) {
+      cleanupError = error
+    }
+    await diagnostics.write(test.info().title, businessError, cleanupError, 'project-requirement-context')
+  }
   if (!businessError && cleanupError) throw cleanupError
 })

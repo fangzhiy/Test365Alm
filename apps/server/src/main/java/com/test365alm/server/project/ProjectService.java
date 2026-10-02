@@ -327,8 +327,33 @@ public class ProjectService {
         Set<String> permissions = new LinkedHashSet<>();
         permissions.add("project:read");
         if (isAdminRoles(roles, PROJECT_ADMINS)) permissions.addAll(List.of("project:write", "project:manage-members"));
-        if (roles.contains("PROJECT_MEMBER")) permissions.add("project:read");
+        // Requirement permissions are deliberately separate from project
+        // administration.  Members may edit requirements, while viewers are
+        // limited to the read/history actions.
+        permissions.add("requirement:read");
+        permissions.add("requirement:history:read");
+        if (isAdminRoles(roles, PROJECT_ADMINS) || roles.contains("PROJECT_MEMBER")) {
+            permissions.addAll(List.of("requirement:create", "requirement:update"));
+        }
         return new PermissionView(project.tenantId(), project.id(), actor, List.copyOf(roles), List.copyOf(permissions));
+    }
+
+    /** Authorization boundary shared by project-scoped business modules. */
+    @Transactional(readOnly = true)
+    public ProjectView requireRequirementReadAccess(UUID actor, UUID projectId) {
+        return getProject(actor, projectId);
+    }
+
+    /** Requirement write permission is distinct from member administration. */
+    @Transactional(readOnly = true)
+    public ProjectView requireRequirementWriteAccess(UUID actor, UUID projectId) {
+        ProjectView project = findProject(actor, projectId);
+        requireProjectAccess(actor, project.tenantId(), project.id());
+        setContext(project.tenantId(), actor);
+        if (!hasRole(actor, project.tenantId(), project.id(), Set.of("PROJECT_ADMIN", "PROJECT_MEMBER"), true)) {
+            throw ProjectAccessException.forbidden();
+        }
+        return project;
     }
 
     private void requireTenantAdmin(UUID actor, UUID tenantId) {

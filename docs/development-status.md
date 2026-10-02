@@ -1,5 +1,35 @@
 # Test365Alm 开发状态
 
+> 当前轮次：`R04-M07-001-FIX02`。GitHub 代码提交为 `3e6055a9c1f33dbca34e84c977fb0ad1a19a9df2`，Push CI `36968392677` 与 PR CI `36968396770` 均成功；Windows Testcontainers 仍受 Docker/JNA 权限限制。详见文末 FIX02 状态与 [`docs/progress/runs/R04-M07-001-FIX02.md`](progress/runs/R04-M07-001-FIX02.md)。
+
+## R04-M07-001-FIX01 当前状态
+
+- 本轮继续 `feat/r04-m07-001` / PR #4（base `feat/r03-m03-002`），审核基准为 `5e9f0eae6598835301c053cdfcc374ab68051fc0`；远端分支仍由该审核 head 指向，PR Open、未合并。Windows Git fetch 仍因 Schannel `SEC_E_NO_CREDENTIALS (0x8009030E)` 失败，未 reset、回退或强推；发布前后使用 GitHub Git Data API 核对父提交、树和 ref。
+- FIX01 新增 V8 受控迁移：预检并拒绝越界引用，current revision、revision/outbox/idempotency 绑定同租户/项目/需求；限制 runtime writer 为有效 `PROJECT_ADMIN`/`PROJECT_MEMBER`，viewer 的直接 SQL 写入、revision/outbox 修改和截断被拒绝；审计动作与目标收口。V7 已执行脚本不改写。
+- 后端幂等记录按主体/路由作用域检查过期，保存完成响应快照，重放前重新授权；规范化哈希区分省略字段与字面量 `<null>`。审计/Outbox 权限故障回滚和同 ETag 并发一胜一 412 均有真实 PostgreSQL 测试，报告门禁从 3 个提升为 9 个指定用例。
+- 前端读写轮次、AbortController、卸载/退出/项目切换清理、真实 ETag、稳定 Idempotency-Key、412 草稿保留和失权清理均已补齐；新增 API 响应丢失重试和缺失 ETag 测试。
+- 本机已通过：系统 Maven `mvn -B -ntp test`（19 个 Surefire 用例，0 失败/错误/跳过）、`mvn -B -ntp -DskipTests test-compile`、前端 Vitest 6 文件/51 测试、lint（0 error，3 个 React 警告）、Vite build、Python 工具和契约 JSON 校验。Wrapper 的 Windows PowerShell 启动失败与系统 Maven 结果分开记录。
+- 本机 Testcontainers/Failsafe 仍因 Docker/JNA named pipe 权限在测试方法前阻塞；隔离 Ubuntu CI 已实际执行 39 个集成测试（含 `RequirementDatabaseIT` 9/9）并通过。迁移失败探针已随 V8 正式迁移调整为正式 V8、故意失败 V9。历史失败 Push `36952755554`/PR `36952759123`（V8 SQL 关联写法）和 Push `36953271971`/PR `36953276257`（升级计数、RLS 过滤断言、旧 V8 故障探针）保留；最终 Push `36954097749` 与 PR merge-ref `36954101050` 均为 success。旧 V7 已完成记录、生产部署和完整 M07 均不因本轮改动标记完成。
+
+最后更新：2026-10-02
+当前轮次：`R04-M07-001-FIX01`
+状态：`IMPLEMENTED / LOCAL_DOCKER_BLOCKED / PUSH_AND_PR_CI_PASS`
+
+## R04-M07-001 当前状态
+
+- 本轮从实际分支 `feat/r03-m03-002` 的 `07224db903b542318472fdd52ca2f7fb7d3d7aca` 创建 `feat/r04-m07-001`，未回退或覆盖既有 R03 修改。PR #3 仍为 Open、未合并（base `feat/r03-m03-001`）；本轮 PR 以其实际分支为依赖 base，不把需求代码追加到 PR #3。Windows `git fetch origin --prune` 仍因 Schannel `SEC_E_NO_CREDENTIALS (0x8009030E)` 未完成，远端状态以 GitHub API/推送核对为准。
+- 已实现项目根级需求最小闭环（初始代码提交 `befe29449434af5b43b6135504bf8b76e333eee2`，最终代码测试提交 `b6337dcfdf95f0f790f0af0ff125f334a7145d49`）：V7 受控迁移、项目成员权限边界、稳定 UUID 与项目内显示编号、行锁编号分配、幂等创建、具体 `If-Match` 编辑、追加且只读修订历史、审计与 Outbox 同事务、运行时 RLS/列级授权，以及前端真实项目上下文工作台。未实现需求树、富文本、附件、评审、追踪、删除、导入导出或 AI。
+- API 为 `POST/GET /api/v1/projects/{projectId}/requirements`、`GET/PATCH /{requirementId}`、`GET /{requirementId}/revisions` 和单修订查询；前端不接受手工 scope，PROJECT_VIEWER 只读，412 保留编辑草稿。
+- 本机工具：Java `17.0.2`、Maven `3.9.14`（POM 编译目标仍为 Java 17）、Node `v26.0.0`、npm `11.12.1`、Python `3.12`。CI 既有基线使用 Java 21/Node 24；本机版本差异不写成目标环境已验证。
+- 已实际通过：后端 Surefire 19 个、前端 5 个文件/45 个测试、Python 工具 52 个、前端 lint（仅既有 React effect 警告）、前端构建、后端 test-compile、契约 JSON 和敏感信息扫描。`npm ci` 首次受 Windows 全局缓存 EPERM 影响失败，改用仓库内临时缓存后成功；Maven Wrapper 本机 PowerShell 脚本以 `icm : Cannot index into a null array` 退出码 1，系统 Maven 19/0 结果单独记录，未混写为 Wrapper 成功。
+- 本机真实 PostgreSQL/Testcontainers 集成仍在 Failsafe 启动前因 Windows JNA `jnidispatch.dll`/Docker named pipe 权限失败；CI 已在隔离 Ubuntu 上执行 `RequirementDatabaseIT` 3/3、升级、迁移失败和 readiness 恢复。真实 Keycloak 浏览器验收本机未运行，CI 已完成真实需求 UI 流程。
+- I01/I02/I03/I06/I07/I08/I09/I10 已由 Push/PR CI 实际通过；I04（真实并发 PostgreSQL）与 I05（完整 If-Match/CSRF HTTP 场景）仍为 `NOT_RUN`。本机 Docker 阻塞仍保留，不把本地未运行写成通过。
+- 本轮不标记 P0、M07 或完整 R04 完成；旧 ALM 样本、完整需求能力和生产部署继续保留为未验证/后续范围。
+
+最后更新：2026-10-01
+当前轮次：`R04-M07-001`
+状态：`IMPLEMENTED / LOCAL_DOCKER_BLOCKED / PUSH_AND_PR_CI_PASS`
+
 ## R03-M03-002-FIX03 当前状态
 
 - 本轮从审核交付 `b4b2486b801b529dfe0da04c16f843a62405115a` 继续，实际分支为 `feat/r03-m03-002`，PR #3 仍 Open、未合并，base 为 `feat/r03-m03-001`。Windows Git fetch 仍受 Schannel `SEC_E_NO_CREDENTIALS (0x8009030E)` 限制；未 reset、回退或强推，远端分支和 PR 使用 GitHub API/普通 push 核对。
@@ -196,3 +226,35 @@
 完成本轮工程底座实现和测试；下一批再进入身份与项目权限最小切片，以及登录后创建需求的真实业务流程。M02 不因脚手架存在而整体完成，M03 仍保持 `PLANNED`。
 
 详细命令、退出码和证据位置见 [`docs/progress/runs/R01-STATUS-001.md`](progress/runs/R01-STATUS-001.md)。
+
+# R04-M07-001-FIX03 当前状态
+
+本轮继续 `feat/r04-m07-001` / PR #4（base `feat/r03-m03-002`），起始本地提交为 `a143fc8`。代码修正最终本地提交为 `159c9f2`，GitHub Data API 对应远端代码提交为 `f2aba329069e7152116ee2724afcc5bab6cce5e4`；前端回归提交为 `77320823ff2990d99be9a644571584f75f8c0996`。最终文档交付 SHA 另行记录，不能把本地 SHA 写成远端 CI SHA。
+
+本轮已实现：
+
+- V9 增加 `replay_compatible`，V7/V8 旧哈希记录在升级后由实际 `RequirementService` / 受限 runtime 路径安全拒绝为 `409 IDEMPOTENCY_LEGACY_UNSUPPORTED`，不从当前需求行拼装旧响应；当前格式新幂等请求保留冻结快照重放，并补齐 runtime 列级更新权限。
+- `RequirementMigrationUpgradeIT` 使用真实旧 NUL 分隔 SHA-256、两版需求和未过期幂等记录，手工 V7→V9 后调用 runtime service；`RequirementDatabaseIT` 保留撤权与无副作用保护，并将省略字段/`"<null>"` 哈希回归固定在同一 ETag/key 上。
+- `RequirementsPanel` 在创建中锁定草稿字段，写操作使被替代读轮次失效，成功/失败/AbortError 结束后恢复可重试状态；新增 `userEvent` 真实输入、迟到详情失败和同键重试测试。前端全套 83 tests 通过。
+- 迁移失败探针和 CI 夹具从“正式 V8/故意 V9”改为“正式 V9/故意 V10”，报告门禁使用新的升级测试名；ADR-016 明确旧响应不作无损兼容承诺。
+
+本机已实际验证：系统 Maven `mvn -B -ntp test` 21 tests 通过；`mvn -B -ntp -DskipTests test-compile` 退出 0；前端 `npm ci`（126 packages）、Vitest 6 files/83 tests、lint（0 errors，3 个既有 warning）、Vite build 通过；Python 工具 52 tests 通过；规划校验退出码 0 但仍只代表规划资产健康。Testcontainers/Failsafe 在 Windows 因 JNA `jnidispatch.dll` 临时文件权限和 Docker named pipe 失败；隔离 Ubuntu 的最终 Push/PR CI 已对 `f2aba329…`（PR merge-ref `6fa5cab…`）完成真实 PostgreSQL、HTTP 和浏览器验证。Wrapper 与系统 Maven 结果继续分开记录。
+
+本轮五项重点结果：创建草稿不丢失、读写交接、哈希回归和真实 V7→V9 runtime 处理均由最终 Push/PR CI PASS；前两项本机组件证据也 PASS，后两项本机仍受 Docker/JNA 阻塞。初始失败运行的真实原因已修复并保留。FIX02 的 I01—I10 历史证据保留，I01/I08 受本轮修改的部分已按最终 CI 测试名和实际 checkout SHA 重新核对。不能将 M07 或完整 R04 标为完成。
+
+详细命令、退出码、五项结果和 I01—I10 映射见 [`docs/progress/runs/R04-M07-001-FIX03.md`](progress/runs/R04-M07-001-FIX03.md)。
+# R04-M07-001-FIX02 当前状态
+
+本轮继续 `feat/r04-m07-001` / PR #4（base `feat/r03-m03-002`），起始本地提交为 `da5d473aba2daa791184b39e5ed22eb0c82432e6`，审核远端 head 为 `4ed4d3f4eab15392bebf702496d381687e44b76b`；Windows `git fetch origin --prune` 仍受 Schannel `SEC_E_NO_CREDENTIALS (0x8009030E)` 阻塞，未 reset、回退或强推。工作区实现提交为 `3336537ee7e146b381cd4790b6a13b7b7dc2e80d`，GitHub Data API 对应代码提交为 `3e6055a9c1f33dbca34e84c977fb0ad1a19a9df2`，进度文档提交另行记录。
+
+本轮完成：
+
+- 需求前端对 `FORBIDDEN`、`NOT_FOUND`、`UNAUTHENTICATED`、`IDENTITY_DISABLED` 的真实错误清理，保留 HTTP status 与业务 code；失权会清除列表、详情、历史、草稿和写入口并使在途请求失效；CSRF/状态码型 403 与项目范围失权分开处理。
+- 修复 A→B、A→空→B 切换中的 saving/loading 轮次，网络错误保留创建草稿和原幂等键，已知重复结果不追加重复行，412 草稿继续保留；前端新增 transport 与竞态回归。
+- `RequirementService.parseIfMatch` 与契约统一为单个带引号的强数字 ETag；真实 OIDC HTTP 集成矩阵覆盖 MEMBER/VIEWER/匿名/未入项目、CSRF、If-Match、输入边界、撤权/停用及无副作用；需求端点先接收 JSON 树并拒绝未知字段和非字符串字段。
+- `RequirementDatabaseIT` 增加同键/不同键并发创建、精确 412/409、编辑 audit/outbox 回滚；独立 `RequirementMigrationUpgradeIT` 验证 V7 数据升级到 V8、冻结快照和重复迁移；报告门禁要求十二个数据库用例及一个升级用例。
+
+本轮本机验证：前端 `npm ci`（126 packages）、Vitest 6 文件/77 测试、lint（0 error，3 个既有 React warning）、Vite build 均通过；系统 Maven `mvn -B -ntp test` 21 tests 通过；Python 工具 52 tests 通过。真实 Testcontainers/Failsafe 在 Windows 因 JNA `jnidispatch.dll` 临时文件/ Docker named pipe 权限退出码 1，Maven Wrapper 独立退出码 1（PowerShell `icm : Cannot index into a null array`）；均未混写成通过。Push [36968392677](https://github.com/fangzhiy/Test365Alm/actions/runs/36968392677) 六个 job 成功，Push checkout 为 `3e6055a9c1f33dbca34e84c977fb0ad1a19a9df2`；PR [36968396770](https://github.com/fangzhiy/Test365Alm/actions/runs/36968396770) 六个 job 成功，PR merge-ref checkout 为 `6a04165d3cee6c78298643f9a905a9ad8df2bb82`。server 报告 unit 21、OIDC 12、project access 12、requirement 12、upgrade 1，均 failures/errors/skipped=0；browser 8/0/0/0。
+
+本轮 I01–I10：I01 PASS（V7→V8 升级）；I02 PASS（HTTP/数据库创建）；I03 PASS（不可变历史）；I04 PASS（精确并发 412）；I05 PASS（真实 HTTP 12 用例）；I06 PASS（RLS/runtime 隔离）；I07 PASS（撤权/停用原会话直接请求）；I08 PASS（并发幂等）；I09 PASS（回滚与 runtime）；I10 PASS（浏览器 8 用例及 Push/PR CI）。本机 Testcontainers 阻塞已由隔离 Ubuntu CI 覆盖；不标记完整 M07、R04 或生产部署完成。完整结论见 [`docs/progress/runs/R04-M07-001-FIX02.md`](progress/runs/R04-M07-001-FIX02.md)。
+

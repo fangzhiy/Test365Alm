@@ -2,7 +2,7 @@
 
 企业级应用质量管理平台研发规划基线。对标原 ALM/Quality Center 产品体系；具体目标版本、Edition、扩展和旧生态兼容范围须在 P0 冻结。
 
-> **当前状态：R03 首个认证切片实施中。** R02 健康/版本、迁移和状态工作台保留；新增 OIDC 登录不代表项目授权、完整 M03、生产安全认证或完整 ALM 已完成。
+> **当前状态：R04-M07-001 需求最小业务切片实施中。** R02 工程底座与 R03 OIDC/项目访问切片保留；新增需求闭环不代表完整 M07、M03 或完整 ALM 已完成。
 
 当前开发状态以 [development-status.md](docs/development-status.md) 和最新轮次记录为准；R03/R02 历史记录保留供追溯。
 
@@ -11,6 +11,36 @@
 B 段在已认证的 BFF 会话下提供租户、项目、成员和固定角色的最小管理闭环。工作台的“租户、项目与成员”面板按需读取当前主体可见范围，可创建项目、保存 `PROJECT_ADMIN`、`PROJECT_MEMBER`、`PROJECT_VIEWER` 固定项目角色并撤销成员访问；租户、域和初始成员只允许通过隔离的开发/测试 bootstrap 准备，本轮不开放租户/域管理 HTTP 接口。前端不持有 OIDC token，也不以隐藏页面代替服务端授权。接口字段、错误体和撤权语义见 [project-access.json](contracts/project-access.json)，架构边界见 [ADR 012](docs/adr/012-r03-project-access-slice.md)。
 
 该切片已包含新租户/项目表的基础 RLS 和追加审计证据，但仍不代表完整 M03：跨节点会话、MFA、完整审计策略、批量目录和旧 ALM 兼容继续按开发状态记录验证。
+
+## R04-M07-001 需求第一条业务闭环
+
+R04 在现有登录和项目上下文之上增加了受项目成员授权的需求最小闭环：列表、创建、详情、带 `If-Match` 的编辑，以及只读不可变修订历史。`PROJECT_ADMIN` 与 `PROJECT_MEMBER` 具有 `requirement:create`/`requirement:update`，`PROJECT_VIEWER` 只能读取需求和历史；租户成员但未加入项目的主体不能读取。创建和编辑使用真实 PostgreSQL 的 V7→V9 受控迁移，稳定需求身份、项目内显示编号和修订身份分离，编号通过行锁分配，审计、Outbox 与幂等记录在同一事务中写入。
+
+当前实现不包含父子树、富文本、附件、评审、追踪、删除、导入导出或 AI；完整 M07 仍按开发状态文档保持未完成。实际接口字段和错误/ETag 约束见 [requirements.json](contracts/requirements.json)，架构决定见 [ADR-013](docs/adr/013-r04-requirement-revision-slice.md)。前端从已选项目上下文读取需求，不接受手工 tenant/project ID；412 冲突会保留草稿，退出或切换项目会清理旧数据。
+
+后端单元测试：
+
+```powershell
+Set-Location apps/server
+mvn -B -ntp test
+```
+
+真实 PostgreSQL 集成测试使用 Testcontainers 的一次性数据库，不读取日常 `.env`。`RequirementDatabaseIT` 覆盖合法成员创建/编辑、不可变历史、viewer runtime 写拒绝、同项目/跨项目/跨租户复合引用、幂等快照/过期/撤权、同键和不同键并发创建、字段哈希边界、创建及编辑审计/Outbox 故障回滚和同 ETag 并发竞争；独立 `RequirementMigrationUpgradeIT` 构造真实 V7 旧摘要和多版需求，执行 V7→V9 升级后通过受限 runtime service 验证旧重放安全拒绝、当前格式重放和撤权保护。CI 报告门禁要求数据库用例及一个升级用例全部实际执行：
+
+```powershell
+Set-Location apps/server
+mvn -B -ntp -Pintegration verify '-Dbuild.commit=local-r04-fix01'
+```
+
+本机 Docker/Testcontainers 不可用时，该命令必须如实记录失败原因；不能以单元测试替代真实数据库证据。CI 会执行 `tools/verify_r04_requirement_report.py`，要求全部指定数据库用例和 V7→V9 升级用例均被发现且无失败、错误或跳过。V1—V8 只在受控迁移阶段执行，V9 为旧幂等重放安全边界；运行时不会自动改表，服务使用受限 runtime 数据源。前端继续使用：
+
+```powershell
+Set-Location apps/web
+npm ci
+npm run lint
+npm run test:run
+npm run build
+```
 
 ## R03 本地 OIDC 登录切片
 
@@ -62,7 +92,7 @@ python tools/cleanup_r02_resources.py --root local-evidence/r03
 
 自动化回归：后端 `cd apps/server; .\mvnw.cmd -B -ntp -Pintegration verify` 使用 Testcontainers 的临时 PostgreSQL，并运行真实 HTTP OIDC 回调集成类 `OidcCallbackSecurityIT`（10 个受门禁用例，含运行时账号、项目 HTTP 和未 bootstrap 拒绝场景）；可单独复跑 `.\mvnw.cmd -B -ntp -Pintegration verify '-Dit.test=OidcCallbackSecurityIT'`。前端 `cd apps/web; npm ci; npm run lint; npm run test:run; npm run build`。真实浏览器联调需先启动上述四个本地服务，再在 `apps/web` 执行 `. ..\..\tools\import_r03_env.ps1 -Path ..\..\.env.r03; npm run test:e2e`；本机可设置 `R03_E2E_BROWSER_CHANNEL=chrome` 使用已安装 Chrome，CI 安装隔离 Chromium。E2E 不用 mock 登录取代真实 Keycloak。
 
-FIX01 的双用户项目演示只在 CI 本轮拥有的隔离 Compose 项目中运行：测试用两个真实 Keycloak 用户建立本地 principal，由迁移账号在同一临时数据库播种 tenant/domain/tenant_member，然后通过真实浏览器会话完成“管理员创建项目 → 授权 `PROJECT_VIEWER` → 成员读取成功、直接更新返回 403 → 管理员撤权 → 成员原会话下一次权限请求返回 403/404”。`tools/verify_r03_project_browser_report.py` 要求该用例实际执行且无失败/错误/跳过；普通本机运行因资源归属门禁会跳过并返回非成功报告，不得把它当作真实项目验收通过。生成器不会覆盖已有 `.env.r03` 或 realm；若本地旧配置只有单用户，先确认归属后按隔离环境规则重新生成。
+FIX01 的双用户项目演示以及 R04 需求演示只在 CI 本轮拥有的隔离 Compose 项目中运行：测试用两个真实 Keycloak 用户建立本地 principal，由迁移账号在同一临时数据库播种 tenant/domain/tenant_member，然后通过真实浏览器会话完成项目授权/撤权和“创建需求 → 编辑 → 查看不可变修订历史 → viewer 只读”。`tools/verify_r03_project_browser_report.py` 要求项目授权、项目 UI 和需求 UI 用例实际执行且无失败/错误/跳过；普通本机运行因资源归属门禁会跳过并返回非成功报告，不得把它当作真实项目验收通过。生成器不会覆盖已有 `.env.r03` 或 realm；若本地旧配置只有单用户，先确认归属后按隔离环境规则重新生成。
 
 会话到期、主体停用和 IdP 中断用例会改变测试资源状态，仅在带本轮 `R03_RUN_ID` 标签的唯一 CI Compose 项目中运行；普通本机开发只运行不破坏数据的浏览器用例。CI 将空闲超时配置为 1 分钟，测试关闭页面避免轮询续期，等待 75 秒后检查旧 Cookie。IdP 不可用时，新登录必须失败；已建立的本地会话在本地有效期内仍可访问、可 CSRF 退出。这里不承诺实时 IdP 撤权或全局单点退出。
 
@@ -137,7 +167,7 @@ python tools/verify_r02_readiness.py --env-file .env.r02-test --compose-project 
 
 脚本严格要求监听地址可验证且只能是 `127.0.0.1`、`::1` 或 `::ffff:127.0.0.1`；无法枚举监听、进程提前退出、版本提交不一致、端口被占用或数据源不是本机专用 PostgreSQL 时失败。首次 `up` 前会检查目标项目是否已有容器（包括停止的容器）、网络或卷；任何已有资源都会使脚本拒绝运行。默认使用当前本地 Docker context；若专用测试配置写入 `TEST365ALM_DOCKER_CONTEXT`，它必须与当前 context 一致。远端 Docker context 被拒绝。测试配置只接受脚本规定的键；父进程的 Spring、JVM 和 Compose 覆盖项不会传入子进程。
 
-启动迁移失败验证保留正式 V6，向临时目录注入独立的 V7 故障迁移，不修改正式 `db/migration`；脚本先确认正式 V6 已成功记录：
+启动迁移失败验证保留正式 V9，向临时目录注入独立的 V10 故障迁移，不修改正式 `db/migration`；脚本先确认正式 V9 已成功记录：
 
 ```powershell
 python tools/verify_r02_migration_failure.py --env-file .env.r02-test --compose-project test365alm-r02-migration-manual --server-port 18082

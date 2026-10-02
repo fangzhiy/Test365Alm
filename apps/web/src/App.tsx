@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import './App.css'
 import AuthPanel from './AuthPanel'
 import ProjectAccessPanel from './ProjectAccessPanel'
+import RequirementsPanel from './RequirementsPanel'
+import type { ProjectAccess } from './projectAccess'
 
 type CheckState = 'loading' | 'up' | 'down' | 'unavailable'
 type VersionResponse = { productName: string; version: string; commit: string }
@@ -62,6 +64,12 @@ function App() {
   const controllerRef = useRef<AbortController | null>(null)
   const timeoutRef = useRef<number | null>(null)
   const [sessionGeneration, setSessionGeneration] = useState(0)
+  const [selectedProjectId, setSelectedProjectId] = useState('')
+  const [selectedProjectAccess, setSelectedProjectAccess] = useState<ProjectAccess | null>(null)
+  const handleProjectSelection = useCallback(({ projectId, access }: { projectId: string; access: ProjectAccess | null }) => {
+    setSelectedProjectId(projectId)
+    setSelectedProjectAccess(access)
+  }, [])
 
   const refresh = useCallback(async () => {
     const requestRound = requestRoundRef.current + 1
@@ -125,7 +133,8 @@ function App() {
   return <main className="workbench">
     <header className="hero-header"><div><p className="eyebrow">TEST365ALM · ENGINEERING FOUNDATION</p><h1>{version?.productName ?? 'Test365Alm'} 工作台</h1><p className="lede">查看当前应用构建信息与运行状态，数据来自真实后端接口。</p></div><button className="refresh-button" type="button" onClick={() => void refresh()}>刷新状态</button></header>
     <AuthPanel onLogout={() => setSessionGeneration((generation) => generation + 1)} />
-    <ProjectAccessPanel resetSignal={sessionGeneration} />
+    <ProjectAccessPanel resetSignal={sessionGeneration} onSelectionChange={handleProjectSelection} />
+    <RequirementsPanel projectId={selectedProjectId} access={selectedProjectAccess} resetSignal={sessionGeneration} />
     <section className="version-panel" aria-label="构建信息"><div><span className="panel-label">应用版本</span><strong>{version?.version ?? (versionState === 'loading' ? '读取中…' : '不可用')}</strong></div><div><span className="panel-label">构建提交</span><code>{version?.commit ?? (versionState === 'loading' ? '读取中…' : 'unknown')}</code></div></section>
     <section className="status-grid" aria-label="服务状态"><HealthCard label="应用存活" state={liveState} detail="不依赖数据库连接" /><HealthCard label="应用就绪" state={readyState} detail={readyDetail || '数据库与迁移检查'} /><HealthCard label="版本接口" state={versionState} detail="GET /api/v1/version" /></section>
     <footer className="workbench-footer"><span>{lastChecked ? `最近检查：${lastChecked}` : '正在检查服务…'}</span><span>开发环境 · localhost</span></footer>
