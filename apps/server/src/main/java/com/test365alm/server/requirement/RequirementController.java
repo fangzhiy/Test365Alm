@@ -17,7 +17,11 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.fasterxml.jackson.annotation.JsonAnySetter;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.node.StringNode;
 import com.test365alm.server.project.ProjectAccessResolver;
 
 /** HTTP boundary for the first requirement identity/revision slice. */
@@ -89,8 +93,78 @@ public class RequirementController {
     }
 
     @JsonIgnoreProperties(ignoreUnknown = false)
-    public record CreateRequest(String title, String body, String priority) { }
+    public static final class CreateRequest {
+        private JsonNode title;
+        private JsonNode body;
+        private JsonNode priority;
+
+        public CreateRequest() { }
+
+        public CreateRequest(String title, String body, String priority) {
+            this.title = textNode(title);
+            this.body = textNode(body);
+            this.priority = textNode(priority);
+        }
+
+        @JsonProperty("title")
+        public void setTitle(JsonNode value) { this.title = value; }
+
+        @JsonProperty("body")
+        public void setBody(JsonNode value) { this.body = value; }
+
+        @JsonProperty("priority")
+        public void setPriority(JsonNode value) { this.priority = value; }
+
+        @JsonAnySetter
+        public void rejectUnknown(String name, JsonNode value) {
+            throw new IllegalArgumentException("Unknown request field: " + name);
+        }
+
+        public String title() { return textValue(title, "title"); }
+        public String body() { return textValue(body, "body"); }
+        public String priority() { return textValue(priority, "priority"); }
+    }
 
     @JsonIgnoreProperties(ignoreUnknown = false)
-    public record PatchRequest(String title, String body, String priority) { }
+    public static final class PatchRequest {
+        private JsonNode title;
+        private JsonNode body;
+        private JsonNode priority;
+
+        public PatchRequest() { }
+
+        public PatchRequest(String title, String body, String priority) {
+            this.title = textNode(title);
+            this.body = textNode(body);
+            this.priority = textNode(priority);
+        }
+
+        @JsonProperty("title")
+        public void setTitle(JsonNode value) { this.title = value; }
+
+        @JsonProperty("body")
+        public void setBody(JsonNode value) { this.body = value; }
+
+        @JsonProperty("priority")
+        public void setPriority(JsonNode value) { this.priority = value; }
+
+        @JsonAnySetter
+        public void rejectUnknown(String name, JsonNode value) {
+            throw new IllegalArgumentException("Unknown request field: " + name);
+        }
+
+        public String title() { return textValue(title, "title"); }
+        public String body() { return textValue(body, "body"); }
+        public String priority() { return textValue(priority, "priority"); }
+    }
+
+    private static JsonNode textNode(String value) {
+        return value == null ? null : StringNode.valueOf(value);
+    }
+
+    private static String textValue(JsonNode value, String field) {
+        if (value == null || value.isNull()) return null;
+        if (!value.isTextual()) throw new IllegalArgumentException(field + " must be a string");
+        return value.textValue();
+    }
 }
