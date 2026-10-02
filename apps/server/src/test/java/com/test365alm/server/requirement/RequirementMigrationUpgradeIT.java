@@ -2,6 +2,7 @@ package com.test365alm.server.requirement;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -168,7 +169,10 @@ class RequirementMigrationUpgradeIT {
         ProjectAccessException revoked = org.junit.jupiter.api.Assertions.assertThrows(ProjectAccessException.class,
                 () -> requirements.create(admin, project,
                         new RequirementService.CreateCommand("V7 title", "V7 body", "HIGH"), key));
-        assertEquals(HttpStatus.FORBIDDEN, revoked.status());
+        // The runtime RLS policy hides revoked project rows.  A safe replay
+        // denial can therefore be explicit FORBIDDEN or resource-hiding
+        // NOT_FOUND, but it must never return the old snapshot.
+        assertTrue(revoked.status() == HttpStatus.FORBIDDEN || revoked.status() == HttpStatus.NOT_FOUND);
         assertEquals(requirementsBefore + 1, countForProject("requirement", project));
     }
 
