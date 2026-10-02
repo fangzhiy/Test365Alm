@@ -2349,6 +2349,7 @@
         "additionalProperties": false
       },
       "RequirementPatch": {
+        "description": "至少一个字段的部分更新；仅支持 title、body、priority，不接受作者、权限或 parent_id。服务端以 If-Match 和 Idempotency-Key 绑定版本与业务意图。",
         "type": "object",
         "properties": {
           "title": {

@@ -47,7 +47,7 @@ public class RequirementService {
         String hash = requestHash(normalized.title(), normalized.body(), normalized.priority());
         IdempotencyRecord replay = claimOrReplay(project.tenantId(), projectId, actor, CREATE_ROUTE,
                 idempotencyKey, hash);
-        if (replay != null) return getAuthorized(actor, projectId, replay.requirementId());
+        if (replay != null) return replayView(actor, projectId, replay);
 
         UUID requirementId = UUID.randomUUID();
         UUID revisionId = UUID.randomUUID();
@@ -71,9 +71,9 @@ public class RequirementService {
             appendAudit(project.tenantId(), projectId, actor, "requirement.created", requirementId, 1,
                     null, hashValue);
             appendOutbox(project.tenantId(), projectId, requirementId, revisionId, "requirement.created");
-            saveIdempotency(project.tenantId(), projectId, actor, CREATE_ROUTE, idempotencyKey,
-                    requirementId, revisionId);
-            return getAuthorized(actor, projectId, requirementId);
+            RequirementView result = getAuthorized(actor, projectId, requirementId);
+            saveIdempotency(project.tenantId(), projectId, actor, CREATE_ROUTE, idempotencyKey, result);
+            return result;
         } catch (DataIntegrityViolationException ex) {
             // A unique project number or revision race is a safe conflict, not
             // a second partially-created business object.
@@ -155,7 +155,7 @@ public class RequirementService {
                 patch.title(), patch.body(), patch.priority());
         IdempotencyRecord replay = claimOrReplay(project.tenantId(), projectId, actor, UPDATE_ROUTE + ":" + requirementId,
                 idempotencyKey, hash);
-        if (replay != null) return getAuthorized(actor, projectId, replay.requirementId());
+        if (replay != null) return replayView(actor, projectId, replay);
 
         RequirementRow current = lockCurrent(project.tenantId(), projectId, requirementId);
         if (current == null) throw ProjectAccessException.notFound();
@@ -166,9 +166,10 @@ public class RequirementService {
         String body = patch.body() == null ? current.body() : requiredBody(patch.body());
         String priority = patch.priority() == null ? current.priority() : normalizePriority(patch.priority());
         if (title.equals(current.title()) && body.equals(current.body()) && priority.equals(current.priority())) {
+            RequirementView result = getAuthorized(actor, projectId, requirementId);
             saveIdempotency(project.tenantId(), projectId, actor,
-                    UPDATE_ROUTE + ":" + requirementId, idempotencyKey, requirementId, current.revisionId());
-            return getAuthorized(actor, projectId, requirementId);
+                    UPDATE_ROUTE + ":" + requirementId, idempotencyKey, result);
+            return result;
         }
 
         UUID revisionId = UUID.randomUUID();
@@ -195,9 +196,10 @@ public class RequirementService {
         appendAudit(project.tenantId(), projectId, actor, "requirement.updated", requirementId, nextRevision,
                 beforeHash, afterHash);
         appendOutbox(project.tenantId(), projectId, requirementId, revisionId, "requirement.updated");
+        RequirementView result = getAuthorized(actor, projectId, requirementId);
         saveIdempotency(project.tenantId(), projectId, actor, UPDATE_ROUTE + ":" + requirementId,
-                idempotencyKey, requirementId, revisionId);
-        return getAuthorized(actor, projectId, requirementId);
+                idempotencyKey, result);
+        return result;
     }
 
     @Transactional(readOnly = true)
@@ -268,6 +270,14 @@ public class RequirementService {
 
     private IdempotencyRecord claimOrReplay(UUID tenantId, UUID projectId, UUID principalId, String route,
             String key, String requestHash) {
+        // Expiration is enforced at the claim boundary.  An expired key is a
+        // new intent and cannot replay a response from a prior retention
+        // window.  The delete is scoped to this exact actor and route.
+        jdbc.update("""
+                DELETE FROM requirement_idempotency
+                WHERE tenant_id = ? AND project_id = ? AND principal_id = ?
+                  AND route = ? AND idempotency_key = ? AND expires_at <= CURRENT_TIMESTAMP
+                """, tenantId, projectId, principalId, route, key);
         int inserted = jdbc.update("""
                 INSERT INTO requirement_idempotency
                     (tenant_id, project_id, principal_id, route, idempotency_key, request_hash)
@@ -276,12 +286,15 @@ public class RequirementService {
                 """, tenantId, projectId, principalId, route, key, requestHash);
         if (inserted == 1) return null;
         List<IdempotencyRecord> existing = jdbc.query("""
-                SELECT request_hash, requirement_id, revision_id
+                SELECT request_hash, requirement_id, revision_id, result_display_number,
+                       result_row_version, result_revision_no, result_title, result_body,
+                       result_priority, result_created_at, result_created_by
                 FROM requirement_idempotency
                 WHERE tenant_id = ? AND project_id = ? AND principal_id = ?
-                  AND route = ? AND idempotency_key = ?
+                  AND route = ? AND idempotency_key = ? AND expires_at > CURRENT_TIMESTAMP
                 """, (rs, row) -> new IdempotencyRecord(rs.getString("request_hash"),
-                        rs.getObject("requirement_id", UUID.class), rs.getObject("revision_id", UUID.class)),
+                        rs.getObject("requirement_id", UUID.class), rs.getObject("revision_id", UUID.class),
+                        snapshot(rs, projectId)),
                 tenantId, projectId, principalId, route, key);
         if (existing.isEmpty()) throw ProjectAccessException.conflict("IDEMPOTENCY_IN_PROGRESS", "Request is still being processed");
         IdempotencyRecord record = existing.get(0);
@@ -295,11 +308,39 @@ public class RequirementService {
     }
 
     private void saveIdempotency(UUID tenantId, UUID projectId, UUID principalId, String route, String key,
-            UUID requirementId, UUID revisionId) {
+            RequirementView result) {
         jdbc.update("""
-                UPDATE requirement_idempotency SET requirement_id = ?, revision_id = ?
+                UPDATE requirement_idempotency SET requirement_id = ?, revision_id = ?,
+                    result_display_number = ?, result_row_version = ?, result_revision_no = ?,
+                    result_title = ?, result_body = ?, result_priority = ?,
+                    result_created_at = ?, result_created_by = ?
                 WHERE tenant_id = ? AND project_id = ? AND principal_id = ? AND route = ? AND idempotency_key = ?
-                """, requirementId, revisionId, tenantId, projectId, principalId, route, key);
+                """, result.id(), result.currentRevisionId(), result.displayNumber(), result.rowVersion(),
+                result.revisionNumber(), result.title(), result.body(), result.priority(), result.createdAt(),
+                result.createdBy(), tenantId, projectId, principalId, route, key);
+    }
+
+    private RequirementView replayView(UUID actor, UUID projectId, IdempotencyRecord replay) {
+        if (replay.snapshot() != null) return replay.snapshot();
+        // Rows created by V7 have no frozen response columns.  They remain
+        // replayable, but are upgraded on first replay by reading the
+        // referenced requirement.  New rows always take the snapshot path.
+        return getAuthorized(actor, projectId, replay.requirementId());
+    }
+
+    private static RequirementView snapshot(ResultSet rs, UUID projectId) throws SQLException {
+        UUID id = rs.getObject("requirement_id", UUID.class);
+        UUID revisionId = rs.getObject("revision_id", UUID.class);
+        Long number = (Long) rs.getObject("result_display_number");
+        Long version = (Long) rs.getObject("result_row_version");
+        Long revisionNo = (Long) rs.getObject("result_revision_no");
+        if (id == null || revisionId == null || number == null || version == null || revisionNo == null
+                || rs.getString("result_title") == null || rs.getObject("result_created_at", OffsetDateTime.class) == null
+                || rs.getObject("result_created_by", UUID.class) == null) return null;
+        return new RequirementView(id, projectId, number, version,
+                rs.getObject("result_created_at", OffsetDateTime.class),
+                rs.getObject("result_created_by", UUID.class), revisionId, revisionNo,
+                rs.getString("result_title"), rs.getString("result_body"), rs.getString("result_priority"));
     }
 
     private void appendAudit(UUID tenantId, UUID projectId, UUID actor, String action, UUID requirementId,
@@ -381,7 +422,10 @@ public class RequirementService {
 
     private static String requestHash(String... parts) {
         StringBuilder canonical = new StringBuilder();
-        for (String part : parts) canonical.append(part == null ? "<null>" : part).append('\u0000');
+        for (String part : parts) {
+            if (part == null) canonical.append("N;");
+            else canonical.append("V").append(part.length()).append(':').append(part).append(';');
+        }
         return sha256(canonical.toString());
     }
 
@@ -421,5 +465,6 @@ public class RequirementService {
             String priority, OffsetDateTime createdAt, UUID createdBy) { }
     private record RequirementRow(UUID id, long rowVersion, UUID revisionId, long revisionNo,
             String title, String body, String priority) { }
-    private record IdempotencyRecord(String requestHash, UUID requirementId, UUID revisionId) { }
+    private record IdempotencyRecord(String requestHash, UUID requirementId, UUID revisionId,
+            RequirementView snapshot) { }
 }

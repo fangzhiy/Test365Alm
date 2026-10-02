@@ -50,7 +50,7 @@ export type ProjectAccess = {
 
 export type AccessError = { code: string; message: string }
 export type CreateProjectInput = { tenantId: string; domainId: string; code: string; name: string }
-export type AccessRequestOptions = { signal?: AbortSignal }
+export type AccessRequestOptions = { signal?: AbortSignal; idempotencyKey?: string }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 const isString = (value: unknown): value is string => typeof value === 'string' && value.length > 0
@@ -80,17 +80,22 @@ const csrfToken = async (signal?: AbortSignal): Promise<CsrfResponse> => {
   return { headerName: body.headerName, token: body.token }
 }
 
-export const requestJson = async (input: RequestInfo | URL, init?: RequestInit, options?: AccessRequestOptions): Promise<unknown> => {
+export const requestJsonWithResponse = async (input: RequestInfo | URL, init?: RequestInit, options?: AccessRequestOptions): Promise<{ body: unknown; response: Response }> => {
   const method = (init?.method ?? 'GET').toUpperCase()
   const headers = new Headers(init?.headers)
   const signal = options?.signal ?? init?.signal ?? undefined
+  if (options?.idempotencyKey) headers.set('Idempotency-Key', options.idempotencyKey)
   if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
     const csrf = await csrfToken(signal)
     headers.set(csrf.headerName, csrf.token)
   }
   const response = await fetch(input, { credentials: 'same-origin', ...init, headers, signal })
   if (!response.ok) throw await parseError(response)
-  try { return await response.json() } catch { throw { code: 'INVALID_JSON', message: '服务返回了无效 JSON' } satisfies AccessError }
+  try { return { body: await response.json(), response } } catch { throw { code: 'INVALID_JSON', message: '服务返回了无效 JSON' } satisfies AccessError }
+}
+
+export const requestJson = async (input: RequestInfo | URL, init?: RequestInit, options?: AccessRequestOptions): Promise<unknown> => {
+  return (await requestJsonWithResponse(input, init, options)).body
 }
 
 const parseTenant = (value: unknown): Tenant | null => {

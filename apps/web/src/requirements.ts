@@ -1,4 +1,4 @@
-import { requestJson } from './projectAccess'
+import { requestJsonWithResponse } from './projectAccess'
 import type { AccessError, AccessRequestOptions } from './projectAccess'
 
 export type RequirementRevision = {
@@ -29,7 +29,7 @@ export type Requirement = {
 export type RequirementPage = { items: Requirement[]; nextCursor?: string | null }
 export type RequirementInput = { title: string; body: string }
 
-const idempotencyKey = () => typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `web-${Date.now()}-${Math.random().toString(16).slice(2)}`
+export const newIdempotencyKey = () => typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `web-${Date.now()}-${Math.random().toString(16).slice(2)}`
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 const isString = (value: unknown): value is string => typeof value === 'string'
@@ -67,28 +67,42 @@ const parsePage = (body: unknown): RequirementPage => {
   return { items: parsed as Requirement[], nextCursor: isRecord(body) && (body.nextCursor === null || isString(body.nextCursor)) ? body.nextCursor : null }
 }
 
-const parseOne = (body: unknown): Requirement => {
+const parseOne = (body: unknown, etag?: string): Requirement => {
   const parsed = parseRequirement(body)
   if (!parsed) throw { code: 'INVALID_RESPONSE', message: '服务返回了无效需求对象' } satisfies AccessError
-  return parsed
+  return etag ? { ...parsed, etag } : parsed
 }
+
+const responseEtag = (response: Response) => response.headers.get('ETag') ?? response.headers.get('etag') ?? undefined
+const pendingIntentKeys = new Map<string, string>()
+const intentKey = (scope: string, input: unknown) => `${scope}\u0000${JSON.stringify(input)}`
 
 export const requirementsApi = {
   async list(projectId: string, options?: AccessRequestOptions): Promise<RequirementPage> {
-    return parsePage(await requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/requirements?limit=50`, undefined, options))
+    const result = await requestJsonWithResponse(`/api/v1/projects/${encodeURIComponent(projectId)}/requirements?limit=50`, undefined, options)
+    return parsePage(result.body)
   },
   async get(projectId: string, requirementId: string, options?: AccessRequestOptions): Promise<Requirement> {
-    return parseOne(await requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/requirements/${encodeURIComponent(requirementId)}`, undefined, options))
+    const result = await requestJsonWithResponse(`/api/v1/projects/${encodeURIComponent(projectId)}/requirements/${encodeURIComponent(requirementId)}`, undefined, options)
+    return parseOne(result.body, responseEtag(result.response))
   },
   async create(projectId: string, input: RequirementInput, options?: AccessRequestOptions): Promise<Requirement> {
-    return parseOne(await requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/requirements`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey() }, body: JSON.stringify({ title: input.title, body: input.body }) }, options))
+    const intent = intentKey(`create:${projectId}`, input)
+    const key = options?.idempotencyKey ?? pendingIntentKeys.get(intent) ?? newIdempotencyKey()
+    if (!options?.idempotencyKey) pendingIntentKeys.set(intent, key)
+    const result = await requestJsonWithResponse(`/api/v1/projects/${encodeURIComponent(projectId)}/requirements`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify({ title: input.title, body: input.body }) }, options)
+    const parsed = parseOne(result.body, responseEtag(result.response)); pendingIntentKeys.delete(intent); return parsed
   },
   async update(projectId: string, requirement: Requirement, input: RequirementInput, options?: AccessRequestOptions): Promise<Requirement> {
-    const etag = requirement.etag ?? `"${requirement.rowVersion}"`
-    return parseOne(await requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/requirements/${encodeURIComponent(requirement.id)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey(), 'If-Match': etag }, body: JSON.stringify({ title: input.title, body: input.body }) }, options))
+    if (!requirement.etag) throw { code: 'MISSING_ETAG', message: '需求版本标识不可用，请先刷新需求' } satisfies AccessError
+    const intent = intentKey(`update:${projectId}:${requirement.id}:${requirement.etag}`, input)
+    const key = options?.idempotencyKey ?? pendingIntentKeys.get(intent) ?? newIdempotencyKey()
+    if (!options?.idempotencyKey) pendingIntentKeys.set(intent, key)
+    const result = await requestJsonWithResponse(`/api/v1/projects/${encodeURIComponent(projectId)}/requirements/${encodeURIComponent(requirement.id)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key, 'If-Match': requirement.etag }, body: JSON.stringify({ title: input.title, body: input.body }) }, options)
+    const parsed = parseOne(result.body, responseEtag(result.response)); pendingIntentKeys.delete(intent); return parsed
   },
   async revisions(projectId: string, requirementId: string, options?: AccessRequestOptions): Promise<RequirementRevision[]> {
-    const body = await requestJson(`/api/v1/projects/${encodeURIComponent(projectId)}/requirements/${encodeURIComponent(requirementId)}/revisions`, undefined, options)
+    const body = (await requestJsonWithResponse(`/api/v1/projects/${encodeURIComponent(projectId)}/requirements/${encodeURIComponent(requirementId)}/revisions`, undefined, options)).body
     const values = Array.isArray(body) ? body : isRecord(body) && Array.isArray(body.items) ? body.items : null
     if (!values) throw { code: 'INVALID_RESPONSE', message: '服务返回了无效修订列表' } satisfies AccessError
     const parsed = values.map(parseRevision)

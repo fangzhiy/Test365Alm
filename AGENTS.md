@@ -36,7 +36,7 @@ python tools/verify_r03_oidc_http_report.py apps/server/target/failsafe-reports
 python tools/verify_r02_readiness.py --env-file .env.r02-test --compose-project test365alm-r02-manual --server-port 18081  # 构建 server jar 后，验证唯一临时 PostgreSQL 停止/恢复且后端不重启
 python tools/verify_r02_migration_failure.py --env-file .env.r02-test --compose-project test365alm-r02-migration-manual --server-port 18082  # 临时失败迁移启动验证
 python tools/verify_r03_project_access_report.py apps/server/target/failsafe-reports  # B 段 RLS/项目访问报告必须包含真实 PlatformDatabaseIT 场景
-python tools/verify_r04_requirement_report.py apps/server/target/failsafe-reports  # R04 需求真实 PostgreSQL 三用例报告门槛
+python tools/verify_r04_requirement_report.py apps/server/target/failsafe-reports  # R04 FIX01 需求真实 PostgreSQL 九用例报告门槛
 python tools/verify_r03_project_browser_report.py local-evidence/r03/playwright-results.xml  # CI-owned dual-user project grant/read/write-deny/revoke evidence
 python tools/verify_r02_preexisting_project.py --env-file .env.r02-test  # 一次性对照项目及两条哨兵数据；验证两套脚本先拒绝碰触预存资源
 python tools/prepare_r03_dev.py  # 仅首次生成被忽略的随机本地凭据和 Keycloak realm，不覆盖已有文件
@@ -83,3 +83,4 @@ Python 工具只使用标准库，支持 Python 3.10 及以上。新增工具必
 - R03-M03-002 FIX01/FIX02 的双用户项目浏览器用例只在当前 CI-owned Compose 项目中播种 tenant/domain/member 数据；普通本机浏览器运行会因资源归属门禁跳过并返回非成功报告，不能写成真实项目验收通过。项目授权迁移只新增 V5、V6，不改写已执行 V1-V4；V6 进一步把租户 bootstrap 限定为迁移/fixture 所有者边界。
 - R03 FIX02 的 HTTP 回调测试必须保留真实应用过滤器链和同一 Cookie 容器；测试 IdP 只提供回环协议响应，不能用 `oidcLogin`、`@WithMockUser`、直接 SecurityContext 或 mock Principal/JWT 验证替代。每类非法 token 之后必须以独立 owner 连接比较 principal 全字段快照；只允许合成 subject 与 Testcontainers 临时 PostgreSQL，报告不得包含 Cookie、token、私钥或秘密。
 - R04-M07-001 的需求接口仅覆盖项目根级、纯文本 title/body 和固定 priority；稳定需求身份与追加修订分离。写操作必须经过项目成员权限、同源 CSRF、幂等键和具体 `If-Match`；revision 只允许 runtime INSERT/SELECT，不能通过应用接口更新或删除历史。V7 是新增权威迁移，不改写 V1-V6；完整 M07、需求树、评审、附件和追踪继续保持未完成。
+- R04-M07-001-FIX01 在 V8 中只追加约束和权限收口，不改写 V1-V7：current revision、outbox、幂等记录必须保持同租户/项目/需求归属；PROJECT_VIEWER 的 runtime SQL 写入、revision/outbox 修改和 TRUNCATE 必须被 RLS/GRANT 拒绝。幂等记录按租户/项目/主体/路由作用域检查有效期，新意图必须使用新键，重放返回冻结快照且重新授权；审计和 Outbox 与业务写入同事务，失败必须回滚。集成门禁要求 `RequirementDatabaseIT` 九个指定用例，真实 PostgreSQL 只能由 Testcontainers/CI 提供。

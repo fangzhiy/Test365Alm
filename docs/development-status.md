@@ -1,5 +1,18 @@
 # Test365Alm 开发状态
 
+## R04-M07-001-FIX01 当前状态
+
+- 本轮继续 `feat/r04-m07-001` / PR #4（base `feat/r03-m03-002`），审核基准为 `5e9f0eae6598835301c053cdfcc374ab68051fc0`；远端分支仍由该审核 head 指向，PR Open、未合并。Windows Git fetch 仍因 Schannel `SEC_E_NO_CREDENTIALS (0x8009030E)` 失败，未 reset、回退或强推；发布前后使用 GitHub Git Data API 核对父提交、树和 ref。
+- FIX01 新增 V8 受控迁移：预检并拒绝越界引用，current revision、revision/outbox/idempotency 绑定同租户/项目/需求；限制 runtime writer 为有效 `PROJECT_ADMIN`/`PROJECT_MEMBER`，viewer 的直接 SQL 写入、revision/outbox 修改和截断被拒绝；审计动作与目标收口。V7 已执行脚本不改写。
+- 后端幂等记录按主体/路由作用域检查过期，保存完成响应快照，重放前重新授权；规范化哈希区分省略字段与字面量 `<null>`。审计/Outbox 权限故障回滚和同 ETag 并发一胜一 412 均有真实 PostgreSQL 测试，报告门禁从 3 个提升为 9 个指定用例。
+- 前端读写轮次、AbortController、卸载/退出/项目切换清理、真实 ETag、稳定 Idempotency-Key、412 草稿保留和失权清理均已补齐；新增 API 响应丢失重试和缺失 ETag 测试。
+- 本机已通过：系统 Maven `mvn -B -ntp test`（19 个 Surefire 用例，0 失败/错误/跳过）、`mvn -B -ntp -DskipTests test-compile`、前端 Vitest 6 文件/51 测试、lint（0 error，3 个 React 警告）、Vite build、Python 工具和契约 JSON 校验。Wrapper 的 Windows PowerShell 启动失败与系统 Maven 结果分开记录。
+- 本机 Testcontainers/Failsafe 仍因 Docker/JNA named pipe 权限在测试方法前阻塞，不能写成真实数据库通过；Push/PR CI 在发布后才可确认。旧 V7 已完成记录、生产部署和完整 M07 均不因本轮改动标记完成。
+
+最后更新：2026-10-02
+当前轮次：`R04-M07-001-FIX01`
+状态：`CODE_PENDING_PUSH / LOCAL_DOCKER_BLOCKED / CI_PENDING`
+
 ## R04-M07-001 当前状态
 
 - 本轮从实际分支 `feat/r03-m03-002` 的 `07224db903b542318472fdd52ca2f7fb7d3d7aca` 创建 `feat/r04-m07-001`，未回退或覆盖既有 R03 修改。PR #3 仍为 Open、未合并（base `feat/r03-m03-001`）；本轮 PR 以其实际分支为依赖 base，不把需求代码追加到 PR #3。Windows `git fetch origin --prune` 仍因 Schannel `SEC_E_NO_CREDENTIALS (0x8009030E)` 未完成，远端状态以 GitHub API/推送核对为准。

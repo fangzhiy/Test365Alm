@@ -12,6 +12,12 @@ REQUIRED_REQUIREMENT_TESTS = {
     "memberCanCreateEditAndReadImmutableHistory",
     "viewerReadsButCannotWriteAndStaleVersionDoesNotCreateRevision",
     "sameCreateKeyIsIdempotentAndDifferentPayloadConflicts",
+    "idempotencyReplayIsFrozenAndExpiryStartsANewIntent",
+    "runtimeViewerCannotWriteRequirementSliceAndRevisionIsImmutable",
+    "compositeScopeForeignKeysRejectCrossRequirementReferencesWithSqlState",
+    "patchHashDistinguishesOmittedFieldFromLiteralNullText",
+    "auditAndOutboxFailuresRollBackTheWholeRequirementTransaction",
+    "concurrentUpdatesWithTheSameEtagProduceOneRevisionAndOnePreconditionFailure",
 }
 
 

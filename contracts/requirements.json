@@ -3,7 +3,7 @@
   "info": {
     "title": "Test365Alm Requirements API",
     "version": "0.1.0",
-    "description": "R04-M07-001 实际实现的项目级需求创建、查询、编辑和不可变修订历史契约。"
+    "description": "R04-M07-001 实际实现的项目级需求创建、查询、编辑和不可变修订历史契约。创建使用 RequirementCreate；PATCH 是至少一个字段的部分更新。Idempotency-Key 按租户、项目、主体和路由作用域；有效期过后同一键视为新意图，未过期重放返回原操作快照并重新执行授权检查。"
   },
   "security": [{ "SessionCookie": [] }],
   "paths": {
@@ -21,7 +21,7 @@
       "post": {
         "operationId": "createRequirement",
         "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RequirementWrite" } } } },
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RequirementCreate" } } } },
         "responses": { "201": { "description": "创建成功", "headers": { "ETag": { "$ref": "#/components/headers/ETag" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Requirement" } } } }, "default": { "$ref": "#/components/responses/ErrorResponse" } }
       }
     },
@@ -34,7 +34,7 @@
       "patch": {
         "operationId": "updateRequirement",
         "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }, { "$ref": "#/components/parameters/IfMatch" }],
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RequirementWrite" } } } },
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/RequirementPatch" } } } },
         "responses": { "200": { "description": "追加修订并移动当前指针", "headers": { "ETag": { "$ref": "#/components/headers/ETag" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Requirement" } } } }, "default": { "$ref": "#/components/responses/ErrorResponse" } }
       }
     },
@@ -59,13 +59,14 @@
       "ProjectId": { "name": "projectId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
       "RequirementId": { "name": "requirementId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
       "RevisionId": { "name": "revisionId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
-      "IdempotencyKey": { "name": "Idempotency-Key", "in": "header", "required": true, "schema": { "type": "string", "minLength": 8, "maxLength": 128 } },
+      "IdempotencyKey": { "name": "Idempotency-Key", "in": "header", "required": true, "schema": { "type": "string", "minLength": 8, "maxLength": 128 }, "description": "同一业务意图在响应丢失或重试时复用；内容或 If-Match 改变必须生成新键。有效期外不会重放旧结果。" },
       "IfMatch": { "name": "If-Match", "in": "header", "required": true, "schema": { "type": "string", "pattern": "^\\\"[1-9][0-9]*\\\"$" }, "description": "必须是具体的当前 ETag；缺失或通配符返回 428，过期返回 412。" }
     },
     "headers": { "ETag": { "description": "带引号的 row_version", "schema": { "type": "string" } } },
     "responses": { "ErrorResponse": { "description": "结构化错误（401/403/404/409/412/428 等）", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } } },
     "schemas": {
-      "RequirementWrite": { "type": "object", "additionalProperties": false, "required": ["title"], "properties": { "title": { "type": "string", "minLength": 1, "maxLength": 500 }, "body": { "type": "string", "maxLength": 100000 }, "priority": { "type": "string", "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"], "default": "MEDIUM" } } },
+      "RequirementCreate": { "type": "object", "additionalProperties": false, "required": ["title"], "properties": { "title": { "type": "string", "minLength": 1, "maxLength": 500 }, "body": { "type": "string", "maxLength": 100000 }, "priority": { "type": "string", "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"], "default": "MEDIUM" } } },
+      "RequirementPatch": { "type": "object", "additionalProperties": false, "minProperties": 1, "properties": { "title": { "type": ["string", "null"], "minLength": 1, "maxLength": 500 }, "body": { "type": ["string", "null"], "maxLength": 100000 }, "priority": { "type": ["string", "null"], "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL", null] } } },
       "Requirement": { "type": "object", "additionalProperties": false, "required": ["id", "projectId", "displayNumber", "rowVersion", "createdAt", "createdBy", "currentRevisionId", "revisionNumber", "title", "body", "priority"], "properties": { "id": { "type": "string", "format": "uuid" }, "projectId": { "type": "string", "format": "uuid" }, "displayNumber": { "type": "integer", "minimum": 1 }, "rowVersion": { "type": "integer", "minimum": 1 }, "createdAt": { "type": "string", "format": "date-time" }, "createdBy": { "type": "string", "format": "uuid" }, "currentRevisionId": { "type": "string", "format": "uuid" }, "revisionNumber": { "type": "integer", "minimum": 1 }, "title": { "type": "string" }, "body": { "type": "string" }, "priority": { "type": "string", "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"] } } },
       "RequirementRevision": { "type": "object", "additionalProperties": false, "required": ["id", "requirementId", "revisionNumber", "title", "body", "priority", "createdAt", "createdBy"], "properties": { "id": { "type": "string", "format": "uuid" }, "requirementId": { "type": "string", "format": "uuid" }, "revisionNumber": { "type": "integer", "minimum": 1 }, "title": { "type": "string" }, "body": { "type": "string" }, "priority": { "type": "string", "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"] }, "createdAt": { "type": "string", "format": "date-time" }, "createdBy": { "type": "string", "format": "uuid" } } },
       "RequirementPage": { "type": "object", "additionalProperties": false, "required": ["items", "nextCursor"], "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/Requirement" } }, "nextCursor": { "type": ["string", "null"] } } },
