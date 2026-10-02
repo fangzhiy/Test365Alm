@@ -24,4 +24,10 @@ public class ProjectApiAdvice {
         return ResponseEntity.badRequest().body(Map.of("code", "INVALID_REQUEST",
                 "message", "Request body is invalid", "requestId", UUID.randomUUID().toString()));
     }
+
+    @ExceptionHandler(IllegalArgumentException.class)
+    ResponseEntity<Map<String, String>> invalidArgument(IllegalArgumentException ex) {
+        return ResponseEntity.badRequest().body(Map.of("code", "INVALID_REQUEST",
+                "message", "Request body is invalid", "requestId", UUID.randomUUID().toString()));
+    }
 }

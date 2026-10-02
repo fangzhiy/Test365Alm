@@ -1,6 +1,7 @@
 package com.test365alm.server.requirement;
 
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.http.HttpHeaders;
@@ -38,8 +39,14 @@ public class RequirementController {
 
     @PostMapping
     public ResponseEntity<RequirementService.RequirementView> create(Authentication authentication,
-            @PathVariable UUID projectId, @RequestBody CreateRequest request,
+            @PathVariable UUID projectId, @RequestBody JsonNode requestBody,
             @RequestHeader(name = "Idempotency-Key", required = false) String idempotencyKey) {
+        CreateRequest request = CreateRequest.from(requestBody);
+        return create(authentication, projectId, request, idempotencyKey);
+    }
+
+    public ResponseEntity<RequirementService.RequirementView> create(Authentication authentication,
+            UUID projectId, CreateRequest request, String idempotencyKey) {
         UUID actor = actors.requirePrincipal(authentication);
         RequirementService.RequirementView result = requirements.create(actor, projectId,
                 new RequirementService.CreateCommand(request.title(), request.body(), request.priority()), idempotencyKey);
@@ -65,9 +72,15 @@ public class RequirementController {
 
     @PatchMapping("/{requirementId}")
     public ResponseEntity<RequirementService.RequirementView> update(Authentication authentication,
-            @PathVariable UUID projectId, @PathVariable UUID requirementId, @RequestBody PatchRequest request,
+            @PathVariable UUID projectId, @PathVariable UUID requirementId, @RequestBody JsonNode requestBody,
             @RequestHeader(name = "If-Match", required = false) String ifMatch,
             @RequestHeader(name = "Idempotency-Key", required = false) String idempotencyKey) {
+        PatchRequest request = PatchRequest.from(requestBody);
+        return update(authentication, projectId, requirementId, request, ifMatch, idempotencyKey);
+    }
+
+    public ResponseEntity<RequirementService.RequirementView> update(Authentication authentication,
+            UUID projectId, UUID requirementId, PatchRequest request, String ifMatch, String idempotencyKey) {
         RequirementService.RequirementView result = requirements.update(actors.requirePrincipal(authentication),
                 projectId, requirementId,
                 new RequirementService.UpdateCommand(request.title(), request.body(), request.priority()),
@@ -106,6 +119,12 @@ public class RequirementController {
             this.priority = textNode(priority);
         }
 
+        static CreateRequest from(JsonNode body) {
+            validateObject(body, Set.of("title", "body", "priority"));
+            return new CreateRequest(textValue(body.get("title"), "title"),
+                    textValue(body.get("body"), "body"), textValue(body.get("priority"), "priority"));
+        }
+
         @JsonProperty("title")
         public void setTitle(JsonNode value) { this.title = value; }
 
@@ -139,6 +158,12 @@ public class RequirementController {
             this.priority = textNode(priority);
         }
 
+        static PatchRequest from(JsonNode body) {
+            validateObject(body, Set.of("title", "body", "priority"));
+            return new PatchRequest(textValue(body.get("title"), "title"),
+                    textValue(body.get("body"), "body"), textValue(body.get("priority"), "priority"));
+        }
+
         @JsonProperty("title")
         public void setTitle(JsonNode value) { this.title = value; }
 
@@ -166,5 +191,12 @@ public class RequirementController {
         if (value == null || value.isNull()) return null;
         if (!value.isTextual()) throw new IllegalArgumentException(field + " must be a string");
         return value.textValue();
+    }
+
+    private static void validateObject(JsonNode body, Set<String> allowedFields) {
+        if (body == null || !body.isObject()) throw new IllegalArgumentException("Request body must be an object");
+        for (String name : body.propertyNames()) {
+            if (!allowedFields.contains(name)) throw new IllegalArgumentException("Unknown request field: " + name);
+        }
     }
 }
