@@ -270,6 +270,12 @@ public class RequirementService {
 
     private IdempotencyRecord claimOrReplay(UUID tenantId, UUID projectId, UUID principalId, String route,
             String key, String requestHash) {
+        // Serialize claims for the exact intent.  PostgreSQL's unique-index
+        // conflict wait is not sufficient for a read-after-conflict replay:
+        // an in-flight row can otherwise be observed before its frozen result
+        // is populated when two independent runtime connections race.
+        jdbc.queryForObject("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", Long.class,
+                tenantId + ":" + projectId + ":" + principalId + ":" + route + ":" + key);
         // Expiration is enforced at the claim boundary.  An expired key is a
         // new intent and cannot replay a response from a prior retention
         // window.  The delete is scoped to this exact actor and route.
