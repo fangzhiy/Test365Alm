@@ -229,7 +229,7 @@
 
 # R04-M07-001-FIX03 当前状态
 
-本轮继续 `feat/r04-m07-001` / PR #4（base `feat/r03-m03-002`），起始本地提交为 `a143fc8`。本轮代码验证提交为 `fdc4689f94aa9f05e70c40013ea8457d87201ffd`；前端回归提交为 `77320823ff2990d99be9a644571584f75f8c0996`。最终交付 SHA 待文档提交并通过 GitHub Data API 推送后记录，不能把本地 SHA 写成远端已验证 SHA。
+本轮继续 `feat/r04-m07-001` / PR #4（base `feat/r03-m03-002`），起始本地提交为 `a143fc8`。代码修正最终本地提交为 `159c9f2`，GitHub Data API 对应远端代码提交为 `f2aba329069e7152116ee2724afcc5bab6cce5e4`；前端回归提交为 `77320823ff2990d99be9a644571584f75f8c0996`。最终文档交付 SHA 另行记录，不能把本地 SHA 写成远端 CI SHA。
 
 本轮已实现：
 
@@ -238,9 +238,9 @@
 - `RequirementsPanel` 在创建中锁定草稿字段，写操作使被替代读轮次失效，成功/失败/AbortError 结束后恢复可重试状态；新增 `userEvent` 真实输入、迟到详情失败和同键重试测试。前端全套 83 tests 通过。
 - 迁移失败探针和 CI 夹具从“正式 V8/故意 V9”改为“正式 V9/故意 V10”，报告门禁使用新的升级测试名；ADR-016 明确旧响应不作无损兼容承诺。
 
-本机已实际验证：系统 Maven `mvn -B -ntp test` 21 tests 通过；前端 `npm ci`（126 packages）、Vitest 6 files/83 tests、lint（0 errors，3 个既有 warning）、Vite build 通过；Python 工具 52 tests 通过；规划校验退出码 0 但仍只代表规划资产健康。Testcontainers 升级测试在 Windows 因 JNA `jnidispatch.dll` 临时文件权限失败，真实 PostgreSQL、Failsafe、HTTP/浏览器本轮待隔离 Ubuntu CI；Wrapper 与系统 Maven 结果继续分开记录。
+本机已实际验证：系统 Maven `mvn -B -ntp test` 21 tests 通过；`mvn -B -ntp -DskipTests test-compile` 退出 0；前端 `npm ci`（126 packages）、Vitest 6 files/83 tests、lint（0 errors，3 个既有 warning）、Vite build 通过；Python 工具 52 tests 通过；规划校验退出码 0 但仍只代表规划资产健康。Testcontainers/Failsafe 在 Windows 因 JNA `jnidispatch.dll` 临时文件权限和 Docker named pipe 失败；隔离 Ubuntu 的最终 Push/PR CI 已对 `f2aba329…`（PR merge-ref `6fa5cab…`）完成真实 PostgreSQL、HTTP 和浏览器验证。Wrapper 与系统 Maven 结果继续分开记录。
 
-本轮五项重点结果：创建草稿不丢失与读写交接为 PASS（前端组件证据）；哈希和真实 V7→V9 runtime 处理的本机集成证据为 NOT_RUN/环境阻塞，等待本轮 Push/PR CI；FIX02 的 I01—I10 历史证据保留，I01/I08 受本轮修改的部分必须以新 CI 测试名和实际 checkout SHA 重新核对。不能将历史 CI 运行当作本轮通过，也不将 M07 或完整 R04 标为完成。
+本轮五项重点结果：创建草稿不丢失、读写交接、哈希回归和真实 V7→V9 runtime 处理均由最终 Push/PR CI PASS；前两项本机组件证据也 PASS，后两项本机仍受 Docker/JNA 阻塞。初始失败运行的真实原因已修复并保留。FIX02 的 I01—I10 历史证据保留，I01/I08 受本轮修改的部分已按最终 CI 测试名和实际 checkout SHA 重新核对。不能将 M07 或完整 R04 标为完成。
 
 详细命令、退出码、五项结果和 I01—I10 映射见 [`docs/progress/runs/R04-M07-001-FIX03.md`](progress/runs/R04-M07-001-FIX03.md)。
 # R04-M07-001-FIX02 当前状态
@@ -257,3 +257,4 @@
 本轮本机验证：前端 `npm ci`（126 packages）、Vitest 6 文件/77 测试、lint（0 error，3 个既有 React warning）、Vite build 均通过；系统 Maven `mvn -B -ntp test` 21 tests 通过；Python 工具 52 tests 通过。真实 Testcontainers/Failsafe 在 Windows 因 JNA `jnidispatch.dll` 临时文件/ Docker named pipe 权限退出码 1，Maven Wrapper 独立退出码 1（PowerShell `icm : Cannot index into a null array`）；均未混写成通过。Push [36968392677](https://github.com/fangzhiy/Test365Alm/actions/runs/36968392677) 六个 job 成功，Push checkout 为 `3e6055a9c1f33dbca34e84c977fb0ad1a19a9df2`；PR [36968396770](https://github.com/fangzhiy/Test365Alm/actions/runs/36968396770) 六个 job 成功，PR merge-ref checkout 为 `6a04165d3cee6c78298643f9a905a9ad8df2bb82`。server 报告 unit 21、OIDC 12、project access 12、requirement 12、upgrade 1，均 failures/errors/skipped=0；browser 8/0/0/0。
 
 本轮 I01–I10：I01 PASS（V7→V8 升级）；I02 PASS（HTTP/数据库创建）；I03 PASS（不可变历史）；I04 PASS（精确并发 412）；I05 PASS（真实 HTTP 12 用例）；I06 PASS（RLS/runtime 隔离）；I07 PASS（撤权/停用原会话直接请求）；I08 PASS（并发幂等）；I09 PASS（回滚与 runtime）；I10 PASS（浏览器 8 用例及 Push/PR CI）。本机 Testcontainers 阻塞已由隔离 Ubuntu CI 覆盖；不标记完整 M07、R04 或生产部署完成。完整结论见 [`docs/progress/runs/R04-M07-001-FIX02.md`](progress/runs/R04-M07-001-FIX02.md)。
+
