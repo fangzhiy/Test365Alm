@@ -1,5 +1,7 @@
 # Test365Alm 开发状态
 
+> 当前轮次：`R04-M07-001-FIX02`。GitHub 代码提交为 `3e6055a9c1f33dbca34e84c977fb0ad1a19a9df2`，Push CI `36968392677` 与 PR CI `36968396770` 均成功；Windows Testcontainers 仍受 Docker/JNA 权限限制。详见文末 FIX02 状态与 [`docs/progress/runs/R04-M07-001-FIX02.md`](progress/runs/R04-M07-001-FIX02.md)。
+
 ## R04-M07-001-FIX01 当前状态
 
 - 本轮继续 `feat/r04-m07-001` / PR #4（base `feat/r03-m03-002`），审核基准为 `5e9f0eae6598835301c053cdfcc374ab68051fc0`；远端分支仍由该审核 head 指向，PR Open、未合并。Windows Git fetch 仍因 Schannel `SEC_E_NO_CREDENTIALS (0x8009030E)` 失败，未 reset、回退或强推；发布前后使用 GitHub Git Data API 核对父提交、树和 ref。
@@ -224,3 +226,17 @@
 完成本轮工程底座实现和测试；下一批再进入身份与项目权限最小切片，以及登录后创建需求的真实业务流程。M02 不因脚手架存在而整体完成，M03 仍保持 `PLANNED`。
 
 详细命令、退出码和证据位置见 [`docs/progress/runs/R01-STATUS-001.md`](progress/runs/R01-STATUS-001.md)。
+# R04-M07-001-FIX02 当前状态
+
+本轮继续 `feat/r04-m07-001` / PR #4（base `feat/r03-m03-002`），起始本地提交为 `da5d473aba2daa791184b39e5ed22eb0c82432e6`，审核远端 head 为 `4ed4d3f4eab15392bebf702496d381687e44b76b`；Windows `git fetch origin --prune` 仍受 Schannel `SEC_E_NO_CREDENTIALS (0x8009030E)` 阻塞，未 reset、回退或强推。工作区实现提交为 `3336537ee7e146b381cd4790b6a13b7b7dc2e80d`，GitHub Data API 对应代码提交为 `3e6055a9c1f33dbca34e84c977fb0ad1a19a9df2`，进度文档提交另行记录。
+
+本轮完成：
+
+- 需求前端对 `FORBIDDEN`、`NOT_FOUND`、`UNAUTHENTICATED`、`IDENTITY_DISABLED` 的真实错误清理，保留 HTTP status 与业务 code；失权会清除列表、详情、历史、草稿和写入口并使在途请求失效；CSRF/状态码型 403 与项目范围失权分开处理。
+- 修复 A→B、A→空→B 切换中的 saving/loading 轮次，网络错误保留创建草稿和原幂等键，已知重复结果不追加重复行，412 草稿继续保留；前端新增 transport 与竞态回归。
+- `RequirementService.parseIfMatch` 与契约统一为单个带引号的强数字 ETag；真实 OIDC HTTP 集成矩阵覆盖 MEMBER/VIEWER/匿名/未入项目、CSRF、If-Match、输入边界、撤权/停用及无副作用；需求端点先接收 JSON 树并拒绝未知字段和非字符串字段。
+- `RequirementDatabaseIT` 增加同键/不同键并发创建、精确 412/409、编辑 audit/outbox 回滚；独立 `RequirementMigrationUpgradeIT` 验证 V7 数据升级到 V8、冻结快照和重复迁移；报告门禁要求十二个数据库用例及一个升级用例。
+
+本轮本机验证：前端 `npm ci`（126 packages）、Vitest 6 文件/77 测试、lint（0 error，3 个既有 React warning）、Vite build 均通过；系统 Maven `mvn -B -ntp test` 21 tests 通过；Python 工具 52 tests 通过。真实 Testcontainers/Failsafe 在 Windows 因 JNA `jnidispatch.dll` 临时文件/ Docker named pipe 权限退出码 1，Maven Wrapper 独立退出码 1（PowerShell `icm : Cannot index into a null array`）；均未混写成通过。Push [36968392677](https://github.com/fangzhiy/Test365Alm/actions/runs/36968392677) 六个 job 成功，Push checkout 为 `3e6055a9c1f33dbca34e84c977fb0ad1a19a9df2`；PR [36968396770](https://github.com/fangzhiy/Test365Alm/actions/runs/36968396770) 六个 job 成功，PR merge-ref checkout 为 `6a04165d3cee6c78298643f9a905a9ad8df2bb82`。server 报告 unit 21、OIDC 12、project access 12、requirement 12、upgrade 1，均 failures/errors/skipped=0；browser 8/0/0/0。
+
+本轮 I01–I10：I01 PASS（V7→V8 升级）；I02 PASS（HTTP/数据库创建）；I03 PASS（不可变历史）；I04 PASS（精确并发 412）；I05 PASS（真实 HTTP 12 用例）；I06 PASS（RLS/runtime 隔离）；I07 PASS（撤权/停用原会话直接请求）；I08 PASS（并发幂等）；I09 PASS（回滚与 runtime）；I10 PASS（浏览器 8 用例及 Push/PR CI）。本机 Testcontainers 阻塞已由隔离 Ubuntu CI 覆盖；不标记完整 M07、R04 或生产部署完成。完整结论见 [`docs/progress/runs/R04-M07-001-FIX02.md`](progress/runs/R04-M07-001-FIX02.md)。
