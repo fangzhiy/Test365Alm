@@ -16,6 +16,7 @@ REQUIRED_REQUIREMENT_TESTS = {
     "concurrentCreatesWithSameKeyProduceOneFrozenResult",
     "concurrentCreatesWithDifferentKeysAllocateUniqueNumbers",
     "idempotencyReplayIsFrozenAndExpiryStartsANewIntent",
+    "migratedV7ReplayIsRejectedWithoutLeakingHistoryAndRejectionSurvivesRevocation",
     "runtimeViewerCannotWriteRequirementSliceAndRevisionIsImmutable",
     "compositeScopeForeignKeysRejectCrossRequirementReferencesWithSqlState",
     "patchHashDistinguishesOmittedFieldFromLiteralNullText",
@@ -24,7 +25,7 @@ REQUIRED_REQUIREMENT_TESTS = {
     "concurrentUpdatesWithTheSameEtagProduceOneRevisionAndOnePreconditionFailure",
 }
 REQUIRED_UPGRADE_TESTS = {
-    "v7RowsUpgradeWithFrozenHistoryAndCurrentRevisionCompatibility",
+    "v7RowsUpgradeRejectsUnsafeLegacyReplayThroughRuntimeService",
 }
 
 

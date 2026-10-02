@@ -7,18 +7,31 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import java.util.UUID;
 
+import com.test365alm.server.project.ProjectAccessException;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.configuration.FluentConfiguration;
+import org.springframework.http.HttpStatus;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
-/** Upgrade proof for V7 requirement rows and V8 frozen idempotency snapshots. */
+/** Upgrade proof for V7 rows and the explicit safe rejection of legacy replays. */
+@ActiveProfiles("integration")
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
 @Testcontainers
 @Timeout(180)
 class RequirementMigrationUpgradeIT {
@@ -35,8 +48,22 @@ class RequirementMigrationUpgradeIT {
             .withPassword(PASSWORD)
             .withInitScript("r03-test-role.sql");
 
+    private static final String RUNTIME_USER = "test365alm_runtime";
+    private static final String RUNTIME_PASSWORD = "r03_isolated_test_role_only";
+
+    @Autowired
+    private RequirementService requirements;
+
+    @DynamicPropertySource
+    static void runtimeDatasource(DynamicPropertyRegistry registry) {
+        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
+        registry.add("spring.datasource.username", () -> RUNTIME_USER);
+        registry.add("spring.datasource.password", () -> RUNTIME_PASSWORD);
+        registry.add("spring.flyway.enabled", () -> "false");
+    }
+
     @Test
-    void v7RowsUpgradeWithFrozenHistoryAndCurrentRevisionCompatibility() throws Exception {
+    void v7RowsUpgradeRejectsUnsafeLegacyReplayThroughRuntimeService() throws Exception {
         Flyway v7 = flyway("7");
         assertEquals(7, v7.migrate().migrationsExecuted);
 
@@ -78,17 +105,18 @@ class RequirementMigrationUpgradeIT {
                     + " VALUES (?, ?, ?, ?, ?, 'requirement.created')", tenant, project, requirement, requirement, revisionOne);
             execute(connection, "INSERT INTO requirement_idempotency"
                     + " (tenant_id, project_id, principal_id, route, idempotency_key, request_hash, requirement_id, revision_id)"
-                    + " VALUES (?, ?, ?, 'requirements:create', ?, repeat('a', 64), ?, ?)",
-                    tenant, project, admin, key, requirement, revisionOne);
+                    + " VALUES (?, ?, ?, 'requirements:create', ?, ?, ?, ?)",
+                    tenant, project, admin, key, legacyCreateHash("V7 title", "V7 body", "HIGH"), requirement, revisionOne);
         }
 
         Flyway latest = flyway(null);
-        assertEquals(1, latest.migrate().migrationsExecuted);
-        assertEquals(0, latest.migrate().migrationsExecuted, "V8 must be idempotent after the upgrade");
+        assertEquals(2, latest.migrate().migrationsExecuted);
+        assertEquals(0, latest.migrate().migrationsExecuted, "V8/V9 must be idempotent after the upgrade");
 
         try (Connection connection = ownerConnection()) {
-            assertEquals(8, scalar(connection, "SELECT COUNT(*) FROM flyway_schema_history WHERE success = TRUE"));
+            assertEquals(9, scalar(connection, "SELECT COUNT(*) FROM flyway_schema_history WHERE success = TRUE"));
             assertEquals(1, scalar(connection, "SELECT COUNT(*) FROM flyway_schema_history WHERE version = '8' AND success = TRUE"));
+            assertEquals(1, scalar(connection, "SELECT COUNT(*) FROM flyway_schema_history WHERE version = '9' AND success = TRUE"));
             assertEquals(2, scalar(connection, "SELECT row_version FROM requirement WHERE id = ?", requirement));
             assertEquals(revisionTwo, uuid(connection, "SELECT current_revision_id FROM requirement WHERE id = ?", requirement));
             assertEquals("V7 title", text(connection, "SELECT title FROM requirement_revision WHERE id = ?", revisionOne));
@@ -100,8 +128,64 @@ class RequirementMigrationUpgradeIT {
             assertEquals(1, scalar(connection, "SELECT result_display_number FROM requirement_idempotency WHERE idempotency_key = ?", key));
             assertNotNull(text(connection, "SELECT result_created_at::text FROM requirement_idempotency WHERE idempotency_key = ?", key));
             assertEquals(admin, uuid(connection, "SELECT result_created_by FROM requirement_idempotency WHERE idempotency_key = ?", key));
-            assertEquals("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            assertEquals(legacyCreateHash("V7 title", "V7 body", "HIGH"),
                     text(connection, "SELECT request_hash FROM requirement_idempotency WHERE idempotency_key = ?", key));
+            assertEquals(0, scalar(connection, "SELECT COUNT(*) FROM requirement_idempotency"
+                    + " WHERE idempotency_key = ? AND replay_compatible = TRUE", key));
+        }
+
+        // Exercise the upgraded record through the actual application service
+        // and its restricted runtime datasource.  The old hash is intentionally
+        // not accepted by the current length-prefixed request hashing scheme.
+        int requirementsBefore = countForProject("requirement", project);
+        int revisionsBefore = countForProject("requirement_revision", project);
+        int outboxBefore = countForProject("outbox_event", project);
+        ProjectAccessException legacy = org.junit.jupiter.api.Assertions.assertThrows(ProjectAccessException.class,
+                () -> requirements.create(admin, project,
+                        new RequirementService.CreateCommand("V7 title", "V7 body", "HIGH"), key));
+        assertEquals("IDEMPOTENCY_LEGACY_UNSUPPORTED", legacy.code());
+        assertEquals(HttpStatus.CONFLICT, legacy.status());
+        assertEquals(requirementsBefore, countForProject("requirement", project));
+        assertEquals(revisionsBefore, countForProject("requirement_revision", project));
+        assertEquals(outboxBefore, countForProject("outbox_event", project));
+
+        String newKey = "current-format-" + UUID.randomUUID();
+        RequirementService.RequirementView created = requirements.create(admin, project,
+                new RequirementService.CreateCommand("Current format", "new body", "LOW"), newKey);
+        RequirementService.RequirementView replay = requirements.create(admin, project,
+                new RequirementService.CreateCommand("Current format", "new body", "LOW"), newKey);
+        assertEquals(created.id(), replay.id());
+        assertEquals(created.rowVersion(), replay.rowVersion());
+
+        try (Connection connection = ownerConnection()) {
+            execute(connection, "UPDATE project_member SET revoked_at = CURRENT_TIMESTAMP"
+                    + " WHERE project_id = ? AND principal_id = ?", project, admin);
+        }
+        ProjectAccessException revoked = org.junit.jupiter.api.Assertions.assertThrows(ProjectAccessException.class,
+                () -> requirements.create(admin, project,
+                        new RequirementService.CreateCommand("V7 title", "V7 body", "HIGH"), key));
+        assertEquals(HttpStatus.FORBIDDEN, revoked.status());
+        assertEquals(requirementsBefore + 1, countForProject("requirement", project));
+    }
+
+    private int countForProject(String table, UUID project) throws SQLException {
+        try (Connection connection = ownerConnection();
+                var statement = connection.prepareStatement("SELECT COUNT(*) FROM " + table + " WHERE project_id = ?")) {
+            statement.setObject(1, project);
+            try (ResultSet result = statement.executeQuery()) {
+                result.next();
+                return result.getInt(1);
+            }
+        }
+    }
+
+    private static String legacyCreateHash(String title, String body, String priority) {
+        String canonical = String.join("\u0000", title, body, priority) + "\u0000";
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(canonical.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException(ex);
         }
     }
 

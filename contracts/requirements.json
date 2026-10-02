@@ -3,7 +3,7 @@
   "info": {
     "title": "Test365Alm Requirements API",
     "version": "0.1.0",
-    "description": "R04-M07-001 实际实现的项目级需求创建、查询、编辑和不可变修订历史契约。创建使用 RequirementCreate；PATCH 是至少一个字段的部分更新。Idempotency-Key 按租户、项目、主体和路由作用域；有效期过后同一键视为新意图，未过期重放返回原操作快照并重新执行授权检查。"
+    "description": "R04-M07-001 实际实现的项目级需求创建、查询、编辑和不可变修订历史契约。创建使用 RequirementCreate；PATCH 是至少一个字段的部分更新。Idempotency-Key 按租户、项目、主体和路由作用域；有效期过后同一键视为新意图，未过期的当前格式记录重放原操作快照并重新执行授权检查。V7/V8 旧哈希没有可证明的当前编码兼容性，升级后以 409 IDEMPOTENCY_LEGACY_UNSUPPORTED 安全拒绝，不承诺旧响应无损重放。"
   },
   "security": [{ "SessionCookie": [] }],
   "paths": {
@@ -59,7 +59,7 @@
       "ProjectId": { "name": "projectId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
       "RequirementId": { "name": "requirementId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
       "RevisionId": { "name": "revisionId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
-      "IdempotencyKey": { "name": "Idempotency-Key", "in": "header", "required": true, "schema": { "type": "string", "minLength": 8, "maxLength": 128 }, "description": "同一业务意图在响应丢失或重试时复用；内容或 If-Match 改变必须生成新键。有效期外不会重放旧结果。" },
+      "IdempotencyKey": { "name": "Idempotency-Key", "in": "header", "required": true, "schema": { "type": "string", "minLength": 8, "maxLength": 128 }, "description": "同一业务意图在响应丢失或重试时复用；内容或 If-Match 改变必须生成新键。有效期外不会重放旧结果。由 V7/V8 迁移而来的旧哈希记录不返回历史响应，而以 409 IDEMPOTENCY_LEGACY_UNSUPPORTED 拒绝。" },
       "IfMatch": { "name": "If-Match", "in": "header", "required": true, "schema": { "type": "string", "pattern": "^\\\"[1-9][0-9]*\\\"$" }, "description": "必须是具体的当前 ETag；缺失或通配符返回 428，过期返回 412。" }
     },
     "headers": { "ETag": { "description": "带引号的 row_version", "schema": { "type": "string" } } },

@@ -288,13 +288,14 @@ public class RequirementService {
                 """, tenantId, projectId, principalId, route, key);
         int inserted = jdbc.update("""
                 INSERT INTO requirement_idempotency
-                    (tenant_id, project_id, principal_id, route, idempotency_key, request_hash)
-                VALUES (?, ?, ?, ?, ?, ?)
+                    (tenant_id, project_id, principal_id, route, idempotency_key, request_hash, replay_compatible)
+                VALUES (?, ?, ?, ?, ?, ?, TRUE)
                 ON CONFLICT (tenant_id, project_id, principal_id, route, idempotency_key) DO NOTHING
                 """, tenantId, projectId, principalId, route, key, requestHash);
         if (inserted == 1) return null;
         List<IdempotencyRecord> existing = jdbc.query("""
-                SELECT request_hash, requirement_id, revision_id, result_display_number,
+                SELECT request_hash, requirement_id, revision_id, replay_compatible,
+                       result_display_number,
                        result_row_version, result_revision_no, result_title, result_body,
                        result_priority, result_created_at, result_created_by
                 FROM requirement_idempotency
@@ -302,10 +303,15 @@ public class RequirementService {
                   AND route = ? AND idempotency_key = ? AND expires_at > CURRENT_TIMESTAMP
                 """, (rs, row) -> new IdempotencyRecord(rs.getString("request_hash"),
                         rs.getObject("requirement_id", UUID.class), rs.getObject("revision_id", UUID.class),
+                        rs.getBoolean("replay_compatible"),
                         snapshot(rs, projectId)),
                 tenantId, projectId, principalId, route, key);
         if (existing.isEmpty()) throw ProjectAccessException.conflict("IDEMPOTENCY_IN_PROGRESS", "Request is still being processed");
         IdempotencyRecord record = existing.get(0);
+        if (!record.replayCompatible()) {
+            throw ProjectAccessException.conflict("IDEMPOTENCY_LEGACY_UNSUPPORTED",
+                    "This idempotency record predates the current replay format");
+        }
         if (!record.requestHash().equals(requestHash)) {
             throw ProjectAccessException.conflict("IDEMPOTENCY_KEY_REUSED", "Idempotency-Key was used with a different request");
         }
@@ -319,6 +325,7 @@ public class RequirementService {
             RequirementView result) {
         jdbc.update("""
                 UPDATE requirement_idempotency SET requirement_id = ?, revision_id = ?,
+                    replay_compatible = TRUE,
                     result_display_number = ?, result_row_version = ?, result_revision_no = ?,
                     result_title = ?, result_body = ?, result_priority = ?,
                     result_created_at = ?, result_created_by = ?
@@ -330,10 +337,11 @@ public class RequirementService {
 
     private RequirementView replayView(UUID actor, UUID projectId, IdempotencyRecord replay) {
         if (replay.snapshot() != null) return replay.snapshot();
-        // Rows created by V7 have no frozen response columns.  They remain
-        // replayable, but are upgraded on first replay by reading the
-        // referenced requirement.  New rows always take the snapshot path.
-        return getAuthorized(actor, projectId, replay.requirementId());
+        // Current-format rows are expected to carry a frozen snapshot. Never
+        // synthesize a response from the mutable current requirement row: that
+        // could pair a historical idempotency result with a newer ETag/body.
+        throw ProjectAccessException.conflict("IDEMPOTENCY_RESPONSE_UNAVAILABLE",
+                "The idempotency response is not available for replay");
     }
 
     private static RequirementView snapshot(ResultSet rs, UUID projectId) throws SQLException {
@@ -486,5 +494,5 @@ public class RequirementService {
     private record RequirementRow(UUID id, long rowVersion, UUID revisionId, long revisionNo,
             String title, String body, String priority) { }
     private record IdempotencyRecord(String requestHash, UUID requirementId, UUID revisionId,
-            RequirementView snapshot) { }
+            boolean replayCompatible, RequirementView snapshot) { }
 }

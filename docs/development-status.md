@@ -226,6 +226,23 @@
 完成本轮工程底座实现和测试；下一批再进入身份与项目权限最小切片，以及登录后创建需求的真实业务流程。M02 不因脚手架存在而整体完成，M03 仍保持 `PLANNED`。
 
 详细命令、退出码和证据位置见 [`docs/progress/runs/R01-STATUS-001.md`](progress/runs/R01-STATUS-001.md)。
+
+# R04-M07-001-FIX03 当前状态
+
+本轮继续 `feat/r04-m07-001` / PR #4（base `feat/r03-m03-002`），起始本地提交为 `a143fc8`。本轮代码验证提交为 `fdc4689f94aa9f05e70c40013ea8457d87201ffd`；前端回归提交为 `77320823ff2990d99be9a644571584f75f8c0996`。最终交付 SHA 待文档提交并通过 GitHub Data API 推送后记录，不能把本地 SHA 写成远端已验证 SHA。
+
+本轮已实现：
+
+- V9 增加 `replay_compatible`，V7/V8 旧哈希记录在升级后由实际 `RequirementService` / 受限 runtime 路径安全拒绝为 `409 IDEMPOTENCY_LEGACY_UNSUPPORTED`，不从当前需求行拼装旧响应；当前格式新幂等请求保留冻结快照重放，并补齐 runtime 列级更新权限。
+- `RequirementMigrationUpgradeIT` 使用真实旧 NUL 分隔 SHA-256、两版需求和未过期幂等记录，手工 V7→V9 后调用 runtime service；`RequirementDatabaseIT` 保留撤权与无副作用保护，并将省略字段/`"<null>"` 哈希回归固定在同一 ETag/key 上。
+- `RequirementsPanel` 在创建中锁定草稿字段，写操作使被替代读轮次失效，成功/失败/AbortError 结束后恢复可重试状态；新增 `userEvent` 真实输入、迟到详情失败和同键重试测试。前端全套 83 tests 通过。
+- 迁移失败探针和 CI 夹具从“正式 V8/故意 V9”改为“正式 V9/故意 V10”，报告门禁使用新的升级测试名；ADR-016 明确旧响应不作无损兼容承诺。
+
+本机已实际验证：系统 Maven `mvn -B -ntp test` 21 tests 通过；前端 `npm ci`（126 packages）、Vitest 6 files/83 tests、lint（0 errors，3 个既有 warning）、Vite build 通过；Python 工具 52 tests 通过；规划校验退出码 0 但仍只代表规划资产健康。Testcontainers 升级测试在 Windows 因 JNA `jnidispatch.dll` 临时文件权限失败，真实 PostgreSQL、Failsafe、HTTP/浏览器本轮待隔离 Ubuntu CI；Wrapper 与系统 Maven 结果继续分开记录。
+
+本轮五项重点结果：创建草稿不丢失与读写交接为 PASS（前端组件证据）；哈希和真实 V7→V9 runtime 处理的本机集成证据为 NOT_RUN/环境阻塞，等待本轮 Push/PR CI；FIX02 的 I01—I10 历史证据保留，I01/I08 受本轮修改的部分必须以新 CI 测试名和实际 checkout SHA 重新核对。不能将历史 CI 运行当作本轮通过，也不将 M07 或完整 R04 标为完成。
+
+详细命令、退出码、五项结果和 I01—I10 映射见 [`docs/progress/runs/R04-M07-001-FIX03.md`](progress/runs/R04-M07-001-FIX03.md)。
 # R04-M07-001-FIX02 当前状态
 
 本轮继续 `feat/r04-m07-001` / PR #4（base `feat/r03-m03-002`），起始本地提交为 `da5d473aba2daa791184b39e5ed22eb0c82432e6`，审核远端 head 为 `4ed4d3f4eab15392bebf702496d381687e44b76b`；Windows `git fetch origin --prune` 仍受 Schannel `SEC_E_NO_CREDENTIALS (0x8009030E)` 阻塞，未 reset、回退或强推。工作区实现提交为 `3336537ee7e146b381cd4790b6a13b7b7dc2e80d`，GitHub Data API 对应代码提交为 `3e6055a9c1f33dbca34e84c977fb0ad1a19a9df2`，进度文档提交另行记录。

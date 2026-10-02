@@ -144,17 +144,21 @@ export default function RequirementsPanel({ projectId, access, resetSignal = 0 }
     event.preventDefault()
     if (!projectId || !can(access, 'requirement:create') || !createTitle.trim() || saving) return
     const context = contextRef.current; const operation = ++writeRoundRef.current
+    // A write supersedes any in-flight read for the same scope.  Invalidate
+    // the read round before aborting so a transport that resolves after the
+    // abort cannot restore stale list state or replace the write notice.
+    readRoundRef.current += 1
     cancelRead(); cancelWrite()
     const input = { title: createTitle.trim(), body: createBody }; const key = createIntentRef.current ?? (createIntentRef.current = newIdempotencyKey()); const controller = new AbortController()
     writeControllerRef.current = controller; writeTimeoutRef.current = window.setTimeout(() => controller.abort(), 5000); setSaving(true); setNotice('')
     try {
       const created = await requirementsApi.create(context.projectId, input, { signal: controller.signal, idempotencyKey: key })
       if (writeRoundRef.current !== operation || !isCurrentContext(context)) return
-      createIntentRef.current = null; setCreateTitle(''); setCreateBody(''); setItems((current) => current.some((item) => item.id === created.id) ? current.map((item) => item.id === created.id ? created : item) : [...current, created]); setSelected(created); setDraft(null); setTitle(created.title); setBody(created.body); const detailLoaded = await selectRequirement(created, { keepWrite: true }); if (detailLoaded && writeRoundRef.current === operation && isCurrentContext(context)) setNotice('需求已创建')
+      setState('ready'); createIntentRef.current = null; setCreateTitle(''); setCreateBody(''); setItems((current) => current.some((item) => item.id === created.id) ? current.map((item) => item.id === created.id ? created : item) : [...current, created]); setSelected(created); setDraft(null); setTitle(created.title); setBody(created.body); const detailLoaded = await selectRequirement(created, { keepWrite: true }); if (detailLoaded && writeRoundRef.current === operation && isCurrentContext(context)) setNotice('需求已创建')
     } catch (error) {
       if (writeRoundRef.current !== operation || !isCurrentContext(context)) return
       if (isInvalidAccess(error, 'write')) { clearInvalidData('当前项目不可访问，请重新选择项目'); return }
-      setNotice((error as { name?: string }).name === 'AbortError' ? '需求请求超时，请稍后重试' : messageFor(error))
+      setState('ready'); setNotice((error as { name?: string }).name === 'AbortError' ? '需求请求超时，请稍后重试' : messageFor(error))
     } finally {
       if (writeRoundRef.current === operation && isCurrentContext(context)) { setSaving(false); writeControllerRef.current = null; if (writeTimeoutRef.current !== null) { window.clearTimeout(writeTimeoutRef.current); writeTimeoutRef.current = null } }
     }
@@ -167,15 +171,19 @@ export default function RequirementsPanel({ projectId, access, resetSignal = 0 }
     const prior = saveIntentRef.current
     const key = prior && prior.requirementId === requirementAtStart.id && prior.etag === (requirementAtStart.etag ?? '') && prior.input.title === input.title && prior.input.body === input.body ? prior.key : newIdempotencyKey()
     saveIntentRef.current = { key, requirementId: requirementAtStart.id, etag: requirementAtStart.etag ?? '', input }
+    // Saving replaces any pending read (for example, a refresh started while
+    // the detail view was open).  Invalidate its round before cancellation so
+    // late success, failure, AbortError, and finally handlers are inert.
+    readRoundRef.current += 1
     cancelRead(); cancelWrite(); const controller = new AbortController(); writeControllerRef.current = controller; writeTimeoutRef.current = window.setTimeout(() => controller.abort(), 5000); setSaving(true); setNotice('')
     try {
       const updated = await requirementsApi.update(context.projectId, requirementAtStart, input, { signal: controller.signal, idempotencyKey: key })
       if (writeRoundRef.current !== operation || !isCurrentContext(context)) return
-      saveIntentRef.current = null; setItems((current) => current.map((item) => item.id === updated.id ? updated : item)); setSelected(updated); setDraft(null); setConflict(false); const detailLoaded = await selectRequirement(updated, { keepWrite: true }); if (detailLoaded && writeRoundRef.current === operation && isCurrentContext(context)) setNotice('需求已保存')
+      setState('ready'); saveIntentRef.current = null; setItems((current) => current.map((item) => item.id === updated.id ? updated : item)); setSelected(updated); setDraft(null); setConflict(false); const detailLoaded = await selectRequirement(updated, { keepWrite: true }); if (detailLoaded && writeRoundRef.current === operation && isCurrentContext(context)) setNotice('需求已保存')
     } catch (error) {
       if (writeRoundRef.current !== operation || !isCurrentContext(context)) return
       if (isInvalidAccess(error, 'write')) { clearInvalidData('当前需求不可访问，请重新选择项目'); return }
-      if (codeFor(error) === 'HTTP_412' || codeFor(error) === 'STALE_VERSION' || codeFor(error) === 'PRECONDITION_FAILED') { setDraft(input); setConflict(true); setNotice('需求已被其他人更新。草稿已保留，请查看最新版本后再决定如何修改。') } else setNotice((error as { name?: string }).name === 'AbortError' ? '保存请求超时，请稍后重试' : messageFor(error))
+      setState('ready'); if (codeFor(error) === 'HTTP_412' || codeFor(error) === 'STALE_VERSION' || codeFor(error) === 'PRECONDITION_FAILED') { setDraft(input); setConflict(true); setNotice('需求已被其他人更新。草稿已保留，请查看最新版本后再决定如何修改。') } else setNotice((error as { name?: string }).name === 'AbortError' ? '保存请求超时，请稍后重试' : messageFor(error))
     } finally {
       if (writeRoundRef.current === operation && isCurrentContext(context)) { setSaving(false); writeControllerRef.current = null; if (writeTimeoutRef.current !== null) { window.clearTimeout(writeTimeoutRef.current); writeTimeoutRef.current = null } }
     }
@@ -188,7 +196,7 @@ export default function RequirementsPanel({ projectId, access, resetSignal = 0 }
     <div className="access-panel-header"><div><span className="panel-label">M07 · 需求第一条闭环</span><h2 id="requirements-heading">需求</h2><p>当前项目的需求、修订和历史正文。</p></div><button type="button" className="secondary-button" onClick={() => void load()} disabled={state === 'loading' || saving}>{state === 'loading' ? '加载中…' : '刷新需求'}</button></div>
     {state === 'error' && <p className="access-error" role="alert">{notice}</p>}
     {notice && state !== 'error' && <p className={conflict ? 'requirements-conflict' : 'access-notice'} role={conflict ? 'alert' : 'status'}>{notice}{conflict && selected && <button type="button" className="secondary-button" onClick={() => void selectRequirement(selected, { preserveDraft: true })}>查看最新版本</button>}</p>}
-    {creator && !scopeInvalid && <form className="requirement-create-form" onSubmit={(event) => void create(event)}><strong>新建需求</strong><label>标题<input aria-label="需求标题" value={createTitle} onChange={(event) => { createIntentRef.current = null; setCreateTitle(event.target.value) }} maxLength={500} required /></label><label>正文<textarea aria-label="需求正文" value={createBody} onChange={(event) => { createIntentRef.current = null; setCreateBody(event.target.value) }} rows={3} /></label><button type="submit" className="primary-button" disabled={saving}>{saving ? '保存中…' : '创建需求'}</button></form>}
+    {creator && !scopeInvalid && <form className="requirement-create-form" onSubmit={(event) => void create(event)}><strong>新建需求</strong><label>标题<input aria-label="需求标题" value={createTitle} onChange={(event) => { createIntentRef.current = null; setCreateTitle(event.target.value) }} maxLength={500} required disabled={saving} /></label><label>正文<textarea aria-label="需求正文" value={createBody} onChange={(event) => { createIntentRef.current = null; setCreateBody(event.target.value) }} rows={3} disabled={saving} /></label><button type="submit" className="primary-button" disabled={saving}>{saving ? '保存中…' : '创建需求'}</button></form>}
     {state !== 'loading' && state !== 'error' && items.length === 0 && <p className="access-empty" role="status">当前项目还没有需求。</p>}
     {items.length > 0 && <div className="requirements-layout">
       <div className="requirement-list" aria-label="需求列表">

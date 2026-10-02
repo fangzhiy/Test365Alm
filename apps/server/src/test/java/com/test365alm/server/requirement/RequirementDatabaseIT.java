@@ -8,10 +8,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.HexFormat;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
@@ -244,6 +248,48 @@ class RequirementDatabaseIT {
     }
 
     @Test
+    void migratedV7ReplayIsRejectedWithoutLeakingHistoryAndRejectionSurvivesRevocation() throws Exception {
+        Fixture fixture = fixture();
+        projects.putMember(fixture.admin(), fixture.project(), fixture.member(), List.of("PROJECT_MEMBER"), 0L, false);
+        RequirementService.CreateCommand original = new RequirementService.CreateCommand(
+                "Legacy title", "Legacy body", "HIGH");
+        RequirementService.RequirementView created = requirements.create(fixture.member(), fixture.project(), original,
+                "legacy-create-" + UUID.randomUUID());
+        requirements.update(fixture.member(), fixture.project(), created.id(),
+                new RequirementService.UpdateCommand("Current title", "Current body", "CRITICAL"),
+                etag(created), "legacy-update-" + UUID.randomUUID());
+        String key = "legacy-replay-" + UUID.randomUUID();
+        ownerUpdate("INSERT INTO requirement_idempotency"
+                + " (tenant_id, project_id, principal_id, route, idempotency_key, request_hash, requirement_id, revision_id)"
+                + " VALUES (?, ?, ?, 'requirements:create', ?, ?, ?, ?)", fixture.tenant(), fixture.project(), fixture.member(),
+                key, legacyCreateHash(original.title(), original.body(), original.priority()), created.id(),
+                created.currentRevisionId());
+        int requirementsBefore = ownerCount("SELECT COUNT(*) FROM requirement WHERE project_id = ?", fixture.project());
+        int revisionsBefore = ownerCount("SELECT COUNT(*) FROM requirement_revision WHERE project_id = ?", fixture.project());
+        int auditBefore = ownerCount("SELECT COUNT(*) FROM audit_event WHERE project_id = ?", fixture.project());
+        int outboxBefore = ownerCount("SELECT COUNT(*) FROM outbox_event WHERE project_id = ?", fixture.project());
+        int idempotencyBefore = ownerCount("SELECT COUNT(*) FROM requirement_idempotency WHERE project_id = ?", fixture.project());
+
+        ProjectAccessException legacy = assertThrows(ProjectAccessException.class,
+                () -> requirements.create(fixture.member(), fixture.project(), original, key));
+        assertEquals("IDEMPOTENCY_LEGACY_UNSUPPORTED", legacy.code());
+        assertEquals(HttpStatus.CONFLICT, legacy.status());
+        assertEquals(requirementsBefore, ownerCount("SELECT COUNT(*) FROM requirement WHERE project_id = ?", fixture.project()));
+        assertEquals(revisionsBefore, ownerCount("SELECT COUNT(*) FROM requirement_revision WHERE project_id = ?", fixture.project()));
+        assertEquals(auditBefore, ownerCount("SELECT COUNT(*) FROM audit_event WHERE project_id = ?", fixture.project()));
+        assertEquals(outboxBefore, ownerCount("SELECT COUNT(*) FROM outbox_event WHERE project_id = ?", fixture.project()));
+        assertEquals(idempotencyBefore, ownerCount("SELECT COUNT(*) FROM requirement_idempotency WHERE project_id = ?", fixture.project()));
+
+        projects.revokeMember(fixture.admin(), fixture.project(), fixture.member());
+        ProjectAccessException revoked = assertThrows(ProjectAccessException.class,
+                () -> requirements.create(fixture.member(), fixture.project(), original, key));
+        assertEquals(HttpStatus.FORBIDDEN, revoked.status());
+        assertEquals(requirementsBefore, ownerCount("SELECT COUNT(*) FROM requirement WHERE project_id = ?", fixture.project()));
+        assertEquals(revisionsBefore, ownerCount("SELECT COUNT(*) FROM requirement_revision WHERE project_id = ?", fixture.project()));
+        assertEquals(idempotencyBefore, ownerCount("SELECT COUNT(*) FROM requirement_idempotency WHERE project_id = ?", fixture.project()));
+    }
+
+    @Test
     void runtimeViewerCannotWriteRequirementSliceAndRevisionIsImmutable() throws Exception {
         Fixture fixture = fixture();
         projects.putMember(fixture.admin(), fixture.project(), fixture.member(), List.of("PROJECT_MEMBER"), 0L, false);
@@ -305,13 +351,18 @@ class RequirementDatabaseIT {
                 new RequirementService.CreateCommand("Hash", "old", "MEDIUM"), "create-key-" + UUID.randomUUID());
         String key = "patch-hash-" + UUID.randomUUID();
         RequirementService.UpdateCommand omitted = new RequirementService.UpdateCommand(null, "new body", null);
+        String originalEtag = etag(created);
         RequirementService.RequirementView first = requirements.update(fixture.member(), fixture.project(), created.id(), omitted,
-                etag(created), key);
-        RequirementService.RequirementView current = requirements.getAuthorized(fixture.member(), fixture.project(), created.id());
+                originalEtag, key);
+        RequirementService.RequirementView replay = requirements.update(fixture.member(), fixture.project(), created.id(), omitted,
+                originalEtag, key);
+        assertEquals(first.id(), replay.id());
+        assertEquals(first.rowVersion(), replay.rowVersion());
         ProjectAccessException failure = assertThrows(ProjectAccessException.class, () -> requirements.update(fixture.member(), fixture.project(),
-                created.id(), new RequirementService.UpdateCommand("<null>", "new body", null), etag(current), key));
+                created.id(), new RequirementService.UpdateCommand("<null>", "new body", null), originalEtag, key));
         assertEquals("IDEMPOTENCY_KEY_REUSED", failure.code());
         assertEquals(HttpStatus.CONFLICT, failure.status());
+        RequirementService.RequirementView current = requirements.getAuthorized(fixture.member(), fixture.project(), created.id());
         assertEquals(first.id(), current.id());
         assertEquals(first.rowVersion(), current.rowVersion());
         assertEquals(first.currentRevisionId(), current.currentRevisionId());
@@ -613,6 +664,16 @@ class RequirementDatabaseIT {
 
     private static String etag(RequirementService.RequirementView view) {
         return "\"" + view.rowVersion() + "\"";
+    }
+
+    private static String legacyCreateHash(String title, String body, String priority) {
+        String canonical = String.join("\u0000", title, body, priority) + "\u0000";
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(canonical.getBytes(StandardCharsets.UTF_8)));
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException(ex);
+        }
     }
 
     private record Fixture(UUID admin, UUID member, UUID viewer, UUID tenant, UUID domain, UUID project) { }

@@ -1,5 +1,6 @@
 import '@testing-library/jest-dom/vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import RequirementsPanel from './RequirementsPanel'
 import { requirementsApi } from './requirements'
@@ -48,6 +49,142 @@ describe('RequirementsPanel', () => {
     fireEvent.click(screen.getByRole('button', { name: '创建需求' }))
     await waitFor(() => expect(requirementsApi.create).toHaveBeenCalledWith('project-1', { title: 'Login flow', body: 'The user can sign in.' }, expect.objectContaining({ idempotencyKey: expect.any(String), signal: expect.any(AbortSignal) })))
     expect(await screen.findByText('需求已创建')).toBeVisible()
+  })
+
+  it('locks the create draft while the request is pending and re-enables it afterwards', async () => {
+    let resolveCreate: ((value: typeof requirement) => void) | undefined
+    const user = userEvent.setup()
+    vi.mocked(requirementsApi.list).mockResolvedValue({ items: [], nextCursor: null })
+    vi.mocked(requirementsApi.create).mockImplementation(() => new Promise((resolve) => { resolveCreate = resolve }))
+    vi.mocked(requirementsApi.get).mockResolvedValue(requirement)
+    vi.mocked(requirementsApi.revisions).mockResolvedValue([revision])
+    render(<RequirementsPanel projectId="project-1" access={access} />)
+    await screen.findByText('当前项目还没有需求。')
+
+    const titleInput = screen.getByLabelText('需求标题')
+    const bodyInput = screen.getByLabelText('需求正文')
+    await user.type(titleInput, 'Submitted A')
+    await user.type(bodyInput, 'Body A')
+    await user.click(screen.getByRole('button', { name: '创建需求' }))
+
+    expect(titleInput).toBeDisabled()
+    expect(bodyInput).toBeDisabled()
+    expect(titleInput).toHaveValue('Submitted A')
+    expect(bodyInput).toHaveValue('Body A')
+    expect(requirementsApi.create).toHaveBeenCalledWith('project-1', { title: 'Submitted A', body: 'Body A' }, expect.anything())
+    await user.type(titleInput, 'Later B')
+    await user.type(bodyInput, 'Body B')
+    expect(titleInput).toHaveValue('Submitted A')
+    expect(bodyInput).toHaveValue('Body A')
+
+    resolveCreate?.(requirement)
+    expect(await screen.findByText('需求已创建')).toBeVisible()
+    expect(screen.getByLabelText('需求标题')).toBeEnabled()
+    expect(screen.getByLabelText('需求正文')).toBeEnabled()
+  })
+
+  it('does not let a stale list success replace a failed create operation', async () => {
+    let resolveList: ((value: { items: typeof requirement[]; nextCursor: null }) => void) | undefined
+    vi.mocked(requirementsApi.list).mockImplementation(() => new Promise((resolve) => { resolveList = resolve }))
+    vi.mocked(requirementsApi.create).mockRejectedValue({ code: 'NETWORK_ERROR', message: '创建失败，请重试' })
+    render(<RequirementsPanel projectId="project-1" access={access} />)
+    fireEvent.change(screen.getByLabelText('需求标题'), { target: { value: 'Create A' } })
+    fireEvent.click(screen.getByRole('button', { name: '创建需求' }))
+    expect(await screen.findByText('创建失败，请重试')).toBeVisible()
+
+    resolveList?.({ items: [requirement], nextCursor: null })
+    await act(async () => { await Promise.resolve() })
+    expect(screen.getByText('创建失败，请重试')).toBeVisible()
+    expect(screen.queryByText('REQ-1')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '刷新需求' })).toBeEnabled()
+  })
+
+  it('does not let a stale AbortError from a replaced list read overwrite a failed create', async () => {
+    let rejectList: ((reason?: unknown) => void) | undefined
+    vi.mocked(requirementsApi.list).mockImplementation(() => new Promise((_resolve, reject) => { rejectList = reject }))
+    vi.mocked(requirementsApi.create).mockRejectedValue({ code: 'NETWORK_ERROR', message: '创建失败，请重试' })
+    render(<RequirementsPanel projectId="project-1" access={access} />)
+    fireEvent.change(screen.getByLabelText('需求标题'), { target: { value: 'Create A' } })
+    fireEvent.click(screen.getByRole('button', { name: '创建需求' }))
+    expect(await screen.findByText('创建失败，请重试')).toBeVisible()
+
+    rejectList?.(new DOMException('cancelled', 'AbortError'))
+    await act(async () => { await Promise.resolve() })
+    expect(screen.getByText('创建失败，请重试')).toBeVisible()
+  })
+
+  it('restores the create form after an unknown result and retries with the same key', async () => {
+    const user = userEvent.setup()
+    vi.mocked(requirementsApi.list).mockResolvedValue({ items: [], nextCursor: null })
+    vi.mocked(requirementsApi.create).mockRejectedValueOnce(new DOMException('timed out', 'AbortError')).mockResolvedValueOnce(requirement)
+    vi.mocked(requirementsApi.get).mockResolvedValue(requirement)
+    vi.mocked(requirementsApi.revisions).mockResolvedValue([revision])
+    render(<RequirementsPanel projectId="project-1" access={access} />)
+    await screen.findByText('当前项目还没有需求。')
+    const titleInput = screen.getByLabelText('需求标题')
+    await user.type(titleInput, 'Unknown result')
+    await user.click(screen.getByRole('button', { name: '创建需求' }))
+    expect(await screen.findByText('需求请求超时，请稍后重试')).toBeVisible()
+    expect(screen.getByLabelText('需求标题')).toBeEnabled()
+    expect(screen.getByDisplayValue('Unknown result')).toBeVisible()
+    const firstKey = vi.mocked(requirementsApi.create).mock.calls[0][2]?.idempotencyKey
+
+    await user.click(screen.getByRole('button', { name: '创建需求' }))
+    await waitFor(() => expect(requirementsApi.create).toHaveBeenCalledTimes(2))
+    expect(vi.mocked(requirementsApi.create).mock.calls[1][2]?.idempotencyKey).toBe(firstKey)
+    expect(await screen.findByText('需求已创建')).toBeVisible()
+  })
+
+  it('does not let a detail read replaced by create overwrite a failed create result', async () => {
+    let rejectDetail: ((reason?: unknown) => void) | undefined
+    let detailCalls = 0
+    vi.mocked(requirementsApi.list).mockResolvedValue({ items: [requirement], nextCursor: null })
+    vi.mocked(requirementsApi.get).mockImplementation(async () => {
+      if (detailCalls++ === 0) return new Promise((_resolve, reject) => { rejectDetail = reject })
+      return requirement
+    })
+    vi.mocked(requirementsApi.revisions).mockResolvedValue([revision])
+    vi.mocked(requirementsApi.create).mockRejectedValue({ code: 'NETWORK_ERROR', message: '创建失败，请重试' })
+    render(<RequirementsPanel projectId="project-1" access={access} />)
+    fireEvent.click(await screen.findByRole('button', { name: /REQ-1/ }))
+    fireEvent.change(screen.getByLabelText('需求标题'), { target: { value: 'Create while detail loads' } })
+    fireEvent.click(screen.getByRole('button', { name: '创建需求' }))
+    expect(await screen.findByText('创建失败，请重试')).toBeVisible()
+
+    rejectDetail?.(new Error('旧详情失败'))
+    await act(async () => { await Promise.resolve() })
+    expect(screen.getByText('创建失败，请重试')).toBeVisible()
+  })
+
+  it('invalidates a refresh read before saving so its late failure cannot replace the save result', async () => {
+    let rejectRefresh: ((reason?: unknown) => void) | undefined
+    let listCalls = 0
+    vi.mocked(requirementsApi.list).mockImplementation(async () => {
+      if (listCalls++ === 0) return { items: [requirement], nextCursor: null }
+      return new Promise((_resolve, reject) => { rejectRefresh = reject })
+    })
+    vi.mocked(requirementsApi.get).mockResolvedValue(requirement)
+    vi.mocked(requirementsApi.revisions).mockResolvedValue([revision])
+    vi.mocked(requirementsApi.update).mockRejectedValue({ code: 'NETWORK_ERROR', message: '保存失败，请重试' })
+    render(<RequirementsPanel projectId="project-1" access={access} />)
+    fireEvent.click(await screen.findByRole('button', { name: /REQ-1/ }))
+    await screen.findByDisplayValue('Login flow')
+    fireEvent.change(screen.getByLabelText('编辑需求标题'), { target: { value: 'Save A' } })
+
+    const form = screen.getByRole('button', { name: '保存需求' }).closest('form')
+    expect(form).not.toBeNull()
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: '刷新需求' }))
+      fireEvent.submit(form as HTMLFormElement)
+      await Promise.resolve()
+    })
+    await waitFor(() => expect(requirementsApi.update).toHaveBeenCalled())
+    expect(await screen.findByText('保存失败，请重试')).toBeVisible()
+
+    rejectRefresh?.(new Error('旧刷新失败'))
+    await act(async () => { await Promise.resolve() })
+    expect(screen.getByText('保存失败，请重试')).toBeVisible()
+    expect(screen.getByRole('button', { name: '刷新需求' })).toBeEnabled()
   })
 
   it('preserves the unsaved draft on 412 and does not overwrite it', async () => {
