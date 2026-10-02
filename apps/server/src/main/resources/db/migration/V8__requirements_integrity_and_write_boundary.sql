@@ -138,13 +138,12 @@ SET result_display_number = r.display_number,
     result_priority = rr.priority,
     result_created_at = r.created_at,
     result_created_by = r.created_by
-FROM requirement r
-JOIN requirement_revision rr
-  ON rr.tenant_id = i.tenant_id
- AND rr.project_id = i.project_id
- AND rr.requirement_id = i.requirement_id
- AND rr.id = i.revision_id
+FROM requirement r, requirement_revision rr
 WHERE i.requirement_id IS NOT NULL AND i.revision_id IS NOT NULL
+  AND rr.tenant_id = i.tenant_id
+  AND rr.project_id = i.project_id
+  AND rr.requirement_id = i.requirement_id
+  AND rr.id = i.revision_id
   AND r.tenant_id = i.tenant_id AND r.project_id = i.project_id AND r.id = i.requirement_id;
 
 DO $$
