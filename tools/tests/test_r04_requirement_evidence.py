@@ -2,7 +2,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tools.verify_r04_requirement_report import REQUIRED_REQUIREMENT_TESTS, verify_requirement_report
+from tools.verify_r04_requirement_report import (
+    REQUIRED_REQUIREMENT_TESTS,
+    REQUIRED_UPGRADE_TESTS,
+    verify_requirement_report,
+)
 
 
 class R04RequirementEvidenceTests(unittest.TestCase):
@@ -13,6 +17,13 @@ class R04RequirementEvidenceTests(unittest.TestCase):
             report.write_text(
                 '<testsuite name="com.test365alm.server.requirement.RequirementDatabaseIT" '
                 f'tests="{len(REQUIRED_REQUIREMENT_TESTS)}" failures="0" errors="0" skipped="0">{cases}</testsuite>',
+                encoding="utf-8",
+            )
+            upgrade_report = Path(directory) / "TEST-com.test365alm.server.requirement.RequirementMigrationUpgradeIT.xml"
+            upgrade_cases = "".join(f'<testcase name="{name}" />' for name in sorted(REQUIRED_UPGRADE_TESTS))
+            upgrade_report.write_text(
+                '<testsuite name="com.test365alm.server.requirement.RequirementMigrationUpgradeIT" '
+                f'tests="{len(REQUIRED_UPGRADE_TESTS)}" failures="0" errors="0" skipped="0">{upgrade_cases}</testsuite>',
                 encoding="utf-8",
             )
             valid, summary = verify_requirement_report(Path(directory))

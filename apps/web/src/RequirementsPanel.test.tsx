@@ -13,6 +13,12 @@ const access = { tenantId: 'tenant-1', projectId: 'project-1', principalId: 'pri
 const viewer = { ...access, roles: ['PROJECT_VIEWER'] as const, permissions: ['requirement:read', 'requirement:history:read'] }
 const requirement = { id: 'req-1', projectId: 'project-1', displayNumber: 'REQ-1', title: 'Login flow', body: 'The user can sign in.', priority: 'MEDIUM' as const, revisionNumber: 1, rowVersion: 1, createdAt: '2026-10-01T00:00:00Z', createdBy: 'principal-1', currentRevisionId: 'rev-1' }
 const revision = { id: 'rev-1', revisionNumber: 1, title: requirement.title, body: requirement.body, priority: requirement.priority, createdAt: requirement.createdAt, createdBy: 'principal-1' }
+const invalidAccessErrors = [
+  ['FORBIDDEN', '主体无权访问'],
+  ['NOT_FOUND', '项目不存在'],
+  ['UNAUTHENTICATED', '会话已失效'],
+  ['IDENTITY_DISABLED', '本地身份已停用'],
+] as const
 
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.useRealTimers() })
 
@@ -153,6 +159,128 @@ describe('RequirementsPanel', () => {
     fireEvent.click(await screen.findByRole('button', { name: /REQ-1/ }))
     expect(await screen.findByRole('alert')).toHaveTextContent('不可访问')
     expect(screen.queryByText('Login flow')).not.toBeInTheDocument()
+  })
+
+  it.each(invalidAccessErrors)('clears old list data for %s returned by the API', async (code, message) => {
+    let calls = 0
+    vi.mocked(requirementsApi.list).mockImplementation(async () => {
+      if (calls++ === 0) return { items: [requirement], nextCursor: null }
+      throw { code, message }
+    })
+    render(<RequirementsPanel projectId="project-1" access={access} />)
+    expect(await screen.findByText('REQ-1')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: '刷新需求' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('当前项目不可访问')
+    expect(screen.queryByText('REQ-1')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('需求标题')).not.toBeInTheDocument()
+  })
+
+  it.each(invalidAccessErrors)('clears selected detail and history for %s', async (code, message) => {
+    vi.mocked(requirementsApi.list).mockResolvedValue({ items: [requirement], nextCursor: null })
+    vi.mocked(requirementsApi.get).mockRejectedValue({ code, message })
+    vi.mocked(requirementsApi.revisions).mockResolvedValue([revision])
+    render(<RequirementsPanel projectId="project-1" access={access} />)
+    fireEvent.click(await screen.findByRole('button', { name: /REQ-1/ }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('当前需求不可访问')
+    expect(screen.queryByLabelText('需求详情')).not.toBeInTheDocument()
+    expect(screen.queryByText('REQ-1')).not.toBeInTheDocument()
+  })
+
+  it.each(invalidAccessErrors)('clears selected detail when history returns %s', async (code, message) => {
+    vi.mocked(requirementsApi.list).mockResolvedValue({ items: [requirement], nextCursor: null })
+    vi.mocked(requirementsApi.get).mockResolvedValue(requirement)
+    vi.mocked(requirementsApi.revisions).mockRejectedValue({ code, message })
+    render(<RequirementsPanel projectId="project-1" access={access} />)
+    fireEvent.click(await screen.findByRole('button', { name: /REQ-1/ }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('当前需求不可访问')
+    expect(screen.queryByLabelText('需求详情')).not.toBeInTheDocument()
+  })
+
+  it.each(invalidAccessErrors)('clears create draft and write controls for %s', async (code, message) => {
+    vi.mocked(requirementsApi.list).mockResolvedValue({ items: [], nextCursor: null })
+    vi.mocked(requirementsApi.create).mockRejectedValue({ code, message })
+    render(<RequirementsPanel projectId="project-1" access={access} />)
+    await screen.findByText('当前项目还没有需求。')
+    fireEvent.change(screen.getByLabelText('需求标题'), { target: { value: 'Sensitive draft' } })
+    fireEvent.click(screen.getByRole('button', { name: '创建需求' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('当前项目不可访问')
+    expect(screen.queryByDisplayValue('Sensitive draft')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '创建需求' })).not.toBeInTheDocument()
+  })
+
+  it.each(invalidAccessErrors)('clears saved detail and write controls for %s', async (code, message) => {
+    vi.mocked(requirementsApi.list).mockResolvedValue({ items: [requirement], nextCursor: null })
+    vi.mocked(requirementsApi.get).mockResolvedValue(requirement)
+    vi.mocked(requirementsApi.revisions).mockResolvedValue([revision])
+    vi.mocked(requirementsApi.update).mockRejectedValue({ code, message })
+    render(<RequirementsPanel projectId="project-1" access={access} />)
+    fireEvent.click(await screen.findByRole('button', { name: /REQ-1/ }))
+    await screen.findByDisplayValue('Login flow')
+    fireEvent.change(screen.getByLabelText('编辑需求标题'), { target: { value: 'Should clear' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存需求' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('当前需求不可访问')
+    expect(screen.queryByLabelText('需求详情')).not.toBeInTheDocument()
+    expect(screen.queryByDisplayValue('Should clear')).not.toBeInTheDocument()
+  })
+
+  it('clears scope for an explicit FORBIDDEN domain error carried by HTTP 403', async () => {
+    vi.mocked(requirementsApi.list).mockResolvedValue({ items: [], nextCursor: null })
+    vi.mocked(requirementsApi.create).mockRejectedValue({ code: 'FORBIDDEN', status: 403, message: '项目访问被拒绝' })
+    render(<RequirementsPanel projectId="project-1" access={access} />)
+    await screen.findByText('当前项目还没有需求。')
+    fireEvent.change(screen.getByLabelText('需求标题'), { target: { value: 'Sensitive draft' } })
+    fireEvent.click(screen.getByRole('button', { name: '创建需求' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('当前项目不可访问')
+    expect(screen.queryByLabelText('需求标题')).not.toBeInTheDocument()
+  })
+
+  it('keeps the current scope when a write is rejected by CSRF HTTP 403', async () => {
+    vi.mocked(requirementsApi.list).mockResolvedValue({ items: [], nextCursor: null })
+    vi.mocked(requirementsApi.create).mockRejectedValue({ code: 'CSRF_REJECTED', status: 403, message: '安全令牌无效' })
+    render(<RequirementsPanel projectId="project-1" access={access} />)
+    await screen.findByText('当前项目还没有需求。')
+    fireEvent.change(screen.getByLabelText('需求标题'), { target: { value: 'Keep draft' } })
+    fireEvent.click(screen.getByRole('button', { name: '创建需求' }))
+    expect(await screen.findByText('安全令牌无效')).toBeVisible()
+    expect(screen.getByDisplayValue('Keep draft')).toBeVisible()
+    expect(screen.getByRole('button', { name: '创建需求' })).toBeVisible()
+  })
+
+  it('keeps a network create draft and reuses its idempotency key after refresh', async () => {
+    let listCalls = 0
+    vi.mocked(requirementsApi.list).mockImplementation(async () => listCalls++ === 0 ? { items: [], nextCursor: null } : { items: [requirement], nextCursor: null })
+    vi.mocked(requirementsApi.create).mockRejectedValueOnce({ code: 'NETWORK_ERROR', message: '网络连接断开' }).mockResolvedValueOnce(requirement)
+    vi.mocked(requirementsApi.get).mockResolvedValue(requirement)
+    vi.mocked(requirementsApi.revisions).mockResolvedValue([revision])
+    render(<RequirementsPanel projectId="project-1" access={access} />)
+    await screen.findByText('当前项目还没有需求。')
+    fireEvent.change(screen.getByLabelText('需求标题'), { target: { value: 'Retry me' } })
+    fireEvent.change(screen.getByLabelText('需求正文'), { target: { value: 'Keep this draft' } })
+    fireEvent.click(screen.getByRole('button', { name: '创建需求' }))
+    await waitFor(() => expect(requirementsApi.create).toHaveBeenCalledTimes(1))
+    const firstKey = vi.mocked(requirementsApi.create).mock.calls[0][2]?.idempotencyKey
+    expect(screen.getByDisplayValue('Retry me')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: '刷新需求' }))
+    expect(await screen.findByText('REQ-1')).toBeVisible()
+    expect(screen.getByDisplayValue('Retry me')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: '创建需求' }))
+    await waitFor(() => expect(requirementsApi.create).toHaveBeenCalledTimes(2))
+    expect(vi.mocked(requirementsApi.create).mock.calls[1][2]?.idempotencyKey).toBe(firstKey)
+  })
+
+  it('clears and reloads deterministically across project A, empty, then B', async () => {
+    vi.mocked(requirementsApi.list).mockImplementation(async (projectId) => {
+      if (projectId === 'project-1') return { items: [requirement], nextCursor: null }
+      if (projectId === 'project-2') return { items: [{ ...requirement, id: 'req-2', projectId: 'project-2', displayNumber: 'REQ-2', title: 'Project B' }], nextCursor: null }
+      return { items: [], nextCursor: null }
+    })
+    const { rerender } = render(<RequirementsPanel projectId="project-1" access={access} />)
+    expect(await screen.findByText('REQ-1')).toBeVisible()
+    rerender(<RequirementsPanel projectId="" access={null} />)
+    expect(screen.getByText('请选择一个项目以查看需求。')).toBeVisible()
+    rerender(<RequirementsPanel projectId="project-2" access={{ ...access, projectId: 'project-2' }} />)
+    expect(await screen.findByText('REQ-2')).toBeVisible()
+    expect(screen.queryByText('REQ-1')).not.toBeInTheDocument()
   })
 
 })

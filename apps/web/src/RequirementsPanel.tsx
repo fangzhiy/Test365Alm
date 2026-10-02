@@ -8,11 +8,24 @@ type PanelState = 'idle' | 'loading' | 'ready' | 'error'
 type RequirementsPanelProps = { projectId: string; access: ProjectAccess | null; resetSignal?: number }
 type Context = { projectId: string; resetSignal: number }
 type SelectOptions = { preserveDraft?: boolean; keepWrite?: boolean }
+type LoadOptions = { preserveCreate?: boolean }
 
 const messageFor = (error: unknown) => typeof error === 'object' && error !== null && 'message' in error && typeof error.message === 'string' ? error.message : '需求请求失败，请稍后重试'
 const codeFor = (error: unknown) => typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string' ? error.code : ''
+const statusFor = (error: unknown) => typeof error === 'object' && error !== null && 'status' in error && typeof error.status === 'number' ? error.status : undefined
 const can = (access: ProjectAccess | null, permission: string) => access?.permissions.includes(permission) === true
-const isInvalidAccess = (error: unknown) => /^(HTTP_401|HTTP_403|HTTP_404)$/.test(codeFor(error)) || ['UNAUTHENTICATED', 'PROJECT_NOT_FOUND', 'PROJECT_ACCESS_DENIED', 'REQUIREMENT_NOT_FOUND'].includes(codeFor(error))
+type RequestKind = 'read' | 'write'
+const isInvalidAccess = (error: unknown, kind: RequestKind = 'read') => {
+  const code = codeFor(error)
+  if (code === 'UNAUTHENTICATED' || code === 'IDENTITY_DISABLED' || code === 'PROJECT_NOT_FOUND' || code === 'PROJECT_ACCESS_DENIED' || code === 'REQUIREMENT_NOT_FOUND' || code === 'NOT_FOUND') return true
+  if (code === 'HTTP_401' || code === 'HTTP_404') return true
+  if (kind === 'read' && (code === 'FORBIDDEN' || code === 'HTTP_403' || statusFor(error) === 403)) return true
+  // A domain-level FORBIDDEN is an explicit project-scope denial even when
+  // transported as HTTP 403. Generic HTTP_403 is intentionally kept separate
+  // because it can represent CSRF or read-only authorization on a write.
+  if (kind === 'write' && code === 'FORBIDDEN') return true
+  return false
+}
 
 export default function RequirementsPanel({ projectId, access, resetSignal = 0 }: RequirementsPanelProps) {
   const [state, setState] = useState<PanelState>('idle')
@@ -30,6 +43,7 @@ export default function RequirementsPanel({ projectId, access, resetSignal = 0 }
   const [saving, setSaving] = useState(false)
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailReady, setDetailReady] = useState(false)
+  const [scopeInvalid, setScopeInvalid] = useState(false)
   const readRoundRef = useRef(0)
   const writeRoundRef = useRef(0)
   const readControllerRef = useRef<AbortController | null>(null)
@@ -38,6 +52,7 @@ export default function RequirementsPanel({ projectId, access, resetSignal = 0 }
   const writeTimeoutRef = useRef<number | null>(null)
   const contextRef = useRef<Context>({ projectId, resetSignal })
   const lastResetRef = useRef(resetSignal)
+  const activeProjectRef = useRef(projectId)
   const createIntentRef = useRef<string | null>(null)
   const saveIntentRef = useRef<{ key: string; requirementId: string; etag: string; input: RequirementInput } | null>(null)
   contextRef.current = { projectId, resetSignal }
@@ -55,9 +70,10 @@ export default function RequirementsPanel({ projectId, access, resetSignal = 0 }
   const cancelAll = () => { cancelRead(); cancelWrite() }
   const isCurrentContext = (context: Context) => contextRef.current.projectId === context.projectId && contextRef.current.resetSignal === context.resetSignal
   const clearInvalidData = (message: string) => {
-    setItems([]); setSelected(null); setRevisions([]); setSelectedRevision(null); setTitle(''); setBody(''); setDraft(null); setConflict(false); setDetailReady(false); setState('error'); setNotice(message)
+    readRoundRef.current += 1; writeRoundRef.current += 1; cancelAll()
+    setItems([]); setSelected(null); setRevisions([]); setSelectedRevision(null); setTitle(''); setBody(''); setCreateTitle(''); setCreateBody(''); setDraft(null); setConflict(false); setSaving(false); setDetailLoading(false); setDetailReady(false); setScopeInvalid(true); createIntentRef.current = null; saveIntentRef.current = null; setState('error'); setNotice(message)
   }
-  const resetData = () => { setState('idle'); setItems([]); setSelected(null); setRevisions([]); setSelectedRevision(null); setTitle(''); setBody(''); setCreateTitle(''); setCreateBody(''); setDraft(null); setNotice(''); setConflict(false); setSaving(false); setDetailLoading(false); setDetailReady(false); createIntentRef.current = null; saveIntentRef.current = null }
+  const resetData = () => { setState('idle'); setItems([]); setSelected(null); setRevisions([]); setSelectedRevision(null); setTitle(''); setBody(''); setCreateTitle(''); setCreateBody(''); setDraft(null); setNotice(''); setConflict(false); setSaving(false); setDetailLoading(false); setDetailReady(false); setScopeInvalid(false); createIntentRef.current = null; saveIntentRef.current = null }
 
   useEffect(() => () => { readRoundRef.current += 1; writeRoundRef.current += 1; cancelAll() }, [])
   useEffect(() => {
@@ -66,30 +82,36 @@ export default function RequirementsPanel({ projectId, access, resetSignal = 0 }
     readRoundRef.current += 1; writeRoundRef.current += 1; cancelAll(); resetData()
   }, [resetSignal])
 
-  const load = async (nextProjectId = projectId) => {
+  const load = async (nextProjectId = projectId, options: LoadOptions = { preserveCreate: true }) => {
     const context = contextRef.current
     const round = ++readRoundRef.current
     writeRoundRef.current += 1
     cancelAll()
     if (!nextProjectId) { resetData(); return }
+    const preserveCreate = options.preserveCreate === true
     const controller = new AbortController()
     readControllerRef.current = controller
     readTimeoutRef.current = window.setTimeout(() => controller.abort(), 5000)
-    setState('loading'); setNotice(''); setConflict(false); setDetailLoading(false); setDetailReady(false); setItems([]); setSelected(null); setRevisions([]); setSelectedRevision(null); setTitle(''); setBody(''); setDraft(null); createIntentRef.current = null; saveIntentRef.current = null
+    setState('loading'); setScopeInvalid(false); setNotice(''); setConflict(false); setSaving(false); setDetailLoading(false); setDetailReady(false); setItems([]); setSelected(null); setRevisions([]); setSelectedRevision(null); setTitle(''); setBody(''); setDraft(null); saveIntentRef.current = null
+    if (!preserveCreate) { setCreateTitle(''); setCreateBody(''); createIntentRef.current = null }
     try {
       const page = await requirementsApi.list(nextProjectId, { signal: controller.signal })
       if (readRoundRef.current !== round || !isCurrentContext(context)) return
       setItems(page.items); setState('ready'); if (page.items.length === 0) setNotice('当前项目还没有需求')
     } catch (error) {
       if (readRoundRef.current !== round || !isCurrentContext(context)) return
-      if (isInvalidAccess(error)) { clearInvalidData('当前项目不可访问，请重新选择项目'); return }
+      if (isInvalidAccess(error, 'read')) { clearInvalidData('当前项目不可访问，请重新选择项目'); return }
       setItems([]); setState('error'); setNotice((error as { name?: string }).name === 'AbortError' ? '需求请求超时，请稍后重试' : messageFor(error))
     } finally {
       if (readRoundRef.current === round && isCurrentContext(context)) { readControllerRef.current = null; if (readTimeoutRef.current !== null) { window.clearTimeout(readTimeoutRef.current); readTimeoutRef.current = null } }
     }
   }
 
-  useEffect(() => { void load(projectId) }, [projectId])
+  useEffect(() => {
+    const changed = activeProjectRef.current !== projectId
+    activeProjectRef.current = projectId
+    void load(projectId, { preserveCreate: !changed })
+  }, [projectId])
 
   const selectRequirement = async (requirement: Requirement, options: SelectOptions = {}): Promise<boolean> => {
     const context = contextRef.current
@@ -110,7 +132,7 @@ export default function RequirementsPanel({ projectId, access, resetSignal = 0 }
       return true
     } catch (error) {
       if (readRoundRef.current !== round || !isCurrentContext(context)) return false
-      if (isInvalidAccess(error)) { clearInvalidData('当前需求不可访问，请重新选择项目'); return false }
+      if (isInvalidAccess(error, 'read')) { clearInvalidData('当前需求不可访问，请重新选择项目'); return false }
       setNotice((error as { name?: string }).name === 'AbortError' ? '需求请求超时，请稍后重试' : messageFor(error)); setState('ready'); setDetailReady(false)
       return false
     } finally {
@@ -128,10 +150,10 @@ export default function RequirementsPanel({ projectId, access, resetSignal = 0 }
     try {
       const created = await requirementsApi.create(context.projectId, input, { signal: controller.signal, idempotencyKey: key })
       if (writeRoundRef.current !== operation || !isCurrentContext(context)) return
-      createIntentRef.current = null; setCreateTitle(''); setCreateBody(''); setItems((current) => [...current, created]); setSelected(created); setDraft(null); setTitle(created.title); setBody(created.body); const detailLoaded = await selectRequirement(created, { keepWrite: true }); if (detailLoaded && writeRoundRef.current === operation && isCurrentContext(context)) setNotice('需求已创建')
+      createIntentRef.current = null; setCreateTitle(''); setCreateBody(''); setItems((current) => current.some((item) => item.id === created.id) ? current.map((item) => item.id === created.id ? created : item) : [...current, created]); setSelected(created); setDraft(null); setTitle(created.title); setBody(created.body); const detailLoaded = await selectRequirement(created, { keepWrite: true }); if (detailLoaded && writeRoundRef.current === operation && isCurrentContext(context)) setNotice('需求已创建')
     } catch (error) {
       if (writeRoundRef.current !== operation || !isCurrentContext(context)) return
-      if (isInvalidAccess(error)) { clearInvalidData('当前项目不可访问，请重新选择项目'); return }
+      if (isInvalidAccess(error, 'write')) { clearInvalidData('当前项目不可访问，请重新选择项目'); return }
       setNotice((error as { name?: string }).name === 'AbortError' ? '需求请求超时，请稍后重试' : messageFor(error))
     } finally {
       if (writeRoundRef.current === operation && isCurrentContext(context)) { setSaving(false); writeControllerRef.current = null; if (writeTimeoutRef.current !== null) { window.clearTimeout(writeTimeoutRef.current); writeTimeoutRef.current = null } }
@@ -152,7 +174,7 @@ export default function RequirementsPanel({ projectId, access, resetSignal = 0 }
       saveIntentRef.current = null; setItems((current) => current.map((item) => item.id === updated.id ? updated : item)); setSelected(updated); setDraft(null); setConflict(false); const detailLoaded = await selectRequirement(updated, { keepWrite: true }); if (detailLoaded && writeRoundRef.current === operation && isCurrentContext(context)) setNotice('需求已保存')
     } catch (error) {
       if (writeRoundRef.current !== operation || !isCurrentContext(context)) return
-      if (isInvalidAccess(error)) { clearInvalidData('当前需求不可访问，请重新选择项目'); return }
+      if (isInvalidAccess(error, 'write')) { clearInvalidData('当前需求不可访问，请重新选择项目'); return }
       if (codeFor(error) === 'HTTP_412' || codeFor(error) === 'STALE_VERSION' || codeFor(error) === 'PRECONDITION_FAILED') { setDraft(input); setConflict(true); setNotice('需求已被其他人更新。草稿已保留，请查看最新版本后再决定如何修改。') } else setNotice((error as { name?: string }).name === 'AbortError' ? '保存请求超时，请稍后重试' : messageFor(error))
     } finally {
       if (writeRoundRef.current === operation && isCurrentContext(context)) { setSaving(false); writeControllerRef.current = null; if (writeTimeoutRef.current !== null) { window.clearTimeout(writeTimeoutRef.current); writeTimeoutRef.current = null } }
@@ -166,7 +188,7 @@ export default function RequirementsPanel({ projectId, access, resetSignal = 0 }
     <div className="access-panel-header"><div><span className="panel-label">M07 · 需求第一条闭环</span><h2 id="requirements-heading">需求</h2><p>当前项目的需求、修订和历史正文。</p></div><button type="button" className="secondary-button" onClick={() => void load()} disabled={state === 'loading' || saving}>{state === 'loading' ? '加载中…' : '刷新需求'}</button></div>
     {state === 'error' && <p className="access-error" role="alert">{notice}</p>}
     {notice && state !== 'error' && <p className={conflict ? 'requirements-conflict' : 'access-notice'} role={conflict ? 'alert' : 'status'}>{notice}{conflict && selected && <button type="button" className="secondary-button" onClick={() => void selectRequirement(selected, { preserveDraft: true })}>查看最新版本</button>}</p>}
-    {creator && <form className="requirement-create-form" onSubmit={(event) => void create(event)}><strong>新建需求</strong><label>标题<input aria-label="需求标题" value={createTitle} onChange={(event) => { createIntentRef.current = null; setCreateTitle(event.target.value) }} maxLength={500} required /></label><label>正文<textarea aria-label="需求正文" value={createBody} onChange={(event) => { createIntentRef.current = null; setCreateBody(event.target.value) }} rows={3} /></label><button type="submit" className="primary-button" disabled={saving}>{saving ? '保存中…' : '创建需求'}</button></form>}
+    {creator && !scopeInvalid && <form className="requirement-create-form" onSubmit={(event) => void create(event)}><strong>新建需求</strong><label>标题<input aria-label="需求标题" value={createTitle} onChange={(event) => { createIntentRef.current = null; setCreateTitle(event.target.value) }} maxLength={500} required /></label><label>正文<textarea aria-label="需求正文" value={createBody} onChange={(event) => { createIntentRef.current = null; setCreateBody(event.target.value) }} rows={3} /></label><button type="submit" className="primary-button" disabled={saving}>{saving ? '保存中…' : '创建需求'}</button></form>}
     {state !== 'loading' && state !== 'error' && items.length === 0 && <p className="access-empty" role="status">当前项目还没有需求。</p>}
     {items.length > 0 && <div className="requirements-layout">
       <div className="requirement-list" aria-label="需求列表">

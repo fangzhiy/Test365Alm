@@ -10,6 +10,7 @@ import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.CyclicBarrier;
@@ -21,6 +22,8 @@ import com.test365alm.server.project.ProjectAccessException;
 import com.test365alm.server.project.ProjectService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.springframework.dao.DataAccessException;
+import org.springframework.http.HttpStatus;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -125,9 +128,77 @@ class RequirementDatabaseIT {
         RequirementService.RequirementView replay = requirements.create(fixture.member(), fixture.project(), command, key);
         assertEquals(first.id(), replay.id());
         assertEquals(1, ownerCount("SELECT COUNT(*) FROM requirement WHERE project_id = ?", fixture.project()));
-        assertThrows(ProjectAccessException.class, () -> requirements.create(fixture.member(), fixture.project(),
+        ProjectAccessException conflict = assertThrows(ProjectAccessException.class, () -> requirements.create(fixture.member(), fixture.project(),
                 new RequirementService.CreateCommand("Different", "Body", "MEDIUM"), key));
+        assertEquals("IDEMPOTENCY_KEY_REUSED", conflict.code());
+        assertEquals(HttpStatus.CONFLICT, conflict.status());
         assertEquals(1, ownerCount("SELECT COUNT(*) FROM requirement WHERE project_id = ?", fixture.project()));
+    }
+
+    @Test
+    void concurrentCreatesWithSameKeyProduceOneFrozenResult() throws Exception {
+        Fixture fixture = fixture();
+        projects.putMember(fixture.admin(), fixture.project(), fixture.member(), List.of("PROJECT_MEMBER"), 0L, false);
+        String key = "concurrent-create-" + UUID.randomUUID();
+        RequirementService.CreateCommand command = new RequirementService.CreateCommand("Concurrent create", "body", "HIGH");
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        CyclicBarrier start = new CyclicBarrier(2);
+        try {
+            Future<RequirementService.RequirementView> first = pool.submit(() -> {
+                start.await();
+                return requirements.create(fixture.member(), fixture.project(), command, key);
+            });
+            Future<RequirementService.RequirementView> second = pool.submit(() -> {
+                start.await();
+                return requirements.create(fixture.member(), fixture.project(), command, key);
+            });
+            RequirementService.RequirementView firstResult = first.get();
+            RequirementService.RequirementView secondResult = second.get();
+            assertEquals(firstResult.id(), secondResult.id());
+            assertEquals(firstResult.currentRevisionId(), secondResult.currentRevisionId());
+            assertEquals(firstResult.displayNumber(), secondResult.displayNumber());
+            assertEquals(firstResult.rowVersion(), secondResult.rowVersion());
+            assertEquals(1, ownerCount("SELECT COUNT(*) FROM requirement WHERE project_id = ?", fixture.project()));
+            assertEquals(1, ownerCount("SELECT COUNT(*) FROM requirement_revision WHERE project_id = ?", fixture.project()));
+            assertEquals(1, ownerCount("SELECT COUNT(*) FROM outbox_event WHERE project_id = ?", fixture.project()));
+            assertEquals(1, ownerCount("SELECT COUNT(*) FROM audit_event WHERE project_id = ?", fixture.project()));
+            assertEquals(1, ownerCount("SELECT COUNT(*) FROM requirement_idempotency WHERE project_id = ?", fixture.project()));
+            assertEquals(2, ownerCount("SELECT next_number FROM requirement_number_allocator WHERE project_id = ?", fixture.project()));
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    @Test
+    void concurrentCreatesWithDifferentKeysAllocateUniqueNumbers() throws Exception {
+        Fixture fixture = fixture();
+        projects.putMember(fixture.admin(), fixture.project(), fixture.member(), List.of("PROJECT_MEMBER"), 0L, false);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        CyclicBarrier start = new CyclicBarrier(2);
+        try {
+            Future<RequirementService.RequirementView> first = pool.submit(() -> {
+                start.await();
+                return requirements.create(fixture.member(), fixture.project(),
+                        new RequirementService.CreateCommand("Number A", "body", "HIGH"),
+                        "number-a-" + UUID.randomUUID());
+            });
+            Future<RequirementService.RequirementView> second = pool.submit(() -> {
+                start.await();
+                return requirements.create(fixture.member(), fixture.project(),
+                        new RequirementService.CreateCommand("Number B", "body", "HIGH"),
+                        "number-b-" + UUID.randomUUID());
+            });
+            Set<Long> displayNumbers = Set.of(first.get().displayNumber(), second.get().displayNumber());
+            assertEquals(Set.of(1L, 2L), displayNumbers);
+            assertEquals(2, ownerCount("SELECT COUNT(*) FROM requirement WHERE project_id = ?", fixture.project()));
+            assertEquals(2, ownerCount("SELECT COUNT(*) FROM requirement_revision WHERE project_id = ?", fixture.project()));
+            assertEquals(2, ownerCount("SELECT COUNT(*) FROM outbox_event WHERE project_id = ?", fixture.project()));
+            assertEquals(2, ownerCount("SELECT COUNT(*) FROM audit_event WHERE project_id = ?", fixture.project()));
+            assertEquals(2, ownerCount("SELECT COUNT(*) FROM requirement_idempotency WHERE project_id = ?", fixture.project()));
+            assertEquals(3, ownerCount("SELECT next_number FROM requirement_number_allocator WHERE project_id = ?", fixture.project()));
+        } finally {
+            pool.shutdownNow();
+        }
     }
 
     @Test
@@ -230,10 +301,20 @@ class RequirementDatabaseIT {
                 new RequirementService.CreateCommand("Hash", "old", "MEDIUM"), "create-key-" + UUID.randomUUID());
         String key = "patch-hash-" + UUID.randomUUID();
         RequirementService.UpdateCommand omitted = new RequirementService.UpdateCommand(null, "new body", null);
-        requirements.update(fixture.member(), fixture.project(), created.id(), omitted, etag(created), key);
+        RequirementService.RequirementView first = requirements.update(fixture.member(), fixture.project(), created.id(), omitted,
+                etag(created), key);
         RequirementService.RequirementView current = requirements.getAuthorized(fixture.member(), fixture.project(), created.id());
-        assertThrows(ProjectAccessException.class, () -> requirements.update(fixture.member(), fixture.project(), created.id(),
-                new RequirementService.UpdateCommand("<null>", "new body", null), etag(current), key));
+        ProjectAccessException failure = assertThrows(ProjectAccessException.class, () -> requirements.update(fixture.member(), fixture.project(),
+                created.id(), new RequirementService.UpdateCommand("<null>", "new body", null), etag(current), key));
+        assertEquals("IDEMPOTENCY_KEY_REUSED", failure.code());
+        assertEquals(HttpStatus.CONFLICT, failure.status());
+        assertEquals(first.id(), current.id());
+        assertEquals(first.rowVersion(), current.rowVersion());
+        assertEquals(first.currentRevisionId(), current.currentRevisionId());
+        assertEquals(2, ownerCount("SELECT COUNT(*) FROM requirement_revision WHERE requirement_id = ?", created.id()));
+        assertEquals(2, ownerCount("SELECT COUNT(*) FROM outbox_event WHERE requirement_id = ?", created.id()));
+        assertEquals(2, ownerCount("SELECT COUNT(*) FROM audit_event WHERE object_id = ?", created.id()));
+        assertEquals(2, ownerCount("SELECT COUNT(*) FROM requirement_idempotency WHERE project_id = ?", fixture.project()));
     }
 
     @Test
@@ -272,6 +353,65 @@ class RequirementDatabaseIT {
     }
 
     @Test
+    void auditAndOutboxUpdateFailuresRollBackExistingRequirementState() throws Exception {
+        Fixture fixture = fixture();
+        projects.putMember(fixture.admin(), fixture.project(), fixture.member(), List.of("PROJECT_MEMBER"), 0L, false);
+        RequirementService.RequirementView created = requirements.create(fixture.member(), fixture.project(),
+                new RequirementService.CreateCommand("Before", "body", "MEDIUM"), "update-rollback-create-" + UUID.randomUUID());
+        RequirementService.RequirementView baseline = requirements.update(fixture.member(), fixture.project(), created.id(),
+                new RequirementService.UpdateCommand("Baseline", null, null), etag(created),
+                "update-rollback-baseline-" + UUID.randomUUID());
+        int baselineRevisions = ownerCount("SELECT COUNT(*) FROM requirement_revision WHERE requirement_id = ?", created.id());
+        int baselineOutbox = ownerCount("SELECT COUNT(*) FROM outbox_event WHERE requirement_id = ?", created.id());
+        int baselineAudit = ownerCount("SELECT COUNT(*) FROM audit_event WHERE object_id = ?", created.id());
+        int baselineIdempotency = ownerCount("SELECT COUNT(*) FROM requirement_idempotency WHERE project_id = ?", fixture.project());
+
+        ownerUpdate("REVOKE INSERT ON audit_event FROM " + RUNTIME_USER);
+        try {
+            assertThrows(DataAccessException.class, () -> requirements.update(fixture.member(), fixture.project(), created.id(),
+                    new RequirementService.UpdateCommand("Audit denied", null, null), etag(baseline),
+                    "update-rollback-audit-" + UUID.randomUUID()));
+            RequirementService.RequirementView afterFailure = requirements.getAuthorized(fixture.member(), fixture.project(), created.id());
+            assertEquals(baseline.rowVersion(), afterFailure.rowVersion());
+            assertEquals(baseline.currentRevisionId(), afterFailure.currentRevisionId());
+            assertEquals(baseline.title(), afterFailure.title());
+            assertEquals(baselineRevisions, ownerCount("SELECT COUNT(*) FROM requirement_revision WHERE requirement_id = ?", created.id()));
+            assertEquals(baselineOutbox, ownerCount("SELECT COUNT(*) FROM outbox_event WHERE requirement_id = ?", created.id()));
+            assertEquals(baselineAudit, ownerCount("SELECT COUNT(*) FROM audit_event WHERE object_id = ?", created.id()));
+            assertEquals(baselineIdempotency, ownerCount("SELECT COUNT(*) FROM requirement_idempotency WHERE project_id = ?", fixture.project()));
+        } finally {
+            ownerUpdate("GRANT INSERT ON audit_event TO " + RUNTIME_USER);
+        }
+        RequirementService.RequirementView afterAuditRestore = requirements.update(fixture.member(), fixture.project(), created.id(),
+                new RequirementService.UpdateCommand("Audit restored", null, null), etag(baseline),
+                "update-rollback-audit-success-" + UUID.randomUUID());
+        assertEquals(3, afterAuditRestore.rowVersion());
+
+        ownerUpdate("REVOKE INSERT ON outbox_event FROM " + RUNTIME_USER);
+        try {
+            assertThrows(DataAccessException.class, () -> requirements.update(fixture.member(), fixture.project(), created.id(),
+                    new RequirementService.UpdateCommand("Outbox denied", null, null), etag(afterAuditRestore),
+                    "update-rollback-outbox-" + UUID.randomUUID()));
+            RequirementService.RequirementView afterFailure = requirements.getAuthorized(fixture.member(), fixture.project(), created.id());
+            assertEquals(afterAuditRestore.rowVersion(), afterFailure.rowVersion());
+            assertEquals(afterAuditRestore.currentRevisionId(), afterFailure.currentRevisionId());
+            assertEquals(afterAuditRestore.title(), afterFailure.title());
+            assertEquals(3, ownerCount("SELECT COUNT(*) FROM requirement_revision WHERE requirement_id = ?", created.id()));
+            assertEquals(3, ownerCount("SELECT COUNT(*) FROM outbox_event WHERE requirement_id = ?", created.id()));
+            assertEquals(3, ownerCount("SELECT COUNT(*) FROM audit_event WHERE object_id = ?", created.id()));
+        } finally {
+            ownerUpdate("GRANT INSERT ON outbox_event TO " + RUNTIME_USER);
+        }
+        RequirementService.RequirementView afterOutboxRestore = requirements.update(fixture.member(), fixture.project(), created.id(),
+                new RequirementService.UpdateCommand("Outbox restored", null, null), etag(afterAuditRestore),
+                "update-rollback-outbox-success-" + UUID.randomUUID());
+        assertEquals(4, afterOutboxRestore.rowVersion());
+        assertEquals(4, ownerCount("SELECT COUNT(*) FROM requirement_revision WHERE requirement_id = ?", created.id()));
+        assertEquals(4, ownerCount("SELECT COUNT(*) FROM outbox_event WHERE requirement_id = ?", created.id()));
+        assertEquals(4, ownerCount("SELECT COUNT(*) FROM audit_event WHERE object_id = ?", created.id()));
+    }
+
+    @Test
     void concurrentUpdatesWithTheSameEtagProduceOneRevisionAndOnePreconditionFailure() throws Exception {
         Fixture fixture = fixture();
         projects.putMember(fixture.admin(), fixture.project(), fixture.member(), List.of("PROJECT_MEMBER"), 0L, false);
@@ -296,23 +436,35 @@ class RequirementDatabaseIT {
             }));
             int successes = 0;
             int failures = 0;
+            RequirementService.RequirementView winner = null;
             for (Future<RequirementService.RequirementView> future : futures) {
                 try {
-                    assertEquals(2, future.get().revisionNumber());
+                    winner = future.get();
+                    assertEquals(2, winner.revisionNumber());
+                    assertEquals(2, winner.rowVersion());
                     successes++;
                 } catch (ExecutionException ex) {
                     assertTrue(ex.getCause() instanceof ProjectAccessException, ex.toString());
+                    ProjectAccessException failure = (ProjectAccessException) ex.getCause();
+                    assertEquals("STALE_VERSION", failure.code());
+                    assertEquals(HttpStatus.PRECONDITION_FAILED, failure.status());
                     failures++;
                 }
             }
             assertEquals(1, successes);
             assertEquals(1, failures);
+            assertTrue(winner != null && Set.of("winner A", "winner B").contains(winner.title()));
         } finally {
             pool.shutdownNow();
         }
+        RequirementService.RequirementView current = requirements.getAuthorized(fixture.member(), fixture.project(), created.id());
+        assertEquals(2, current.rowVersion());
+        assertTrue(Set.of("winner A", "winner B").contains(current.title()));
+        assertEquals(2, requirements.revisions(fixture.member(), fixture.project(), created.id()).size());
         assertEquals(2, ownerCount("SELECT COUNT(*) FROM requirement_revision WHERE requirement_id = ?", created.id()));
         assertEquals(2, ownerCount("SELECT COUNT(*) FROM outbox_event WHERE requirement_id = ?", created.id()));
         assertEquals(2, ownerCount("SELECT COUNT(*) FROM audit_event WHERE object_id = ?", created.id()));
+        assertEquals(2, ownerCount("SELECT COUNT(*) FROM requirement_idempotency WHERE project_id = ?", fixture.project()));
     }
 
     private void assertRuntimeViewerDenied(Fixture fixture, RequirementService.RequirementView created) throws Exception {

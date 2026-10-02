@@ -25,14 +25,14 @@ Set-Location apps/server
 mvn -B -ntp test
 ```
 
-真实 PostgreSQL 集成测试使用 Testcontainers 的一次性数据库，不读取日常 `.env`。`RequirementDatabaseIT` 覆盖合法成员创建/编辑、不可变历史、viewer runtime 写拒绝、同项目/跨项目/跨租户复合引用、幂等快照/过期/撤权、字段哈希边界、审计/Outbox 故障回滚和同 ETag 并发竞争；CI 报告门禁要求九个指定用例全部实际执行：
+真实 PostgreSQL 集成测试使用 Testcontainers 的一次性数据库，不读取日常 `.env`。`RequirementDatabaseIT` 覆盖合法成员创建/编辑、不可变历史、viewer runtime 写拒绝、同项目/跨项目/跨租户复合引用、幂等快照/过期/撤权、同键和不同键并发创建、字段哈希边界、创建及编辑审计/Outbox 故障回滚和同 ETag 并发竞争；独立 `RequirementMigrationUpgradeIT` 构造 V7 数据后执行 V8 升级并验证冻结快照。CI 报告门禁要求十二个数据库用例及一个升级用例全部实际执行：
 
 ```powershell
 Set-Location apps/server
 mvn -B -ntp -Pintegration verify '-Dbuild.commit=local-r04-fix01'
 ```
 
-本机 Docker/Testcontainers 不可用时，该命令必须如实记录失败原因；不能以单元测试替代真实数据库证据。CI 会执行 `tools/verify_r04_requirement_report.py`，要求九项真实用例均被发现且无失败、错误或跳过。V8 迁移只在受控迁移阶段执行，运行时不会自动改表；服务使用受限 runtime 数据源。前端继续使用：
+本机 Docker/Testcontainers 不可用时，该命令必须如实记录失败原因；不能以单元测试替代真实数据库证据。CI 会执行 `tools/verify_r04_requirement_report.py`，要求十二项数据库用例和 V7→V8 升级用例均被发现且无失败、错误或跳过。V8 迁移只在受控迁移阶段执行，运行时不会自动改表；服务使用受限 runtime 数据源。前端继续使用：
 
 ```powershell
 Set-Location apps/web

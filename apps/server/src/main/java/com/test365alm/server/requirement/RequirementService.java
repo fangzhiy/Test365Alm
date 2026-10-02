@@ -405,12 +405,19 @@ public class RequirementService {
         if (key.length() < 8 || key.length() > 128) throw ProjectAccessException.invalid("Idempotency-Key must contain 8 to 128 characters");
     }
 
-    private static long parseIfMatch(String value) {
+    static long parseIfMatch(String value) {
         if (value == null || value.isBlank() || "*".equals(value.trim())) {
             throw ProjectAccessException.preconditionRequired("If-Match is required and cannot be '*'");
         }
         String normalized = value.trim();
-        if (normalized.startsWith("\"") && normalized.endsWith("\"")) normalized = normalized.substring(1, normalized.length() - 1);
+        // RFC 9110 permits a list of entity-tags, but this endpoint's
+        // optimistic-lock contract intentionally accepts exactly one strong
+        // positive numeric tag.  Reject bare numbers, weak tags and lists so
+        // clients cannot accidentally bypass a version check.
+        if (!normalized.matches("\\\"[1-9][0-9]*\\\"")) {
+            throw ProjectAccessException.invalid("If-Match must be one strong quoted entity tag");
+        }
+        normalized = normalized.substring(1, normalized.length() - 1);
         try {
             long parsed = Long.parseLong(normalized);
             if (parsed < 1) throw new NumberFormatException();

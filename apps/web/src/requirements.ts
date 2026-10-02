@@ -1,5 +1,9 @@
-import { requestJsonWithResponse } from './projectAccess'
+import { requestJson, requestJsonWithResponse } from './projectAccess'
 import type { AccessError, AccessRequestOptions } from './projectAccess'
+
+// Re-export the transport helper for requirement-specific contract tests and
+// callers that need to assert HTTP/business error separation.
+export { requestJson }
 
 export type RequirementRevision = {
   id: string

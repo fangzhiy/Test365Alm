@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { requirementsApi } from './requirements'
+import { requestJson } from './projectAccess'
 
 const requirement = {
   id: 'req-1', projectId: 'project-1', displayNumber: 'REQ-1', title: 'Login', body: 'Body',
@@ -10,6 +11,25 @@ const requirement = {
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 describe('requirements API transport contracts', () => {
+  it('preserves HTTP status together with the structured business error', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(
+      JSON.stringify({ code: 'FORBIDDEN', message: 'not a project member' }),
+      { status: 403, headers: { 'Content-Type': 'application/json' } },
+    )))
+    await expect(requestJson('/api/v1/projects/project-1/requirements')).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+      status: 403,
+    })
+  })
+
+  it('keeps a status-only HTTP rejection distinct from a business code', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('<html>denied</html>', { status: 503 })))
+    await expect(requestJson('/api/v1/projects/project-1/requirements')).rejects.toMatchObject({
+      code: 'HTTP_503',
+      status: 503,
+    })
+  })
+
   it('reuses the same idempotency key when the first response is lost', async () => {
     const calls: Array<{ url: string; headers: Headers }> = []
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {

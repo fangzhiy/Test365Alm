@@ -48,7 +48,7 @@ export type ProjectAccess = {
   permissions: readonly string[]
 }
 
-export type AccessError = { code: string; message: string }
+export type AccessError = { code: string; message: string; status?: number }
 export type CreateProjectInput = { tenantId: string; domainId: string; code: string; name: string }
 export type AccessRequestOptions = { signal?: AbortSignal; idempotencyKey?: string }
 
@@ -61,9 +61,9 @@ const isRole = (value: unknown): value is ProjectRole => value === 'PROJECT_ADMI
 const parseError = async (response: Response): Promise<AccessError> => {
   try {
     const body: unknown = await response.json()
-    if (isRecord(body) && isString(body.code) && isString(body.message)) return { code: body.code, message: body.message }
+    if (isRecord(body) && isString(body.code) && isString(body.message)) return { code: body.code, message: body.message, status: response.status }
   } catch { /* Fall through to a status based message. */ }
-  return { code: `HTTP_${response.status}`, message: `请求失败（${response.status}）` }
+  return { code: `HTTP_${response.status}`, message: `请求失败（${response.status}）`, status: response.status }
 }
 
 const idempotencyKey = () => typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `web-${Date.now()}-${Math.random().toString(16).slice(2)}`
