@@ -492,24 +492,6 @@ class OidcCallbackSecurityIT {
         assertEquals(afterUpdate, requirementCounts(project),
                 "rejected If-Match variants must not append requirement side effects");
 
-        HttpResponse<String> missingCsrf = postRequirement(member.client, requirementPath, null, null,
-                "requirement-missing-csrf-" + UUID.randomUUID(),
-                "{\"title\":\"csrf rejected\"}");
-        assertRequirementError(missingCsrf, 403, "CSRF_REJECTED");
-        HttpResponse<String> wrongCsrf = postRequirement(member.client, requirementPath, memberCsrfHeader,
-                "wrong-csrf-token", "requirement-wrong-csrf-" + UUID.randomUUID(),
-                "{\"title\":\"csrf rejected\"}");
-        assertRequirementError(wrongCsrf, 403, "CSRF_REJECTED");
-        assertEquals(afterUpdate, requirementCounts(project),
-                "CSRF rejection must not claim idempotency or append business rows");
-
-        // A rejected token may rotate the session-bound CSRF value.  Refresh
-        // the legitimate token before continuing with JSON-boundary checks so
-        // those checks cannot be masked by the preceding negative cases.
-        memberCsrfJson = get(member.client, "/api/v1/csrf").body();
-        memberCsrfHeader = jsonField(memberCsrfJson, "headerName");
-        memberCsrf = jsonField(memberCsrfJson, "token");
-
         HttpResponse<String> unknownFields = postRequirement(member.client, requirementPath, memberCsrfHeader,
                 memberCsrf, "requirement-unknown-fields-" + UUID.randomUUID(),
                 "{\"title\":\"unknown fields\",\"parentId\":\"" + UUID.randomUUID()
@@ -532,6 +514,17 @@ class OidcCallbackSecurityIT {
                 400, "INVALID_REQUEST");
         assertEquals(afterUpdate, requirementCounts(project),
                 "invalid JSON and validation requests must not append business rows");
+
+        HttpResponse<String> missingCsrf = postRequirement(member.client, requirementPath, null, null,
+                "requirement-missing-csrf-" + UUID.randomUUID(),
+                "{\"title\":\"csrf rejected\"}");
+        assertRequirementError(missingCsrf, 403, "CSRF_REJECTED");
+        HttpResponse<String> wrongCsrf = postRequirement(member.client, requirementPath, memberCsrfHeader,
+                "wrong-csrf-token", "requirement-wrong-csrf-" + UUID.randomUUID(),
+                "{\"title\":\"csrf rejected\"}");
+        assertRequirementError(wrongCsrf, 403, "CSRF_REJECTED");
+        assertEquals(afterUpdate, requirementCounts(project),
+                "CSRF rejection must not claim idempotency or append business rows");
 
         String viewerCsrfJson = get(viewer.client, "/api/v1/csrf").body();
         String viewerCsrfHeader = jsonField(viewerCsrfJson, "headerName");
