@@ -7,11 +7,11 @@
 - 后端幂等记录按主体/路由作用域检查过期，保存完成响应快照，重放前重新授权；规范化哈希区分省略字段与字面量 `<null>`。审计/Outbox 权限故障回滚和同 ETag 并发一胜一 412 均有真实 PostgreSQL 测试，报告门禁从 3 个提升为 9 个指定用例。
 - 前端读写轮次、AbortController、卸载/退出/项目切换清理、真实 ETag、稳定 Idempotency-Key、412 草稿保留和失权清理均已补齐；新增 API 响应丢失重试和缺失 ETag 测试。
 - 本机已通过：系统 Maven `mvn -B -ntp test`（19 个 Surefire 用例，0 失败/错误/跳过）、`mvn -B -ntp -DskipTests test-compile`、前端 Vitest 6 文件/51 测试、lint（0 error，3 个 React 警告）、Vite build、Python 工具和契约 JSON 校验。Wrapper 的 Windows PowerShell 启动失败与系统 Maven 结果分开记录。
-- 本机 Testcontainers/Failsafe 仍因 Docker/JNA named pipe 权限在测试方法前阻塞，不能写成真实数据库通过；Push/PR CI 在发布后才可确认。旧 V7 已完成记录、生产部署和完整 M07 均不因本轮改动标记完成。
+- 本机 Testcontainers/Failsafe 仍因 Docker/JNA named pipe 权限在测试方法前阻塞；隔离 Ubuntu CI 已实际执行 39 个集成测试（含 `RequirementDatabaseIT` 9/9）并通过。迁移失败探针已随 V8 正式迁移调整为正式 V8、故意失败 V9。历史失败 Push `36952755554`/PR `36952759123`（V8 SQL 关联写法）和 Push `36953271971`/PR `36953276257`（升级计数、RLS 过滤断言、旧 V8 故障探针）保留；最终 Push `36954097749` 与 PR merge-ref `36954101050` 均为 success。旧 V7 已完成记录、生产部署和完整 M07 均不因本轮改动标记完成。
 
 最后更新：2026-10-02
 当前轮次：`R04-M07-001-FIX01`
-状态：`CODE_PENDING_PUSH / LOCAL_DOCKER_BLOCKED / CI_PENDING`
+状态：`IMPLEMENTED / LOCAL_DOCKER_BLOCKED / PUSH_AND_PR_CI_PASS`
 
 ## R04-M07-001 当前状态
 

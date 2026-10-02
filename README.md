@@ -167,7 +167,7 @@ python tools/verify_r02_readiness.py --env-file .env.r02-test --compose-project 
 
 脚本严格要求监听地址可验证且只能是 `127.0.0.1`、`::1` 或 `::ffff:127.0.0.1`；无法枚举监听、进程提前退出、版本提交不一致、端口被占用或数据源不是本机专用 PostgreSQL 时失败。首次 `up` 前会检查目标项目是否已有容器（包括停止的容器）、网络或卷；任何已有资源都会使脚本拒绝运行。默认使用当前本地 Docker context；若专用测试配置写入 `TEST365ALM_DOCKER_CONTEXT`，它必须与当前 context 一致。远端 Docker context 被拒绝。测试配置只接受脚本规定的键；父进程的 Spring、JVM 和 Compose 覆盖项不会传入子进程。
 
-启动迁移失败验证保留正式 V7，向临时目录注入独立的 V8 故障迁移，不修改正式 `db/migration`；脚本先确认正式 V7 已成功记录：
+启动迁移失败验证保留正式 V8，向临时目录注入独立的 V9 故障迁移，不修改正式 `db/migration`；脚本先确认正式 V8 已成功记录：
 
 ```powershell
 python tools/verify_r02_migration_failure.py --env-file .env.r02-test --compose-project test365alm-r02-migration-manual --server-port 18082
