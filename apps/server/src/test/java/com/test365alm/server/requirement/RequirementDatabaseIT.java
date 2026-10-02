@@ -158,7 +158,8 @@ class RequirementDatabaseIT {
             assertEquals(firstResult.currentRevisionId(), secondResult.currentRevisionId());
             assertEquals(firstResult.displayNumber(), secondResult.displayNumber());
             assertEquals(firstResult.rowVersion(), secondResult.rowVersion());
-            assertEquals(1, ownerCount("SELECT COUNT(*) FROM requirement WHERE project_id = ?", fixture.project()));
+            assertEquals(1, ownerCount("SELECT COUNT(*) FROM requirement WHERE project_id = ?", fixture.project()),
+                    "project=" + fixture.project());
             assertEquals(1, ownerCount("SELECT COUNT(*) FROM requirement_revision WHERE project_id = ?", fixture.project()));
             assertEquals(1, ownerCount("SELECT COUNT(*) FROM outbox_event WHERE project_id = ?", fixture.project()));
             assertEquals(1, ownerCount("SELECT COUNT(*) FROM audit_event WHERE project_id = ?", fixture.project()));
@@ -190,7 +191,8 @@ class RequirementDatabaseIT {
             });
             Set<Long> displayNumbers = Set.of(first.get().displayNumber(), second.get().displayNumber());
             assertEquals(Set.of(1L, 2L), displayNumbers);
-            assertEquals(2, ownerCount("SELECT COUNT(*) FROM requirement WHERE project_id = ?", fixture.project()));
+            assertEquals(2, ownerCount("SELECT COUNT(*) FROM requirement WHERE project_id = ?", fixture.project()),
+                    "project=" + fixture.project());
             assertEquals(2, ownerCount("SELECT COUNT(*) FROM requirement_revision WHERE project_id = ?", fixture.project()));
             assertEquals(2, ownerCount("SELECT COUNT(*) FROM outbox_event WHERE project_id = ?", fixture.project()));
             assertEquals(2, ownerCount("SELECT COUNT(*) FROM audit_event WHERE project_id = ?", fixture.project()));
@@ -446,7 +448,7 @@ class RequirementDatabaseIT {
                 } catch (ExecutionException ex) {
                     assertTrue(ex.getCause() instanceof ProjectAccessException, ex.toString());
                     ProjectAccessException failure = (ProjectAccessException) ex.getCause();
-                    assertEquals("STALE_VERSION", failure.code());
+                    assertEquals("STALE_VERSION", failure.code(), "project=" + fixture.project());
                     assertEquals(HttpStatus.PRECONDITION_FAILED, failure.status());
                     failures++;
                 }

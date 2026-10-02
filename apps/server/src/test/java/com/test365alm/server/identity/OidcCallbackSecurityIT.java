@@ -436,6 +436,12 @@ class OidcCallbackSecurityIT {
             insertProjectMemberFixture(connection, tenant, project, viewerId, "PROJECT_VIEWER");
         }
 
+        HttpResponse<String> memberIdentity = get(member.client, "/api/v1/me");
+        assertEquals(200, memberIdentity.statusCode(), memberIdentity.body());
+        assertEquals(memberId.toString(), jsonField(memberIdentity.body(), "id"));
+        HttpResponse<String> memberProject = get(member.client, "/api/v1/projects/" + project);
+        assertEquals(200, memberProject.statusCode(), memberProject.body());
+
         String memberCsrfJson = get(member.client, "/api/v1/csrf").body();
         String memberCsrfHeader = jsonField(memberCsrfJson, "headerName");
         String memberCsrf = jsonField(memberCsrfJson, "token");
