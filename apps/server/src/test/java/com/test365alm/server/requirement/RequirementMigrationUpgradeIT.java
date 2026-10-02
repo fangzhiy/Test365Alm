@@ -105,6 +105,12 @@ class RequirementMigrationUpgradeIT {
                     tenant, project, revisionTwo, requirement, admin);
             execute(connection, "UPDATE requirement SET current_revision_id = ?, updated_at = CURRENT_TIMESTAMP"
                     + " WHERE tenant_id = ? AND project_id = ? AND id = ?", revisionTwo, tenant, project, requirement);
+            // The V7 fixture already consumed display number 1.  Seed the
+            // allocator at the next number so the post-upgrade current-format
+            // create proves a real new intent instead of failing on a test
+            // fixture-only uniqueness collision.
+            execute(connection, "INSERT INTO requirement_number_allocator (tenant_id, project_id, next_number)"
+                    + " VALUES (?, ?, 2)", tenant, project);
             execute(connection, "INSERT INTO outbox_event"
                     + " (tenant_id, project_id, aggregate_id, requirement_id, revision_id, event_type)"
                     + " VALUES (?, ?, ?, ?, ?, 'requirement.created')", tenant, project, requirement, requirement, revisionOne);
