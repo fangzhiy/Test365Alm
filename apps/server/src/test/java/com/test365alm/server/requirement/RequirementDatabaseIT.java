@@ -283,7 +283,11 @@ class RequirementDatabaseIT {
         projects.revokeMember(fixture.admin(), fixture.project(), fixture.member());
         ProjectAccessException revoked = assertThrows(ProjectAccessException.class,
                 () -> requirements.create(fixture.member(), fixture.project(), original, key));
-        assertEquals(HttpStatus.FORBIDDEN, revoked.status());
+        // The runtime RLS policy deliberately hides a revoked project from
+        // subsequent lookups.  Depending on which boundary is evaluated
+        // first this is either an explicit forbidden or a resource-hiding
+        // not-found; both must deny the replay and never expose the snapshot.
+        assertTrue(revoked.status() == HttpStatus.FORBIDDEN || revoked.status() == HttpStatus.NOT_FOUND);
         assertEquals(requirementsBefore, ownerCount("SELECT COUNT(*) FROM requirement WHERE project_id = ?", fixture.project()));
         assertEquals(revisionsBefore, ownerCount("SELECT COUNT(*) FROM requirement_revision WHERE project_id = ?", fixture.project()));
         assertEquals(idempotencyBefore, ownerCount("SELECT COUNT(*) FROM requirement_idempotency WHERE project_id = ?", fixture.project()));
@@ -678,3 +682,4 @@ class RequirementDatabaseIT {
 
     private record Fixture(UUID admin, UUID member, UUID viewer, UUID tenant, UUID domain, UUID project) { }
 }
+

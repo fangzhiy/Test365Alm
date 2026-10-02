@@ -31,7 +31,11 @@ import org.testcontainers.utility.DockerImageName;
 
 /** Upgrade proof for V7 rows and the explicit safe rejection of legacy replays. */
 @ActiveProfiles("integration")
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
+// Keep a real web application context so the production security filter chain
+// and runtime service wiring are exercised.  The test invokes the service
+// boundary directly after owner-controlled migration setup, but a non-web
+// context would remove HttpSecurity and fail before the test starts.
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Testcontainers
 @Timeout(180)
 class RequirementMigrationUpgradeIT {
@@ -238,3 +242,4 @@ class RequirementMigrationUpgradeIT {
         }
     }
 }
+
