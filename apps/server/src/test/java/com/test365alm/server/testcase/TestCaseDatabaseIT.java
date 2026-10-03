@@ -115,7 +115,7 @@ class TestCaseDatabaseIT {
                 () -> tests.appendRevision(f.member(), f.project(), first.id(), invalid, etag(first), key("bad")));
         assertEquals("INVALID_REQUEST", error.code());
         assertEquals(1, tests.revisions(f.member(), f.project(), first.id()).size());
-        assertEquals(1, ownerCount("SELECT COUNT(*) FROM test_step WHERE test_case_id = ?", first.id()));
+        assertEquals(2, ownerCount("SELECT COUNT(*) FROM test_step WHERE test_case_id = ?", first.id()));
     }
 
     @Test

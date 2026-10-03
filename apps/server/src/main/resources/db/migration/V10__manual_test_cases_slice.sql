@@ -233,6 +233,13 @@ CREATE POLICY audit_event_insert ON audit_event FOR INSERT WITH CHECK (
     )
 );
 
+-- V4 left a broad audit_event_scope policy in place.  PostgreSQL combines
+-- permissive policies with OR, so the narrower V8 audit_event_insert policy
+-- alone cannot prevent a viewer from inserting arbitrary audit rows.  V10 is
+-- the first migration in this branch that can safely remove that legacy
+-- policy before installing the test-case audit policy below.
+DROP POLICY IF EXISTS audit_event_scope ON audit_event;
+
 DO $$ BEGIN
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'test365alm_runtime') THEN
         GRANT SELECT, INSERT ON test_case_number_allocator TO test365alm_runtime;

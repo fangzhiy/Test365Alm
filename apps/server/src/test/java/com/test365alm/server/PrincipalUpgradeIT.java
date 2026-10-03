@@ -45,10 +45,10 @@ class PrincipalUpgradeIT {
 
         var latest = Flyway.configure().dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
                 .locations("classpath:db/migration").load();
-        // V3 through V9 (including the requirement slice, its integrity
-        // boundary and legacy replay guard) are pending after
-        // the V2 checkpoint; each must apply exactly once.
-        assertEquals(7, latest.migrate().migrationsExecuted);
+        // V3 through V10 (including the requirement slice, its integrity
+        // boundary, legacy replay guard and manual test-case slice) are
+        // pending after the V2 checkpoint; each must apply exactly once.
+        assertEquals(8, latest.migrate().migrationsExecuted);
         assertEquals(0, latest.migrate().migrationsExecuted);
         try (var connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
                 var statement = connection.createStatement()) {
@@ -63,3 +63,4 @@ class PrincipalUpgradeIT {
         }
     }
 }
+

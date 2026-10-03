@@ -67,7 +67,9 @@ class TestCaseHttpSecurityIT {
                 .header("Idempotency-Key", "anonymous-test-key")
                 .POST(HttpRequest.BodyPublishers.ofString("{\"title\":false}"))
                 .build(), HttpResponse.BodyHandlers.ofString());
-        assertEquals(401, create.statusCode());
+        // Spring Security's CSRF filter runs before the authentication entry
+        // point for this state-changing request, so the contract is 403.
+        assertEquals(403, create.statusCode());
     }
 }
 
