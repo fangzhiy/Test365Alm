@@ -1,5 +1,16 @@
 # Test365Alm 开发状态
 
+## R05-M08-001-FIX01 当前状态（等待 PR #5 审核）
+
+- 本轮继续 `feat/r05-m08-001` / PR #5（base `feat/r04-m07-001`），开始前远端 PR 仍为 Open、未合并，远端 head 为审核交付 `47c3dd3788ca3572057af3b562ba408b848621cf`，PR merge checkout 基线为 `066d3bed874d507174046d9b3815d74f81027471`。本地从 `d6b67dc9f7593ff7cd9192b09e603503c6a2774b` 继续，未 reset、回退或强推；Windows Git fetch/push 的 Schannel 凭据限制继续保留，远端发布通过 GitHub Data API 核对。
+- F01：新增正式 V11 迁移，在完整步骤快照写入后封存 `test_revision.sealed_at`；V10 已存在行以 `created_at` 作为升级封存证据。受限 runtime 对已封存历史/当前修订追加步骤在 RLS 边界拒绝，正常新建/追加修订、稳定 step_key、幂等重放及既有 V10 数据保留测试继续覆盖。迁移失败探针同步由正式 V11 后执行故意失败 V12，不改写 V1—V10。
+- F02：`TestCasesPanel` 将列表分页和详情读取状态分开交接；详情成功/失败会结束列表 loading，旧分页请求的成功、失败、AbortError 和 finally 不能覆盖新详情；项目/权限范围变化清理 saving 与旧数据；详情/冲突读取期间步骤输入、上下移、下移、移除、新增均禁用。新增 8 个确定性组件回归，前端当前为 8 files/100 tests。
+- F03：CI-owned Keycloak 手工用例改为真实三主体流程：管理员创建并授权，普通 `PROJECT_MEMBER` 登录后创建/刷新/编辑调序/保存新修订/查看旧修订，独立 viewer 只读且无新增/保存入口；页面操作前通过真实 `/api/v1/me/permissions` 核对角色和权限。测试资源仍由本轮隔离 Compose/数据库播种，生成器新增随机 `R03_MEMBER_*`，不提交凭据。
+- 本地实际通过：系统 Maven `mvn -B -ntp test` 24 tests；`mvn -B -ntp -DskipTests test-compile`；前端 `npm run lint`（0 error、既有 warnings）、`npm run test:run` 8 files/100 tests、`npm run build`、`npx tsc --noEmit`；Python `python -m unittest discover -s tools/tests -v` 56 tests；`python tools/validate_package.py`。本地集成 `mvn -B -ntp -Pintegration verify '-Dbuild.commit=local-r05-m08-fix01'` 退出码 1，10 个 Failsafe 类均在 Testcontainers 启动阶段因 Windows JNA `jnidispatch.dll`/Docker named pipe 权限失败，非业务断言；因此真实 PostgreSQL/Keycloak 及浏览器验收须由隔离 Ubuntu CI 提供。
+- 本轮代码验证提交为本地 `8075216`（含 V11、前端/浏览器修复、升级计数修正和报告门禁；其父链含 `2eea12f`），GitHub Data API 代码提交为 `8d211ad06b336ec02521d32db3e62b4c20f72b23`。Push CI [37117461103](https://github.com/fangzhiy/Test365Alm/actions/runs/37117461103) 与 PR CI [37117463767](https://github.com/fangzhiy/Test365Alm/actions/runs/37117463767) 均 success；Push checkout 为 `8d211ad...`，PR merge-ref checkout 为 `0093f4df4260ae5485149e3401bac0b484d77369`。server Surefire 24、Failsafe 59（`TestCaseDatabaseIT` 10、HTTP 1、迁移 1、OIDC 14、需求 13、其余 R02/R03 升级类），browser 9/0/0/0，workers=1、retries=0。M08 其余测试树、复制、配置/参数、执行、结果、附件和需求关联仍未实现。
+
+详细记录见 [`R05-M08-001-FIX01.md`](progress/runs/R05-M08-001-FIX01.md)。
+
 > 当前轮次：`R05-M08-001`。已在独立 `feat/r05-m08-001` 分支实现 MANUAL 手工测试用例第一切片（列表、创建、详情、步骤快照、不可变修订、项目权限、ETag/幂等和前端工作台）；真实 PostgreSQL/Keycloak 及远端 CI 结果以本轮记录为准，尚未将 M08 或完整 ALM 标为完成。
 
 ## R05-M08-001 当前状态（已完成本轮实现，等待审核）
