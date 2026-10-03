@@ -1,5 +1,38 @@
 # Test365Alm 开发状态
 
+## R05-M08-001-FIX02 当前状态（等待最终审核）
+
+- 本轮继续 `feat/r05-m08-001` / PR #5（base `feat/r04-m07-001`）。开始时 GitHub API 核对远端 head 为 `7722dcfa9533ba19a90a08e847f8ec2c2aa54d4f`，PR Open、未合并；普通 Windows Git fetch 仍因 Schannel `SEC_E_NO_CREDENTIALS (0x8009030E)` 失败，未 reset、回退或强推。
+- 历史 Push `37118199450` 和 PR `37118202061` 均因 planning-tools 找不到 `docs/progress/inputs/R05-M08-001-FIX01.md` 失败；PR 实际 checkout 为 `ae38abbfbb7906b27430cb25637a2c5e9f5b8b17`。远端快照同时缺少 `docs/adr/018-r05-sealed-test-steps.md`。本轮从本地完整文件恢复并在最终交付中补齐，未把此前缺失写成历史已发布。
+- G02：`TestCasesPanel` 在同一项目直接 `access=null` 或移除 `test:read` 时，先递增读写轮次、取消请求和定时器，再清理数据；Context 还比较权限指纹，传输层忽略 AbortController 时旧回包也不能更新状态。MEMBER→VIEWER 仍保留只读读取；权限恢复时使用新请求，不恢复失效期间草稿或操作意图。新增直接失权、迟到成功/失败/AbortError、无后续详情/历史请求和恢复后按钮可用回归。
+- 本地验证：前端 Vitest 8 files/108 tests、`npm run lint`、`npx tsc --noEmit`、`npm run build` 均通过；lint 只有既有 React/ref/effect warnings。Python 工具 56 tests 和 `validate_package.py` 通过；真实 Testcontainers 仍受本机 Windows JNA/Docker 限制，按 F01/F03 既有 Ubuntu CI 证据保留。
+- G01/G03 的最终状态、远端文档回读、代码/交付 SHA 和最终 Push/PR CI 以本轮发布后核对及交付回复为准；历史 FIX01 失败不再写为 pending。完整 M08 的测试树、复制、配置/参数、执行、结果、附件和需求关联仍未实现。
+
+详细记录见 [`R05-M08-001-FIX02.md`](progress/runs/R05-M08-001-FIX02.md)。
+
+## R05-M08-001-FIX01 当前状态（等待 PR #5 审核）
+
+- 本轮继续 `feat/r05-m08-001` / PR #5（base `feat/r04-m07-001`），开始前远端 PR 仍为 Open、未合并，远端 head 为审核交付 `47c3dd3788ca3572057af3b562ba408b848621cf`，PR merge checkout 基线为 `066d3bed874d507174046d9b3815d74f81027471`。本地从 `d6b67dc9f7593ff7cd9192b09e603503c6a2774b` 继续，未 reset、回退或强推；Windows Git fetch/push 的 Schannel 凭据限制继续保留，远端发布通过 GitHub Data API 核对。
+- F01：新增正式 V11 迁移，在完整步骤快照写入后封存 `test_revision.sealed_at`；V10 已存在行以 `created_at` 作为升级封存证据。受限 runtime 对已封存历史/当前修订追加步骤在 RLS 边界拒绝，正常新建/追加修订、稳定 step_key、幂等重放及既有 V10 数据保留测试继续覆盖。迁移失败探针同步由正式 V11 后执行故意失败 V12，不改写 V1—V10。
+- F02：`TestCasesPanel` 将列表分页和详情读取状态分开交接；详情成功/失败会结束列表 loading，旧分页请求的成功、失败、AbortError 和 finally 不能覆盖新详情；项目/权限范围变化清理 saving 与旧数据；详情/冲突读取期间步骤输入、上下移、下移、移除、新增均禁用。新增 8 个确定性组件回归，前端当前为 8 files/100 tests。
+- F03：CI-owned Keycloak 手工用例改为真实三主体流程：管理员创建并授权，普通 `PROJECT_MEMBER` 登录后创建/刷新/编辑调序/保存新修订/查看旧修订，独立 viewer 只读且无新增/保存入口；页面操作前通过真实 `/api/v1/me/permissions` 核对角色和权限。测试资源仍由本轮隔离 Compose/数据库播种，生成器新增随机 `R03_MEMBER_*`，不提交凭据。
+- 本地实际通过：系统 Maven `mvn -B -ntp test` 24 tests；`mvn -B -ntp -DskipTests test-compile`；前端 `npm run lint`（0 error、既有 warnings）、`npm run test:run` 8 files/100 tests、`npm run build`、`npx tsc --noEmit`；Python `python -m unittest discover -s tools/tests -v` 56 tests；`python tools/validate_package.py`。本地集成 `mvn -B -ntp -Pintegration verify '-Dbuild.commit=local-r05-m08-fix01'` 退出码 1，10 个 Failsafe 类均在 Testcontainers 启动阶段因 Windows JNA `jnidispatch.dll`/Docker named pipe 权限失败，非业务断言；因此真实 PostgreSQL/Keycloak 及浏览器验收须由隔离 Ubuntu CI 提供。
+- 本轮代码验证提交为本地 `8075216`（含 V11、前端/浏览器修复、升级计数修正和报告门禁；其父链含 `2eea12f`），GitHub Data API 代码提交为 `8d211ad06b336ec02521d32db3e62b4c20f72b23`。Push CI [37117461103](https://github.com/fangzhiy/Test365Alm/actions/runs/37117461103) 与 PR CI [37117463767](https://github.com/fangzhiy/Test365Alm/actions/runs/37117463767) 均 success；Push checkout 为 `8d211ad...`，PR merge-ref checkout 为 `0093f4df4260ae5485149e3401bac0b484d77369`。server Surefire 24、Failsafe 59（`TestCaseDatabaseIT` 10、HTTP 1、迁移 1、OIDC 14、需求 13、其余 R02/R03 升级类），browser 9/0/0/0，workers=1、retries=0。M08 其余测试树、复制、配置/参数、执行、结果、附件和需求关联仍未实现。
+
+详细记录见 [`R05-M08-001-FIX01.md`](progress/runs/R05-M08-001-FIX01.md)。
+
+> 当前轮次：`R05-M08-001`。已在独立 `feat/r05-m08-001` 分支实现 MANUAL 手工测试用例第一切片（列表、创建、详情、步骤快照、不可变修订、项目权限、ETag/幂等和前端工作台）；真实 PostgreSQL/Keycloak 及远端 CI 结果以本轮记录为准，尚未将 M08 或完整 ALM 标为完成。
+
+## R05-M08-001 当前状态（已完成本轮实现，等待审核）
+
+- 起点为远端已核查的 `feat/r04-m07-001` head `32ee886d3ea4745da3af14fd23886abf777442ea`；本轮分支 `feat/r05-m08-001`，PR #5 Open、base `feat/r04-m07-001`，依赖 PR #4。Windows Git fetch/push 受 Schannel 凭据限制，远端分支通过 GitHub Data API 核对；本地代码验证 HEAD `875404e874b54f195ce7cdaaf620b2944eb509a5`，远端代码提交 `0f8b042487a0dc860f09fe81ee0a3285ae1c23b8`，两者以文件 blob 对应，不将本地 SHA 当作远端 SHA。
+- V10 与 `tests` HTTP/service 边界已实现：项目内显示编号、MANUAL 类型、稳定 step_key、不可变修订/步骤、强 ETag/If-Match、持久化幂等和同键并发、同事务审计/Outbox、runtime RLS/受限权限；成员读写、viewer 只读、跨项目/跨租户和撤权/停用会话矩阵已加入真实 OIDC HTTP 测试。审计策略收紧为精确 object/action/target，HTTP 序号必须为正整数。前端工作台保留请求轮次、取消、项目切换清理；未知创建结果复用同一幂等键，写入被拒绝不会误清空可读范围。
+- 已实测本地基础检查：系统 Maven `mvn -B -ntp test` 24 tests、前端 8 files/92 tests、lint/build、Python 工具 56 tests 和规划校验均通过；lint 仍有既有 React warnings。Windows Docker/Testcontainers 的真实 PostgreSQL/OIDC 集成在启动前因 `jnidispatch.dll`/Docker named pipe 权限阻塞，不能写成通过。Push CI `37101518712`（head/checkout `0f8b042487a0dc860f09fe81ee0a3285ae1c23b8`）和 PR merge-ref CI `37101522075`（checkout `7d86cfa28229eec4579ba0e6a1a09c5be4c62428`）均已 success；server Failsafe 58 tests、`TestCaseDatabaseIT` 9、HTTP 1、迁移 1、OIDC 14，全部 failures/errors/skipped=0；浏览器 9/0/0/0，workers=1、retries=0。
+- 本轮只覆盖 M08 手工用例/步骤第一条闭环；测试树、复制、配置、参数、被调用测试、执行/结果、附件、需求关联、生产迁移和完整 M08 验收继续保留为未实现/未验证。
+
+最后更新：2026-10-03
+状态：`IMPLEMENTED / LOCAL_DOCKER_BLOCKED / PUSH_AND_PR_CI_PASS`
+
 > 当前轮次：`R04-M07-001-FIX02`。GitHub 代码提交为 `3e6055a9c1f33dbca34e84c977fb0ad1a19a9df2`，Push CI `36968392677` 与 PR CI `36968396770` 均成功；Windows Testcontainers 仍受 Docker/JNA 权限限制。详见文末 FIX02 状态与 [`docs/progress/runs/R04-M07-001-FIX02.md`](progress/runs/R04-M07-001-FIX02.md)。
 
 ## R04-M07-001-FIX01 当前状态
@@ -257,4 +290,3 @@
 本轮本机验证：前端 `npm ci`（126 packages）、Vitest 6 文件/77 测试、lint（0 error，3 个既有 React warning）、Vite build 均通过；系统 Maven `mvn -B -ntp test` 21 tests 通过；Python 工具 52 tests 通过。真实 Testcontainers/Failsafe 在 Windows 因 JNA `jnidispatch.dll` 临时文件/ Docker named pipe 权限退出码 1，Maven Wrapper 独立退出码 1（PowerShell `icm : Cannot index into a null array`）；均未混写成通过。Push [36968392677](https://github.com/fangzhiy/Test365Alm/actions/runs/36968392677) 六个 job 成功，Push checkout 为 `3e6055a9c1f33dbca34e84c977fb0ad1a19a9df2`；PR [36968396770](https://github.com/fangzhiy/Test365Alm/actions/runs/36968396770) 六个 job 成功，PR merge-ref checkout 为 `6a04165d3cee6c78298643f9a905a9ad8df2bb82`。server 报告 unit 21、OIDC 12、project access 12、requirement 12、upgrade 1，均 failures/errors/skipped=0；browser 8/0/0/0。
 
 本轮 I01–I10：I01 PASS（V7→V8 升级）；I02 PASS（HTTP/数据库创建）；I03 PASS（不可变历史）；I04 PASS（精确并发 412）；I05 PASS（真实 HTTP 12 用例）；I06 PASS（RLS/runtime 隔离）；I07 PASS（撤权/停用原会话直接请求）；I08 PASS（并发幂等）；I09 PASS（回滚与 runtime）；I10 PASS（浏览器 8 用例及 Push/PR CI）。本机 Testcontainers 阻塞已由隔离 Ubuntu CI 覆盖；不标记完整 M07、R04 或生产部署完成。完整结论见 [`docs/progress/runs/R04-M07-001-FIX02.md`](progress/runs/R04-M07-001-FIX02.md)。
-
