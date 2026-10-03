@@ -1,5 +1,15 @@
 # Test365Alm 开发状态
 
+## R05-M08-001-FIX02 当前状态（等待最终审核）
+
+- 本轮继续 `feat/r05-m08-001` / PR #5（base `feat/r04-m07-001`）。开始时 GitHub API 核对远端 head 为 `7722dcfa9533ba19a90a08e847f8ec2c2aa54d4f`，PR Open、未合并；普通 Windows Git fetch 仍因 Schannel `SEC_E_NO_CREDENTIALS (0x8009030E)` 失败，未 reset、回退或强推。
+- 历史 Push `37118199450` 和 PR `37118202061` 均因 planning-tools 找不到 `docs/progress/inputs/R05-M08-001-FIX01.md` 失败；PR 实际 checkout 为 `ae38abbfbb7906b27430cb25637a2c5e9f5b8b17`。远端快照同时缺少 `docs/adr/018-r05-sealed-test-steps.md`。本轮从本地完整文件恢复并在最终交付中补齐，未把此前缺失写成历史已发布。
+- G02：`TestCasesPanel` 在同一项目直接 `access=null` 或移除 `test:read` 时，先递增读写轮次、取消请求和定时器，再清理数据；Context 还比较权限指纹，传输层忽略 AbortController 时旧回包也不能更新状态。MEMBER→VIEWER 仍保留只读读取；权限恢复时使用新请求，不恢复失效期间草稿或操作意图。新增直接失权、迟到成功/失败/AbortError、无后续详情/历史请求和恢复后按钮可用回归。
+- 本地验证：前端 Vitest 8 files/108 tests、`npm run lint`、`npx tsc --noEmit`、`npm run build` 均通过；lint 只有既有 React/ref/effect warnings。Python 工具 56 tests 和 `validate_package.py` 通过；真实 Testcontainers 仍受本机 Windows JNA/Docker 限制，按 F01/F03 既有 Ubuntu CI 证据保留。
+- G01/G03 的最终状态、远端文档回读、代码/交付 SHA 和最终 Push/PR CI 以本轮发布后核对及交付回复为准；历史 FIX01 失败不再写为 pending。完整 M08 的测试树、复制、配置/参数、执行、结果、附件和需求关联仍未实现。
+
+详细记录见 [`R05-M08-001-FIX02.md`](progress/runs/R05-M08-001-FIX02.md)。
+
 ## R05-M08-001-FIX01 当前状态（等待 PR #5 审核）
 
 - 本轮继续 `feat/r05-m08-001` / PR #5（base `feat/r04-m07-001`），开始前远端 PR 仍为 Open、未合并，远端 head 为审核交付 `47c3dd3788ca3572057af3b562ba408b848621cf`，PR merge checkout 基线为 `066d3bed874d507174046d9b3815d74f81027471`。本地从 `d6b67dc9f7593ff7cd9192b09e603503c6a2774b` 继续，未 reset、回退或强推；Windows Git fetch/push 的 Schannel 凭据限制继续保留，远端发布通过 GitHub Data API 核对。

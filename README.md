@@ -8,11 +8,11 @@
 
 ## R05-M08-001 手工测试用例第一切片
 
-当前切片在已选项目中提供 MANUAL 测试用例列表、创建、详情、纯文本标题/说明/前置条件、步骤新增/移除/调序、不可变修订历史和项目角色边界。`PROJECT_ADMIN`/`PROJECT_MEMBER` 可读写，`PROJECT_VIEWER` 只读；服务端生成稳定步骤键和项目内显示编号，追加修订使用强 ETag 与持久化幂等键。真实数据库迁移为 V10，运行时继续使用受限 PostgreSQL 账户，历史修订/步骤不允许更新、删除或清空。
+当前切片在已选项目中提供 MANUAL 测试用例列表、创建、详情、纯文本标题/说明/前置条件、步骤新增/移除/调序、不可变修订历史和项目角色边界。`PROJECT_ADMIN`/`PROJECT_MEMBER` 可读写，`PROJECT_VIEWER` 只读；服务端生成稳定步骤键和项目内显示编号，追加修订使用强 ETag 与持久化幂等键。V11 在完整步骤快照写入后封存修订；V10 既有数据升级时以创建时间作为封存证据，运行时继续使用受限 PostgreSQL 账户，历史修订/步骤不允许更新、删除或清空，也不能向已保存修订追加步骤。
 
-本轮明确不包含测试树、复制、配置/参数、被调用测试、附件、执行、结果、需求关联或完整 M08。接口字段与错误约束见 [test-cases.json](contracts/test-cases.json)，设计决定见 [ADR-017](docs/adr/017-r05-manual-test-case-slice.md)。
+本轮明确不包含测试树、复制、配置/参数、被调用测试、附件、执行、结果、需求关联或完整 M08。接口字段与错误约束见 [test-cases.json](contracts/test-cases.json)，设计决定见 [ADR-017](docs/adr/017-r05-manual-test-case-slice.md) 和 [ADR-018](docs/adr/018-r05-sealed-test-steps.md)。
 
-真实 M08 PostgreSQL 集成验证使用隔离 Testcontainers，不读取日常 `.env`：
+真实 M08 PostgreSQL 集成验证使用隔离 Testcontainers，不读取日常 `.env`；V11 封存边界和 V9→V11 升级用例由报告门禁强制发现：
 
 ```powershell
 Set-Location apps/server
@@ -118,7 +118,7 @@ python tools/cleanup_r02_resources.py --root local-evidence/r03
 
 自动化回归：后端 `cd apps/server; .\mvnw.cmd -B -ntp -Pintegration verify` 使用 Testcontainers 的临时 PostgreSQL，并运行真实 HTTP OIDC 回调集成类 `OidcCallbackSecurityIT`（10 个受门禁用例，含运行时账号、项目 HTTP 和未 bootstrap 拒绝场景）；可单独复跑 `.\mvnw.cmd -B -ntp -Pintegration verify '-Dit.test=OidcCallbackSecurityIT'`。前端 `cd apps/web; npm ci; npm run lint; npm run test:run; npm run build`。真实浏览器联调需先启动上述四个本地服务，再在 `apps/web` 执行 `. ..\..\tools\import_r03_env.ps1 -Path ..\..\.env.r03; npm run test:e2e`；本机可设置 `R03_E2E_BROWSER_CHANNEL=chrome` 使用已安装 Chrome，CI 安装隔离 Chromium。E2E 不用 mock 登录取代真实 Keycloak。
 
-FIX01 的双用户项目演示以及 R04 需求演示只在 CI 本轮拥有的隔离 Compose 项目中运行：测试用两个真实 Keycloak 用户建立本地 principal，由迁移账号在同一临时数据库播种 tenant/domain/tenant_member，然后通过真实浏览器会话完成项目授权/撤权和“创建需求 → 编辑 → 查看不可变修订历史 → viewer 只读”。`tools/verify_r03_project_browser_report.py` 要求项目授权、项目 UI 和需求 UI 用例实际执行且无失败/错误/跳过；普通本机运行因资源归属门禁会跳过并返回非成功报告，不得把它当作真实项目验收通过。生成器不会覆盖已有 `.env.r03` 或 realm；若本地旧配置只有单用户，先确认归属后按隔离环境规则重新生成。
+FIX01 的项目访问/手工测试用例演示以及 R04 需求演示只在 CI 本轮拥有的隔离 Compose 项目中运行：项目授权用例保留管理员与 viewer，手工测试用例用三个真实 Keycloak 用户（管理员、普通 `PROJECT_MEMBER`、独立 viewer）建立本地 principal，由迁移账号在同一临时数据库播种 tenant/domain/tenant_member，然后通过真实浏览器会话完成项目授权和“普通成员创建用例 → 刷新重读 → 编辑调序 → 保存新修订 → 查看旧修订；viewer 只读”。`tools/verify_r03_project_browser_report.py` 要求项目授权、项目 UI 和需求 UI 用例实际执行且无失败/错误/跳过；普通本机运行因资源归属门禁会跳过并返回非成功报告，不得把它当作真实项目验收通过。生成器不会覆盖已有 `.env.r03` 或 realm；若本地旧配置只有单用户，先确认归属后按隔离环境规则重新生成。
 
 会话到期、主体停用和 IdP 中断用例会改变测试资源状态，仅在带本轮 `R03_RUN_ID` 标签的唯一 CI Compose 项目中运行；普通本机开发只运行不破坏数据的浏览器用例。CI 将空闲超时配置为 1 分钟，测试关闭页面避免轮询续期，等待 75 秒后检查旧 Cookie。IdP 不可用时，新登录必须失败；已建立的本地会话在本地有效期内仍可访问、可 CSRF 退出。这里不承诺实时 IdP 撤权或全局单点退出。
 

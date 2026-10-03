@@ -6,7 +6,7 @@ import type { TestCase, TestCaseInput, TestRevision, TestStep } from './tests'
 import type { ProjectAccess } from './projectAccess'
 
 type PanelState = 'idle' | 'loading' | 'ready' | 'error'
-type Context = { projectId: string; resetSignal: number }
+type Context = { projectId: string; resetSignal: number; accessKey: string }
 type SelectOptions = { keepWrite?: boolean; preserveDraft?: boolean }
 type TestCasesPanelProps = { projectId: string; access: ProjectAccess | null; resetSignal?: number }
 
@@ -19,6 +19,7 @@ const isAccessError = (error: unknown, write = false) => {
   return !write && (code === 'FORBIDDEN' || code === 'HTTP_403')
 }
 const isAbort = (error: unknown) => typeof error === 'object' && error !== null && 'name' in error && error.name === 'AbortError'
+const accessKeyFor = (access: ProjectAccess | null) => access === null ? 'none' : `${access.tenantId}:${access.principalId}:${access.roles.join('|')}:${access.permissions.join('|')}`
 const cloneSteps = (steps: TestStep[]) => steps.map((step) => ({ ...step }))
 const newStep = (): TestStep => ({ stepKey: `draft-${newIdempotencyKey()}`, ordinal: 1, action: '', expected: '' })
 const normalizeSteps = (steps: TestStep[]) => steps.map((step, index) => ({ ...step, ordinal: index + 1 }))
@@ -53,12 +54,12 @@ export default function TestCasesPanel({ projectId, access, resetSignal = 0 }: T
   const writeControllerRef = useRef<AbortController | null>(null)
   const readTimeoutRef = useRef<number | null>(null)
   const writeTimeoutRef = useRef<number | null>(null)
-  const contextRef = useRef<Context>({ projectId, resetSignal })
+  const contextRef = useRef<Context>({ projectId, resetSignal, accessKey: accessKeyFor(access) })
   const lastResetRef = useRef(resetSignal)
   const activeProjectRef = useRef(projectId)
   const createIntentRef = useRef<{ key: string; input: TestCaseInput } | null>(null)
   const saveIntentRef = useRef<{ key: string; testId: string; etag: string; input: TestCaseInput } | null>(null)
-  contextRef.current = { projectId, resetSignal }
+  contextRef.current = { projectId, resetSignal, accessKey: accessKeyFor(access) }
 
   const cancelRead = () => {
     readControllerRef.current?.abort()
@@ -71,9 +72,10 @@ export default function TestCasesPanel({ projectId, access, resetSignal = 0 }: T
     if (writeTimeoutRef.current !== null) { window.clearTimeout(writeTimeoutRef.current); writeTimeoutRef.current = null }
   }
   const cancelAll = () => { cancelRead(); cancelWrite() }
-  const isCurrentContext = (context: Context) => contextRef.current.projectId === context.projectId && contextRef.current.resetSignal === context.resetSignal
+  const invalidateOperations = () => { readRoundRef.current += 1; writeRoundRef.current += 1; cancelAll() }
+  const isCurrentContext = (context: Context) => contextRef.current.projectId === context.projectId && contextRef.current.resetSignal === context.resetSignal && contextRef.current.accessKey === context.accessKey
   const clearInvalidData = (message: string) => {
-    readRoundRef.current += 1; writeRoundRef.current += 1; cancelAll()
+    invalidateOperations()
     setItems([]); setNextCursor(null); setSelected(null); setRevisions([]); setSelectedRevision(null)
     setTitle(''); setDescription(''); setPreconditions(''); setSteps([])
     setCreateTitle(''); setCreateDescription(''); setCreatePreconditions(''); setCreateSteps([])
@@ -87,11 +89,11 @@ export default function TestCasesPanel({ projectId, access, resetSignal = 0 }: T
     setNotice(''); setConflict(false); setSaving(false); setDetailLoading(false); setDetailReady(false); setScopeInvalid(false); setWriteDenied(false); createIntentRef.current = null; saveIntentRef.current = null
   }
 
-  useEffect(() => () => { readRoundRef.current += 1; writeRoundRef.current += 1; cancelAll() }, [])
+  useEffect(() => () => { invalidateOperations() }, [])
   useEffect(() => {
     if (lastResetRef.current === resetSignal) return
     lastResetRef.current = resetSignal
-    readRoundRef.current += 1; writeRoundRef.current += 1; cancelAll(); resetData()
+    invalidateOperations(); resetData()
   }, [resetSignal])
 
   const load = async (cursor: string | null = null, query = search) => {
@@ -124,9 +126,9 @@ export default function TestCasesPanel({ projectId, access, resetSignal = 0 }: T
     const changed = activeProjectRef.current !== projectId
     activeProjectRef.current = projectId
     if (changed) {
-      readRoundRef.current += 1; writeRoundRef.current += 1; cancelAll(); resetData()
+      invalidateOperations(); resetData()
     }
-    if (!projectId || !access || !can(access, 'test:read')) { resetData(); return }
+    if (!projectId || !access || !can(access, 'test:read')) { invalidateOperations(); resetData(); return }
     void load(null, changed ? '' : search)
   }, [projectId, access?.permissions.join('|')])
 

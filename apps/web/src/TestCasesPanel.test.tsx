@@ -12,6 +12,7 @@ vi.mock('./tests', async () => {
 
 const access = { tenantId: 'tenant-1', projectId: 'project-1', principalId: 'principal-1', roles: ['PROJECT_MEMBER'] as const, permissions: ['test:read', 'test:create', 'test:update', 'test:history:read'] }
 const viewer = { ...access, roles: ['PROJECT_VIEWER'] as const, permissions: ['test:read', 'test:history:read'] }
+const noRead = { ...access, permissions: ['test:create', 'test:update'] as const }
 const testCase: TestCase = { id: 'test-1', projectId: 'project-1', displayNumber: 'TC-1', testType: 'MANUAL', rowVersion: 1, etag: '"1"', currentRevisionId: 'test-rev-1', revisionNumber: 1, title: 'Sign in', description: 'User signs in', preconditions: 'Account exists', createdAt: '2026-10-01T00:00:00Z', createdBy: 'principal-1', steps: [{ stepKey: 'step-a', ordinal: 1, action: 'Open login', expected: 'Login is visible' }, { stepKey: 'step-b', ordinal: 2, action: 'Enter credentials', expected: 'Credentials accepted' }] }
 const revision: TestRevision = { id: 'test-rev-1', revisionNumber: 1, title: testCase.title, description: testCase.description, preconditions: testCase.preconditions, createdAt: testCase.createdAt, createdBy: testCase.createdBy, steps: testCase.steps }
 const deferred = <T,>() => {
@@ -279,5 +280,94 @@ describe('TestCasesPanel', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('没有读取')
     pendingSave.resolve(testCase)
     await waitFor(() => expect(screen.queryByText('Sign in')).not.toBeInTheDocument())
+  })
+
+  it.each([
+    ['late success', (pending: { resolve: (value: TestCase) => void; reject: (reason?: unknown) => void }) => pending.resolve(testCase)],
+    ['late failure', (pending: { resolve: (value: TestCase) => void; reject: (reason?: unknown) => void }) => pending.reject(new Error('late save failure'))],
+    ['late abort', (pending: { resolve: (value: TestCase) => void; reject: (reason?: unknown) => void }) => pending.reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))],
+  ])('invalidates a pending write when the same project loses all access (%s)', async (_label, settle) => {
+    const pendingSave = deferred<TestCase>()
+    vi.mocked(testsApi.list).mockResolvedValue({ items: [testCase], nextCursor: null })
+    vi.mocked(testsApi.get).mockResolvedValue(testCase)
+    vi.mocked(testsApi.revisions).mockResolvedValue([revision])
+    vi.mocked(testsApi.appendRevision).mockReturnValue(pendingSave.promise)
+    const { rerender } = render(<TestCasesPanel projectId="project-1" access={access} />)
+    fireEvent.click(await screen.findByRole('button', { name: /TC-1/ }))
+    await screen.findByDisplayValue('Sign in')
+    fireEvent.click(screen.getByRole('button', { name: '保存为新修订' }))
+    await waitFor(() => expect(testsApi.appendRevision).toHaveBeenCalledTimes(1))
+    const before = { get: vi.mocked(testsApi.get).mock.calls.length, revisions: vi.mocked(testsApi.revisions).mock.calls.length }
+
+    rerender(<TestCasesPanel projectId="project-1" access={null} />)
+    expect(await screen.findByRole('alert')).toHaveTextContent('没有读取')
+    expect(vi.mocked(testsApi.appendRevision).mock.calls[0][3]?.signal?.aborted).toBe(true)
+    settle(pendingSave)
+    await waitFor(() => expect(vi.mocked(testsApi.get).mock.calls.length).toBe(before.get))
+    expect(vi.mocked(testsApi.revisions).mock.calls.length).toBe(before.revisions)
+    expect(screen.queryByText('保存中…')).not.toBeInTheDocument()
+  })
+
+  it.each([
+    ['late success', (pending: { resolve: (value: { items: TestCase[]; nextCursor: null }) => void; reject: (reason?: unknown) => void }) => pending.resolve({ items: [testCase], nextCursor: null })],
+    ['late failure', (pending: { resolve: (value: { items: TestCase[]; nextCursor: null }) => void; reject: (reason?: unknown) => void }) => pending.reject(new Error('late list failure'))],
+    ['late abort', (pending: { resolve: (value: { items: TestCase[]; nextCursor: null }) => void; reject: (reason?: unknown) => void }) => pending.reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))],
+  ])('invalidates a pending read when the same project loses test:read (%s)', async (_label, settle) => {
+    const pendingList = deferred<{ items: TestCase[]; nextCursor: null }>()
+    vi.mocked(testsApi.list).mockReturnValue(pendingList.promise)
+    const { rerender } = render(<TestCasesPanel projectId="project-1" access={access} />)
+    await waitFor(() => expect(testsApi.list).toHaveBeenCalledTimes(1))
+    rerender(<TestCasesPanel projectId="project-1" access={noRead} />)
+    expect(await screen.findByRole('alert')).toHaveTextContent('没有读取')
+    expect(vi.mocked(testsApi.list).mock.calls[0][3]?.signal?.aborted).toBe(true)
+    settle(pendingList)
+    await waitFor(() => expect(vi.mocked(testsApi.list).mock.calls.length).toBe(1))
+    expect(screen.queryByText('TC-1')).not.toBeInTheDocument()
+  })
+
+  it('loads a fresh scope after direct same-project access is restored', async () => {
+    const firstList = deferred<{ items: TestCase[]; nextCursor: null }>()
+    vi.mocked(testsApi.list).mockReturnValueOnce(firstList.promise).mockResolvedValueOnce({ items: [{ ...testCase, id: 'test-restored', displayNumber: 'TC-R' }], nextCursor: null })
+    const { rerender } = render(<TestCasesPanel projectId="project-1" access={access} />)
+    await waitFor(() => expect(testsApi.list).toHaveBeenCalledTimes(1))
+    rerender(<TestCasesPanel projectId="project-1" access={null} />)
+    expect(await screen.findByRole('alert')).toHaveTextContent('没有读取')
+    rerender(<TestCasesPanel projectId="project-1" access={access} />)
+    expect(await screen.findByText('TC-R')).toBeVisible()
+    expect(screen.getByRole('button', { name: '刷新用例' })).toBeEnabled()
+    firstList.resolve({ items: [testCase], nextCursor: null })
+    await waitFor(() => expect(screen.queryByText('TC-1')).not.toBeInTheDocument())
+  })
+
+  it('restores a fresh same-project scope after access is lost during a pending save', async () => {
+    const pendingSave = deferred<TestCase>()
+    const restored = { ...testCase, id: 'test-restored-write', displayNumber: 'TC-RW', title: 'Restored after access loss' }
+    vi.mocked(testsApi.list).mockResolvedValueOnce({ items: [testCase], nextCursor: null }).mockResolvedValueOnce({ items: [restored], nextCursor: null })
+    vi.mocked(testsApi.get).mockResolvedValueOnce(testCase).mockResolvedValueOnce(restored)
+    vi.mocked(testsApi.revisions).mockResolvedValueOnce([revision]).mockResolvedValueOnce([{ ...revision, id: 'test-restored-rev', title: restored.title }])
+    vi.mocked(testsApi.appendRevision).mockReturnValue(pendingSave.promise)
+    const { rerender } = render(<TestCasesPanel projectId="project-1" access={access} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: /TC-1/ }))
+    await screen.findByDisplayValue('Sign in')
+    fireEvent.click(screen.getByRole('button', { name: '保存为新修订' }))
+    await waitFor(() => expect(testsApi.appendRevision).toHaveBeenCalledTimes(1))
+    const readsBeforeLateSave = { get: vi.mocked(testsApi.get).mock.calls.length, revisions: vi.mocked(testsApi.revisions).mock.calls.length }
+
+    rerender(<TestCasesPanel projectId="project-1" access={null} />)
+    expect(await screen.findByRole('alert')).toHaveTextContent('没有读取')
+    expect(vi.mocked(testsApi.appendRevision).mock.calls[0][3]?.signal?.aborted).toBe(true)
+    pendingSave.resolve({ ...testCase, title: 'Stale save response' })
+    await waitFor(() => expect(vi.mocked(testsApi.get).mock.calls.length).toBe(readsBeforeLateSave.get))
+    expect(vi.mocked(testsApi.revisions).mock.calls.length).toBe(readsBeforeLateSave.revisions)
+
+    rerender(<TestCasesPanel projectId="project-1" access={access} />)
+    expect(await screen.findByText('TC-RW')).toBeVisible()
+    fireEvent.click(screen.getByRole('button', { name: /TC-RW/ }))
+    expect(await screen.findByDisplayValue('Restored after access loss')).toBeVisible()
+    expect(screen.getByRole('button', { name: '刷新用例' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: '创建用例' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: '保存为新修订' })).toBeEnabled()
+    expect(screen.queryByText('测试用例已保存为新修订')).not.toBeInTheDocument()
   })
 })

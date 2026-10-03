@@ -27,7 +27,7 @@ cd apps/web; npm ci; npm run lint; npm run test:run; npm run build
 cd apps/server; .\mvnw.cmd -B -ntp test
 # 集成测试由 Testcontainers 创建本轮唯一的临时 PostgreSQL；不读取日常 .env，也不设置 TEST365ALM_IT_DATASOURCE_*。
 cd apps/server; .\mvnw.cmd -B -ntp -Pintegration verify '-Dbuild.commit=local-r02'
-# R05-M08-001：真实 PostgreSQL 手工测试用例/修订/权限报告门禁
+# R05-M08-001：真实 PostgreSQL 手工测试用例/修订/权限报告门禁（FIX01 含 V11）
 cd apps/server; .\mvnw.cmd -B -ntp -Pintegration verify '-Dbuild.commit=local-r05-m08-001'
 python tools/verify_r05_test_case_report.py apps/server/target/failsafe-reports
 # R03 FIX02：真实 HTTP OIDC 授权码/回调/PKCE/JWKS、运行时数据源与项目访问（10 个用例）
@@ -87,5 +87,4 @@ Python 工具只使用标准库，支持 Python 3.10 及以上。新增工具必
 - R03 FIX02 的 HTTP 回调测试必须保留真实应用过滤器链和同一 Cookie 容器；测试 IdP 只提供回环协议响应，不能用 `oidcLogin`、`@WithMockUser`、直接 SecurityContext 或 mock Principal/JWT 验证替代。每类非法 token 之后必须以独立 owner 连接比较 principal 全字段快照；只允许合成 subject 与 Testcontainers 临时 PostgreSQL，报告不得包含 Cookie、token、私钥或秘密。
 - R04-M07-001 的需求接口仅覆盖项目根级、纯文本 title/body 和固定 priority；稳定需求身份与追加修订分离。写操作必须经过项目成员权限、同源 CSRF、幂等键和具体 `If-Match`；revision 只允许 runtime INSERT/SELECT，不能通过应用接口更新或删除历史。V7 是新增权威迁移，不改写 V1-V6；完整 M07、需求树、评审、附件和追踪继续保持未完成。
 - R04-M07-001-FIX01 在 V8 中只追加约束和权限收口，不改写 V1-V7：current revision、outbox、幂等记录必须保持同租户/项目/需求归属；PROJECT_VIEWER 的 runtime SQL 写入、revision/outbox 修改和 TRUNCATE 必须被 RLS/GRANT 拒绝。幂等记录按租户/项目/主体/路由作用域检查有效期，新意图必须使用新键，当前格式重放返回冻结快照且重新授权；V7/V8 旧哈希经 V9 标记为不可安全重放，服务以 `IDEMPOTENCY_LEGACY_UNSUPPORTED` 拒绝而不拼装当前 ETag。审计和 Outbox 与业务写入同事务，失败必须回滚。FIX03 的集成门禁要求 `RequirementDatabaseIT` 并发/幂等/回滚用例以及独立 `RequirementMigrationUpgradeIT` 在真实 PostgreSQL 中先完成 V7→V9，再通过受限 runtime `RequirementService` 验证旧摘要安全拒绝、当前格式重放和撤权保护；不能以单元测试或直接 Controller 调用替代。
-- R05-M08-001 只实现 MANUAL 测试用例第一条闭环：`test_case`、`test_revision`、`test_step` 使用 V10 受控迁移；项目成员可读写，viewer 只读，租户成员不因租户角色自动获得项目访问。显示编号由项目内分配器加行锁生成，步骤键由服务端生成且编辑调序保留；历史修订/步骤只读，创建/修订的业务、审计、Outbox 和幂等记录同事务。所有 runtime 查询须先通过测试用例专属项目权限边界；新建/编辑使用具体强 ETag 和 `Idempotency-Key`，未知字段、错误类型、跨范围引用和不支持类型必须拒绝。M08 Testcontainers 集成测试不得读取日常 `.env`，失败/回滚注入只能操作本轮临时数据库；完整 M08 的树、配置、参数、执行、附件和需求关联仍未实现。
-
+- R05-M08-001 只实现 MANUAL 测试用例第一条闭环：`test_case`、`test_revision`、`test_step` 使用 V10 受控迁移；FIX01 的 V11 在完整快照写入后封存 `test_revision`，受限 runtime 对已封存当前/历史修订的步骤 INSERT/UPDATE/DELETE/TRUNCATE 均不得成功，V10 既有行以 `created_at` 作为可追踪封存时间升级。项目成员可读写，viewer 只读，租户成员不因租户角色自动获得项目访问。显示编号由项目内分配器加行锁生成，步骤键由服务端生成且编辑调序保留；历史修订/步骤只读，创建/修订的业务、审计、Outbox 和幂等记录同事务。所有 runtime 查询须先通过测试用例专属项目权限边界；新建/编辑使用具体强 ETag 和 `Idempotency-Key`，未知字段、错误类型、跨范围引用和不支持类型必须拒绝。M08 Testcontainers 集成测试不得读取日常 `.env`，失败/回滚注入只能操作本轮临时数据库；完整 M08 的树、配置、参数、执行、附件和需求关联仍未实现。
