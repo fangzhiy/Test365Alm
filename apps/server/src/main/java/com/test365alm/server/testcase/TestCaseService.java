@@ -66,11 +66,12 @@ public class TestCaseService {
                     normalized.testType(), actor);
             jdbc.update("""
                     INSERT INTO test_revision
-                        (tenant_id, project_id, test_case_id, id, revision_no, title, description, preconditions, created_by)
-                    VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)
+                        (tenant_id, project_id, test_case_id, id, revision_no, title, description, preconditions, created_by, sealed_at)
+                    VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, NULL)
                     """, project.tenantId(), projectId, testCaseId, revisionId, normalized.title(),
                     normalized.description(), normalized.preconditions(), actor);
             insertSteps(project.tenantId(), projectId, testCaseId, revisionId, normalized.steps(), Set.of(), false);
+            sealRevision(project.tenantId(), projectId, testCaseId, revisionId);
             jdbc.update("""
                     UPDATE test_case SET current_revision_id = ?, updated_at = CURRENT_TIMESTAMP
                     WHERE tenant_id = ? AND project_id = ? AND id = ?
@@ -203,11 +204,12 @@ public class TestCaseService {
         long nextRevision = current.revisionNo() + 1;
         jdbc.update("""
                 INSERT INTO test_revision
-                    (tenant_id, project_id, test_case_id, id, revision_no, title, description, preconditions, created_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (tenant_id, project_id, test_case_id, id, revision_no, title, description, preconditions, created_by, sealed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
                 """, project.tenantId(), projectId, testCaseId, revisionId, nextRevision,
                 normalized.title(), normalized.description(), normalized.preconditions(), actor);
         insertSteps(project.tenantId(), projectId, testCaseId, revisionId, resolved, keys(priorSteps), true);
+        sealRevision(project.tenantId(), projectId, testCaseId, revisionId);
         int updated = jdbc.update("""
                 UPDATE test_case SET row_version = row_version + 1,
                     current_revision_id = ?, updated_at = CURRENT_TIMESTAMP
@@ -522,6 +524,14 @@ public class TestCaseService {
                 """, tenantId, projectId, testCaseId, revisionId, eventType);
     }
 
+    private void sealRevision(UUID tenantId, UUID projectId, UUID testCaseId, UUID revisionId) {
+        int updated = jdbc.update("""
+                UPDATE test_revision SET sealed_at = CURRENT_TIMESTAMP
+                WHERE tenant_id = ? AND project_id = ? AND test_case_id = ? AND id = ? AND sealed_at IS NULL
+                """, tenantId, projectId, testCaseId, revisionId);
+        if (updated != 1) throw new IllegalStateException("Test revision could not be sealed");
+    }
+
     private void setContext(UUID tenantId, UUID actor, UUID projectId) {
         jdbc.queryForObject("SELECT set_config('test365alm.tenant_id', ?, true)", String.class, tenantId.toString());
         jdbc.queryForObject("SELECT set_config('test365alm.principal_id', ?, true)", String.class, actor.toString());
@@ -599,4 +609,3 @@ public class TestCaseService {
     private record RevisionRecord(UUID id, UUID testCaseId, long revisionNo, String title, String description,
             String preconditions, OffsetDateTime createdAt, UUID createdBy) { }
 }
-

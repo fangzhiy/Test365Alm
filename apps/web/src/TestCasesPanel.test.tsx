@@ -14,6 +14,12 @@ const access = { tenantId: 'tenant-1', projectId: 'project-1', principalId: 'pri
 const viewer = { ...access, roles: ['PROJECT_VIEWER'] as const, permissions: ['test:read', 'test:history:read'] }
 const testCase: TestCase = { id: 'test-1', projectId: 'project-1', displayNumber: 'TC-1', testType: 'MANUAL', rowVersion: 1, etag: '"1"', currentRevisionId: 'test-rev-1', revisionNumber: 1, title: 'Sign in', description: 'User signs in', preconditions: 'Account exists', createdAt: '2026-10-01T00:00:00Z', createdBy: 'principal-1', steps: [{ stepKey: 'step-a', ordinal: 1, action: 'Open login', expected: 'Login is visible' }, { stepKey: 'step-b', ordinal: 2, action: 'Enter credentials', expected: 'Credentials accepted' }] }
 const revision: TestRevision = { id: 'test-rev-1', revisionNumber: 1, title: testCase.title, description: testCase.description, preconditions: testCase.preconditions, createdAt: testCase.createdAt, createdBy: testCase.createdBy, steps: testCase.steps }
+const deferred = <T,>() => {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => { resolve = resolvePromise; reject = rejectPromise })
+  return { promise, resolve, reject }
+}
 
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 
@@ -141,5 +147,137 @@ describe('TestCasesPanel', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('没有修改')
     expect(screen.getByText('TC-1')).toBeVisible()
     expect(screen.queryByRole('button', { name: '保存为新修订' })).not.toBeInTheDocument()
+  })
+
+  it('restores list controls when a delayed load-more is superseded by detail loading', async () => {
+    const delayedPage = deferred<{ items: TestCase[]; nextCursor: null }>()
+    vi.mocked(testsApi.list).mockResolvedValueOnce({ items: [testCase], nextCursor: 'cursor-2' }).mockReturnValueOnce(delayedPage.promise)
+    vi.mocked(testsApi.get).mockResolvedValue(testCase)
+    vi.mocked(testsApi.revisions).mockResolvedValue([revision])
+    render(<TestCasesPanel projectId="project-1" access={access} />)
+
+    await screen.findByText('TC-1')
+    fireEvent.click(screen.getByRole('button', { name: '加载更多用例' }))
+    fireEvent.click(screen.getByRole('button', { name: /TC-1/ }))
+    await screen.findByDisplayValue('Sign in')
+
+    expect(screen.getByRole('button', { name: '刷新用例' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: '加载更多用例' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: '查询' })).toBeEnabled()
+
+    delayedPage.resolve({ items: [{ ...testCase, id: 'test-2', displayNumber: 'TC-2' }], nextCursor: null })
+    await waitFor(() => expect(screen.getByDisplayValue('Sign in')).toBeVisible())
+    expect(screen.getByRole('button', { name: '刷新用例' })).toBeEnabled()
+    expect(screen.getByText('TC-1')).toBeVisible()
+  })
+
+  it.each([
+    ['success', (pending: { resolve: (value: { items: TestCase[]; nextCursor: null }) => void; reject: (reason?: unknown) => void }) => pending.resolve({ items: [{ ...testCase, id: 'test-2', displayNumber: 'TC-2' }], nextCursor: null })],
+    ['failure', (pending: { resolve: (value: { items: TestCase[]; nextCursor: null }) => void; reject: (reason?: unknown) => void }) => pending.reject(new Error('late list failure'))],
+    ['abort', (pending: { resolve: (value: { items: TestCase[]; nextCursor: null }) => void; reject: (reason?: unknown) => void }) => pending.reject(Object.assign(new Error('aborted'), { name: 'AbortError' }))],
+  ])('ignores delayed load-more %s after a newer detail request', async (_label, settle) => {
+    const delayedPage = deferred<{ items: TestCase[]; nextCursor: null }>()
+    vi.mocked(testsApi.list).mockResolvedValueOnce({ items: [testCase], nextCursor: 'cursor-2' }).mockReturnValueOnce(delayedPage.promise)
+    vi.mocked(testsApi.get).mockResolvedValue(testCase)
+    vi.mocked(testsApi.revisions).mockResolvedValue([revision])
+    render(<TestCasesPanel projectId="project-1" access={access} />)
+
+    await screen.findByText('TC-1')
+    fireEvent.click(screen.getByRole('button', { name: '加载更多用例' }))
+    fireEvent.click(screen.getByRole('button', { name: /TC-1/ }))
+    await screen.findByDisplayValue('Sign in')
+    settle(delayedPage)
+    await waitFor(() => expect(screen.getByDisplayValue('Sign in')).toBeVisible())
+    expect(screen.getByRole('button', { name: '刷新用例' })).toBeEnabled()
+    expect(screen.queryByText('late list failure')).not.toBeInTheDocument()
+  })
+
+  it('disables every detail step editor until detail and history have loaded', async () => {
+    const detail = deferred<TestCase>()
+    const history = deferred<TestRevision[]>()
+    vi.mocked(testsApi.list).mockResolvedValue({ items: [testCase], nextCursor: null })
+    vi.mocked(testsApi.get).mockReturnValue(detail.promise)
+    vi.mocked(testsApi.revisions).mockReturnValue(history.promise)
+    render(<TestCasesPanel projectId="project-1" access={access} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: /TC-1/ }))
+    const detailRegion = screen.getByLabelText('测试用例详情')
+    expect(screen.getByLabelText('步骤 1 操作')).toBeDisabled()
+    expect(screen.getByLabelText('步骤 1 预期结果')).toBeDisabled()
+    expect(screen.getAllByRole('button', { name: '上移' })[0]).toBeDisabled()
+    expect(screen.getAllByRole('button', { name: '下移' })[0]).toBeDisabled()
+    expect(screen.getAllByRole('button', { name: '移除' })[0]).toBeDisabled()
+    expect(within(detailRegion).getByRole('button', { name: '新增步骤' })).toBeDisabled()
+
+    detail.resolve(testCase)
+    history.resolve([revision])
+    await waitFor(() => expect(screen.getByLabelText('步骤 1 操作')).toBeEnabled())
+    expect(within(detailRegion).getByRole('button', { name: '新增步骤' })).toBeEnabled()
+  })
+
+  it('protects step drafts while viewing the latest version after a 412 conflict', async () => {
+    const latest = { ...testCase, rowVersion: 2, etag: '"2"', revisionNumber: 2, currentRevisionId: 'test-rev-2', title: 'Latest' }
+    const latestRevision = { ...revision, id: 'test-rev-2', revisionNumber: 2, title: 'Latest' }
+    const latestDetail = deferred<TestCase>()
+    const latestHistory = deferred<TestRevision[]>()
+    vi.mocked(testsApi.list).mockResolvedValue({ items: [testCase], nextCursor: null })
+    vi.mocked(testsApi.get).mockResolvedValueOnce(testCase).mockReturnValueOnce(latestDetail.promise)
+    vi.mocked(testsApi.revisions).mockResolvedValueOnce([revision]).mockReturnValueOnce(latestHistory.promise)
+    vi.mocked(testsApi.appendRevision).mockRejectedValue({ code: 'HTTP_412', message: '版本冲突' })
+    render(<TestCasesPanel projectId="project-1" access={access} />)
+    fireEvent.click(await screen.findByRole('button', { name: /TC-1/ }))
+    await screen.findByDisplayValue('Open login')
+    fireEvent.change(screen.getByLabelText('步骤 1 操作'), { target: { value: 'Keep this step draft' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存为新修订' }))
+    fireEvent.click(await screen.findByRole('button', { name: '查看最新版本' }))
+
+    expect(screen.getByLabelText('步骤 1 操作')).toBeDisabled()
+    expect(within(screen.getByLabelText('测试用例详情')).getByRole('button', { name: '新增步骤' })).toBeDisabled()
+    latestDetail.resolve(latest)
+    latestHistory.resolve([revision, latestRevision])
+    await waitFor(() => expect(screen.getByLabelText('步骤 1 操作')).toBeEnabled())
+    expect(screen.getByDisplayValue('Keep this step draft')).toBeVisible()
+    expect(screen.getByText('已加载最新版本，草稿仍保留，请确认后再保存。')).toBeVisible()
+  })
+
+  it('clears saving and stale data when the active project loses access during a write', async () => {
+    const pendingSave = deferred<TestCase>()
+    const projectB = { ...testCase, id: 'test-b', projectId: 'project-2', displayNumber: 'TC-B', title: 'Project B' }
+    vi.mocked(testsApi.list).mockImplementation((project) => Promise.resolve(project === 'project-1' ? { items: [testCase], nextCursor: null } : { items: [projectB], nextCursor: null }))
+    vi.mocked(testsApi.get).mockResolvedValue(testCase)
+    vi.mocked(testsApi.revisions).mockResolvedValue([revision])
+    vi.mocked(testsApi.appendRevision).mockReturnValue(pendingSave.promise)
+    const { rerender } = render(<TestCasesPanel projectId="project-1" access={access} />)
+    fireEvent.click(await screen.findByRole('button', { name: /TC-1/ }))
+    await screen.findByDisplayValue('Sign in')
+    fireEvent.click(screen.getByRole('button', { name: '保存为新修订' }))
+    rerender(<TestCasesPanel projectId="project-2" access={{ ...access, projectId: 'project-2' }} />)
+    await screen.findByText('TC-B')
+    expect(screen.getByRole('button', { name: '刷新用例' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: '创建用例' })).toBeEnabled()
+    pendingSave.resolve(projectB)
+    await waitFor(() => expect(screen.queryByText('TC-1')).not.toBeInTheDocument())
+  })
+
+  it('drops write state when permissions change to viewer or the session is reset', async () => {
+    const pendingSave = deferred<TestCase>()
+    vi.mocked(testsApi.list).mockResolvedValue({ items: [testCase], nextCursor: null })
+    vi.mocked(testsApi.get).mockResolvedValue(testCase)
+    vi.mocked(testsApi.revisions).mockResolvedValue([revision])
+    vi.mocked(testsApi.appendRevision).mockReturnValue(pendingSave.promise)
+    const { rerender } = render(<TestCasesPanel projectId="project-1" access={access} />)
+    fireEvent.click(await screen.findByRole('button', { name: /TC-1/ }))
+    await screen.findByDisplayValue('Sign in')
+    fireEvent.click(screen.getByRole('button', { name: '保存为新修订' }))
+
+    rerender(<TestCasesPanel projectId="project-1" access={viewer} />)
+    await screen.findByText('TC-1')
+    expect(screen.queryByRole('button', { name: '保存为新修订' })).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('button', { name: '刷新用例' })).toBeEnabled())
+
+    rerender(<TestCasesPanel projectId="project-1" access={null} />)
+    expect(await screen.findByRole('alert')).toHaveTextContent('没有读取')
+    pendingSave.resolve(testCase)
+    await waitFor(() => expect(screen.queryByText('Sign in')).not.toBeInTheDocument())
   })
 })

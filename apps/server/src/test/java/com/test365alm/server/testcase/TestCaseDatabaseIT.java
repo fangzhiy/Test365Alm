@@ -134,6 +134,41 @@ class TestCaseDatabaseIT {
     }
 
     @Test
+    void savedRevisionStepsAreImmutableForRuntimeMember() throws Exception {
+        Fixture f = fixture();
+        projects.putMember(f.admin(), f.project(), f.member(), List.of("PROJECT_MEMBER"), 0L, false);
+        String createKey = key("immutable-create");
+        TestCaseService.TestCaseView first = tests.create(f.member(), f.project(), create("Immutable steps"), createKey);
+        String revisionKey = key("immutable-revision");
+        TestCaseService.TestCaseView second = tests.appendRevision(f.member(), f.project(), first.id(),
+                new TestCaseService.RevisionCommand("Revision two", "", "", commands(first.currentRevision().steps())),
+                etag(first), revisionKey);
+        Map<String, List<String>> before = fullSnapshot(f.project());
+
+        try (Connection connection = runtimeConnection()) {
+            setContext(connection, f.tenant(), f.project(), f.member());
+            assertSqlState("42501", () -> execute(connection, "INSERT INTO test_step"
+                    + " (tenant_id, project_id, test_case_id, revision_id, step_key, ordinal, action, expected)"
+                    + " VALUES (?, ?, ?, ?, ?, 3, 'late historical action', 'late historical result')",
+                    f.tenant(), f.project(), first.id(), first.currentRevision().id(), UUID.randomUUID()));
+            assertSqlState("42501", () -> execute(connection, "INSERT INTO test_step"
+                    + " (tenant_id, project_id, test_case_id, revision_id, step_key, ordinal, action, expected)"
+                    + " VALUES (?, ?, ?, ?, ?, 3, 'late current action', 'late current result')",
+                    f.tenant(), f.project(), second.id(), second.currentRevision().id(), UUID.randomUUID()));
+        }
+
+        assertEquals(before, fullSnapshot(f.project()),
+                "rejected historical/current step inserts leave business, audit, outbox and idempotency rows unchanged");
+        assertEquals(first, tests.create(f.member(), f.project(), create("Immutable steps"), createKey),
+                "create idempotency replay keeps the original step collection");
+        assertEquals(second, tests.appendRevision(f.member(), f.project(), second.id(),
+                new TestCaseService.RevisionCommand("Revision two", "", "", commands(first.currentRevision().steps())),
+                etag(first), revisionKey),
+                "revision idempotency replay keeps the original step collection");
+        assertEquals(first.currentRevision(), tests.revision(f.member(), f.project(), first.id(), first.currentRevision().id()));
+    }
+
+    @Test
     void crossScopeReferencesRejectedAndHistoryImmutable() throws Exception {
         Fixture f = fixture();
         projects.putMember(f.admin(), f.project(), f.member(), List.of("PROJECT_MEMBER"), 0L, false);

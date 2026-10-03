@@ -22,7 +22,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
-/** Real V9-to-V10 upgrade proof with a pre-existing V9 row. */
+/** Real V9-to-V11 upgrade proof with a pre-existing V9 row. */
 @ActiveProfiles("integration")
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Testcontainers
@@ -54,7 +54,7 @@ class TestCaseMigrationUpgradeIT {
     }
 
     @Test
-    void v9DataSurvivesV10Upgrade() throws Exception {
+    void v9DataSurvivesV11Upgrade() throws Exception {
         Flyway v9 = flyway("9");
         assertEquals(9, v9.migrate().migrationsExecuted);
         UUID principal = UUID.randomUUID();
@@ -64,6 +64,9 @@ class TestCaseMigrationUpgradeIT {
         UUID requirement = UUID.randomUUID();
         UUID revisionOne = UUID.randomUUID();
         UUID revisionTwo = UUID.randomUUID();
+        UUID testCase = UUID.randomUUID();
+        UUID testRevision = UUID.randomUUID();
+        UUID testStep = UUID.randomUUID();
         String legacyKey = "v9-legacy-" + UUID.randomUUID();
         try (Connection connection = ownerConnection()) {
             execute(connection, "INSERT INTO platform_metadata (metadata_key, metadata_value) VALUES (?, ?)",
@@ -108,12 +111,29 @@ class TestCaseMigrationUpgradeIT {
                     requirement, revisionOne);
         }
 
+        Flyway v10 = flyway("10");
+        assertEquals(1, v10.migrate().migrationsExecuted);
+        try (Connection connection = ownerConnection()) {
+            execute(connection, "INSERT INTO test_case"
+                    + " (tenant_id, project_id, id, display_number, test_type, row_version, created_by)"
+                    + " VALUES (?, ?, ?, 1, 'MANUAL', 1, ?)", tenant, project, testCase, principal);
+            execute(connection, "INSERT INTO test_revision"
+                    + " (tenant_id, project_id, test_case_id, id, revision_no, title, description, preconditions, created_by)"
+                    + " VALUES (?, ?, ?, ?, 1, 'V10 case', 'V10 description', 'V10 setup', ?)",
+                    tenant, project, testCase, testRevision, principal);
+            execute(connection, "INSERT INTO test_step"
+                    + " (tenant_id, project_id, test_case_id, revision_id, step_key, ordinal, action, expected)"
+                    + " VALUES (?, ?, ?, ?, ?, 1, 'V10 action', 'V10 expected')",
+                    tenant, project, testCase, testRevision, testStep);
+            execute(connection, "UPDATE test_case SET current_revision_id = ? WHERE id = ?", testRevision, testCase);
+        }
+
         Flyway latest = flyway(null);
         assertEquals(1, latest.migrate().migrationsExecuted);
-        assertEquals(0, latest.migrate().migrationsExecuted, "V10 must be idempotent after the upgrade");
+        assertEquals(0, latest.migrate().migrationsExecuted, "V10/V11 must be idempotent after the upgrade");
         try (Connection connection = ownerConnection()) {
-            assertEquals(10, scalar(connection, "SELECT COUNT(*) FROM flyway_schema_history WHERE success = TRUE"));
-            assertEquals(1, scalar(connection, "SELECT COUNT(*) FROM flyway_schema_history WHERE version = '10' AND success = TRUE"));
+            assertEquals(11, scalar(connection, "SELECT COUNT(*) FROM flyway_schema_history WHERE success = TRUE"));
+            assertEquals(1, scalar(connection, "SELECT COUNT(*) FROM flyway_schema_history WHERE version = '11' AND success = TRUE"));
             assertEquals("preserved before manual test case migration",
                     text(connection, "SELECT metadata_value FROM platform_metadata WHERE metadata_key = ?", "r05-v9-sentinel"));
             assertEquals(1, scalar(connection, "SELECT COUNT(*) FROM principal WHERE id = ?", principal));
@@ -132,7 +152,9 @@ class TestCaseMigrationUpgradeIT {
             assertTrue(text(connection, "SELECT to_regclass('public.test_case')") != null);
             assertTrue(text(connection, "SELECT to_regclass('public.test_revision')") != null);
             assertTrue(text(connection, "SELECT to_regclass('public.test_step')") != null);
-            assertEquals(0, scalar(connection, "SELECT COUNT(*) FROM test_case"));
+            assertEquals(1, scalar(connection, "SELECT COUNT(*) FROM test_case WHERE id = ?", testCase));
+            assertEquals(1, scalar(connection, "SELECT COUNT(*) FROM test_revision WHERE id = ? AND sealed_at IS NOT NULL", testRevision));
+            assertEquals("V10 action", text(connection, "SELECT action FROM test_step WHERE step_key = ?", testStep));
         }
     }
 

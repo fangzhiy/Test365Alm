@@ -23,12 +23,13 @@ REQUIRED_DATABASE_TESTS = {
     "sameKeyConcurrentRevisionRequestsReturnOneFrozenResult",
     "viewerCannotModifyHistoryOrWriteOutboxThroughRuntimeRls",
     "auditAndOutboxFailuresRollBack",
+    "savedRevisionStepsAreImmutableForRuntimeMember",
 }
 REQUIRED_HTTP_TESTS = {
     "httpMatrixRejectsUnauthorizedAndInvalidInput",
 }
 REQUIRED_MIGRATION_TESTS = {
-    "v9DataSurvivesV10Upgrade",
+    "v9DataSurvivesV11Upgrade",
 }
 REQUIRED_OIDC_TESTS = {
     "realOidcTestCaseHttpEnforcesStrongEtagsCsrfAndInputBoundary",

@@ -64,14 +64,17 @@ export function setPrincipalDisabled(id: string, disabled: boolean): void {
 }
 
 /**
- * Seed only the disposable tenant boundary needed by the dual-user project
- * access scenario. The migration account is used deliberately: the product
+ * Seed only the disposable tenant boundary needed by the isolated project
+ * access scenarios. The migration account is used deliberately: the product
  * slice has no tenant/domain bootstrap HTTP endpoint yet, and this helper is
  * reachable only from a CI-owned Compose project with a matching run label.
  */
-export function seedProjectAccessScope(adminId: string, viewerId: string): { tenantId: string, domainId: string } {
+// An optional third principal is a tenant member used for ordinary
+// PROJECT_MEMBER UI coverage; existing two-principal project-access cases keep
+// their original seed shape.
+export function seedProjectAccessScope(adminId: string, viewerId: string, memberId?: string): { tenantId: string, domainId: string } {
   if (!isOwnedCiRun()) throw new Error('Only this CI run may seed its R03 project access scope')
-  for (const id of [adminId, viewerId]) {
+  for (const id of [adminId, viewerId, memberId].filter((value): value is string => Boolean(value))) {
     if (!/^[0-9a-f-]{36}$/.test(id)) throw new Error('Invalid disposable principal ID')
   }
   ownedContainer('postgres')
@@ -83,6 +86,8 @@ export function seedProjectAccessScope(adminId: string, viewerId: string): { ten
   const tenantId = randomUUID()
   const domainId = randomUUID()
   const suffix = tenantId.replaceAll('-', '')
+  const memberRows = memberId ? `,
+        ('${memberId}'::uuid, ARRAY['MEMBER']::text[])` : ''
   const sql = `WITH tenant_row AS (
       INSERT INTO tenant (id, code, name)
       VALUES ('${tenantId}', 'e2e-${suffix}', 'R03 E2E tenant') RETURNING id
@@ -94,12 +99,12 @@ export function seedProjectAccessScope(adminId: string, viewerId: string): { ten
       SELECT tenant_row.id, members.principal_id, members.roles
       FROM tenant_row CROSS JOIN (VALUES
         ('${adminId}'::uuid, ARRAY['TENANT_ADMIN']::text[]),
-        ('${viewerId}'::uuid, ARRAY['MEMBER']::text[])
+        ('${viewerId}'::uuid, ARRAY['MEMBER']::text[])${memberRows}
       ) AS members(principal_id, roles)
       RETURNING tenant_id
     )
     SELECT '${tenantId}:${domainId}' FROM tenant_row, domain_row
-    WHERE (SELECT COUNT(*) FROM member_rows) = 2`
+    WHERE (SELECT COUNT(*) FROM member_rows) = ${memberId ? 3 : 2}`
   const result = compose(['exec', '-T', 'postgres', 'psql', '-X', '-v', 'ON_ERROR_STOP=1',
     '-U', user, '-d', db, '-At', '-c', sql])
   if (result !== `${tenantId}:${domainId}`) throw new Error(`Unexpected project access seed output: ${result}`)

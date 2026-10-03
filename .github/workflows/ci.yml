@@ -289,7 +289,7 @@ jobs:
         run: |
           set -o pipefail
           ./mvnw -B -ntp package -DskipTests "-Dbuild.commit=${GITHUB_SHA}" 2>&1 | tee migration-build.txt
-      - name: Verify formal V10 then intentional V11 migration startup failure
+      - name: Verify formal V11 then intentional V12 migration startup failure
         run: |
           set +e
           python -u tools/verify_r02_migration_failure.py --env-file .env.r02-test --compose-project "test365alm-r02-migration-${GITHUB_RUN_ID}" --server-port 18082 --wait-seconds 90 2>&1 | tee migration-failure.txt
@@ -302,7 +302,7 @@ jobs:
             summary=$(tr '\n' ' ' < migration-failure.txt | cut -c1-4000)
             echo "::error title=migration-failure::${summary:-no output captured}"
           else
-            echo "Formal V10 migration and intentional V11 failure were detected for ${GITHUB_SHA}"
+            echo "Formal V11 migration and intentional V12 failure were detected for ${GITHUB_SHA}"
           fi
           exit "$status"
       - name: Upload migration evidence
@@ -494,4 +494,3 @@ jobs:
             local-evidence/r03/web-redacted.log
             local-evidence/r03/resource-manifest.json
           if-no-files-found: error
-
