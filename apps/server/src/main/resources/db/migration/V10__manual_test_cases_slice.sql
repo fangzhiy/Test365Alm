@@ -225,7 +225,7 @@ CREATE POLICY audit_event_insert ON audit_event FOR INSERT WITH CHECK (
                 NULLIF(current_setting('test365alm.principal_id', true), '')::UUID)
             OR app_has_project_admin(tenant_id, project_id,
                 NULLIF(current_setting('test365alm.principal_id', true), '')::UUID)
-            OR (action LIKE 'requirement.%' AND app_has_active_project_member(tenant_id, project_id,
+            OR (action LIKE 'requirement.%' AND app_has_active_project_writer(tenant_id, project_id,
                 NULLIF(current_setting('test365alm.principal_id', true), '')::UUID))
             OR (action LIKE 'test_case.%' AND app_has_active_project_writer(tenant_id, project_id,
                 NULLIF(current_setting('test365alm.principal_id', true), '')::UUID))
