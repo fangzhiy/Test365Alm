@@ -19,6 +19,7 @@ Set-Location apps/server
 mvn -B -ntp test
 mvn -B -ntp -Pintegration verify '-Dbuild.commit=local-r05-m08-001'
 python ..\..\tools\verify_r05_test_case_report.py target\failsafe-reports
+python ..\..\tools\verify_r03_oidc_http_report.py target\failsafe-reports
 ```
 
 Linux CI 使用 `./mvnw`；Windows 本机应分别记录 `mvnw.cmd` 的实际退出码和系统 Maven 结果，不能混写。Docker/Testcontainers 不可用时，集成检查必须记录 `BLOCKED/NOT_RUN`，不能用单元测试替代真实 PostgreSQL 证据。前端工作台验证：
@@ -264,4 +265,3 @@ python tools/publish_github.py --owner fangzhiy --repo Test365Alm --execute
 ## 实施纪律
 
 按主方案前6周启动，再按迭代目标拆细Issue；使用真实样本测试迁移、版本和兼容；完成定义以证据为准。不要把全量目标缩水为几个管理页面，也不要把旧 ALM 服务端共存算成独立替代。
-
