@@ -166,24 +166,20 @@ export const testsApi = {
     const intent = intentKey(`create:${projectId}`, input)
     const key = options?.idempotencyKey ?? pendingIntentKeys.get(intent) ?? newIdempotencyKey()
     if (!options?.idempotencyKey) pendingIntentKeys.set(intent, key)
-    try {
-      const result = await requestJsonWithResponse(`/api/v1/projects/${encodeURIComponent(projectId)}/tests`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify(encodeInput(input, false, true)) }, options)
-      return parseOne(result.body, responseEtag(result.response))
-    } finally {
-      pendingIntentKeys.delete(intent)
-    }
+    const result = await requestJsonWithResponse(`/api/v1/projects/${encodeURIComponent(projectId)}/tests`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify(encodeInput(input, false, true)) }, options)
+    const parsed = parseOne(result.body, responseEtag(result.response))
+    pendingIntentKeys.delete(intent)
+    return parsed
   },
   async appendRevision(projectId: string, testCase: TestCase, input: TestCaseInput, options?: AccessRequestOptions): Promise<TestCase> {
     if (!testCase.etag) throw invalid('测试用例版本标识不可用，请先刷新用例')
     const intent = intentKey(`revision:${projectId}:${testCase.id}:${testCase.etag}`, input)
     const key = options?.idempotencyKey ?? pendingIntentKeys.get(intent) ?? newIdempotencyKey()
     if (!options?.idempotencyKey) pendingIntentKeys.set(intent, key)
-    try {
-      const result = await requestJsonWithResponse(`/api/v1/projects/${encodeURIComponent(projectId)}/tests/${encodeURIComponent(testCase.id)}/revisions`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key, 'If-Match': testCase.etag }, body: JSON.stringify(encodeInput(input)) }, options)
-      return parseOne(result.body, responseEtag(result.response))
-    } finally {
-      pendingIntentKeys.delete(intent)
-    }
+    const result = await requestJsonWithResponse(`/api/v1/projects/${encodeURIComponent(projectId)}/tests/${encodeURIComponent(testCase.id)}/revisions`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key, 'If-Match': testCase.etag }, body: JSON.stringify(encodeInput(input)) }, options)
+    const parsed = parseOne(result.body, responseEtag(result.response))
+    pendingIntentKeys.delete(intent)
+    return parsed
   },
   async revisions(projectId: string, testId: string, options?: AccessRequestOptions): Promise<TestRevision[]> {
     const result = await requestJsonWithResponse(`/api/v1/projects/${encodeURIComponent(projectId)}/tests/${encodeURIComponent(testId)}/revisions`, undefined, options)
@@ -196,4 +192,3 @@ export const testsApi = {
     return parsed
   },
 }
-

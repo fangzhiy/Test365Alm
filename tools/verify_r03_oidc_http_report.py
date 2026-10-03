@@ -20,6 +20,8 @@ REQUIRED_TESTS = {
     "expiredTokenIsRejectedAfterRealTokenExchangeWithoutPrincipalWrite",
     "wrongNonceIsRejectedAfterRealTokenExchangeWithoutPrincipalWrite",
     "failedCallbackDoesNotPoisonClientAndFreshLegalAuthorizationRecovers",
+    "realOidcTestCaseHttpEnforcesStrongEtagsCsrfAndInputBoundary",
+    "realOidcTestCaseHttpScopesReferencesAndRefreshesOldSessionPermissions",
 }
 
 

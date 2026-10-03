@@ -7,6 +7,7 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.UUID;
 
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.configuration.FluentConfiguration;
@@ -56,9 +57,55 @@ class TestCaseMigrationUpgradeIT {
     void v9DataSurvivesV10Upgrade() throws Exception {
         Flyway v9 = flyway("9");
         assertEquals(9, v9.migrate().migrationsExecuted);
+        UUID principal = UUID.randomUUID();
+        UUID tenant = UUID.randomUUID();
+        UUID domain = UUID.randomUUID();
+        UUID project = UUID.randomUUID();
+        UUID requirement = UUID.randomUUID();
+        UUID revisionOne = UUID.randomUUID();
+        UUID revisionTwo = UUID.randomUUID();
+        String legacyKey = "v9-legacy-" + UUID.randomUUID();
         try (Connection connection = ownerConnection()) {
             execute(connection, "INSERT INTO platform_metadata (metadata_key, metadata_value) VALUES (?, ?)",
                     "r05-v9-sentinel", "preserved before manual test case migration");
+            execute(connection, "INSERT INTO principal (id, issuer, subject, display_name) VALUES (?, ?, ?, ?)",
+                    principal, "https://r05-upgrade.example/realm", "v9-principal-" + principal, "V9 Principal");
+            execute(connection, "INSERT INTO tenant (id, code, name, created_by) VALUES (?, ?, ?, ?)",
+                    tenant, "r05-v9-tenant-" + tenant, "V9 Tenant", principal);
+            execute(connection, "INSERT INTO domain (id, tenant_id, name) VALUES (?, ?, ?)",
+                    domain, tenant, "V9 Domain");
+            execute(connection, "INSERT INTO tenant_member (tenant_id, principal_id, roles) VALUES (?, ?, ?::text[])",
+                    tenant, principal, "{TENANT_ADMIN}");
+            execute(connection, "INSERT INTO project (id, tenant_id, domain_id, code, name, created_by) VALUES (?, ?, ?, ?, ?, ?)",
+                    project, tenant, domain, "V9-PROJECT-" + project, "V9 Project", principal);
+            execute(connection, "INSERT INTO project_member (tenant_id, project_id, principal_id, roles) VALUES (?, ?, ?, ?::text[])",
+                    tenant, project, principal, "{PROJECT_MEMBER}");
+            execute(connection, "INSERT INTO requirement (tenant_id, project_id, id, display_number, row_version, created_by) VALUES (?, ?, ?, 1, 2, ?)",
+                    tenant, project, requirement, principal);
+            execute(connection, "INSERT INTO requirement_revision"
+                    + " (tenant_id, project_id, id, requirement_id, revision_no, title, body, priority, created_by)"
+                    + " VALUES (?, ?, ?, ?, 1, 'V9 original', 'V9 original body', 'HIGH', ?)",
+                    tenant, project, revisionOne, requirement, principal);
+            execute(connection, "INSERT INTO requirement_revision"
+                    + " (tenant_id, project_id, id, requirement_id, revision_no, title, body, priority, created_by)"
+                    + " VALUES (?, ?, ?, ?, 2, 'V9 current', 'V9 current body', 'CRITICAL', ?)",
+                    tenant, project, revisionTwo, requirement, principal);
+            execute(connection, "UPDATE requirement SET current_revision_id = ?, updated_at = CURRENT_TIMESTAMP"
+                    + " WHERE tenant_id = ? AND project_id = ? AND id = ?", revisionTwo, tenant, project, requirement);
+            execute(connection, "INSERT INTO requirement_number_allocator (tenant_id, project_id, next_number) VALUES (?, ?, 2)",
+                    tenant, project);
+            execute(connection, "INSERT INTO audit_event (tenant_id, project_id, actor_principal_id, action, object_type, object_id, object_revision)"
+                    + " VALUES (?, ?, ?, 'requirement.created', 'requirement', ?, 1)",
+                    tenant, project, principal, requirement);
+            execute(connection, "INSERT INTO outbox_event"
+                    + " (tenant_id, project_id, aggregate_id, requirement_id, revision_id, event_type)"
+                    + " VALUES (?, ?, ?, ?, ?, 'requirement.created')",
+                    tenant, project, requirement, requirement, revisionOne);
+            execute(connection, "INSERT INTO requirement_idempotency"
+                    + " (tenant_id, project_id, principal_id, route, idempotency_key, request_hash, requirement_id, revision_id)"
+                    + " VALUES (?, ?, ?, 'requirements:create', ?, ?, ?, ?)",
+                    tenant, project, principal, legacyKey, "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+                    requirement, revisionOne);
         }
 
         Flyway latest = flyway(null);
@@ -69,6 +116,19 @@ class TestCaseMigrationUpgradeIT {
             assertEquals(1, scalar(connection, "SELECT COUNT(*) FROM flyway_schema_history WHERE version = '10' AND success = TRUE"));
             assertEquals("preserved before manual test case migration",
                     text(connection, "SELECT metadata_value FROM platform_metadata WHERE metadata_key = ?", "r05-v9-sentinel"));
+            assertEquals(1, scalar(connection, "SELECT COUNT(*) FROM principal WHERE id = ?", principal));
+            assertEquals(1, scalar(connection, "SELECT COUNT(*) FROM tenant_member WHERE tenant_id = ? AND principal_id = ?", tenant, principal));
+            assertEquals(1, scalar(connection, "SELECT COUNT(*) FROM project_member WHERE tenant_id = ? AND project_id = ? AND principal_id = ?",
+                    tenant, project, principal));
+            assertEquals(2, scalar(connection, "SELECT COUNT(*) FROM requirement_revision WHERE requirement_id = ?", requirement));
+            assertEquals(revisionTwo, uuid(connection, "SELECT current_revision_id FROM requirement WHERE id = ?", requirement));
+            assertEquals(2, scalar(connection, "SELECT row_version FROM requirement WHERE id = ?", requirement));
+            assertEquals("V9 original", text(connection, "SELECT title FROM requirement_revision WHERE id = ?", revisionOne));
+            assertEquals("V9 current body", text(connection, "SELECT body FROM requirement_revision WHERE id = ?", revisionTwo));
+            assertEquals(1, scalar(connection, "SELECT COUNT(*) FROM audit_event WHERE object_id = ?", requirement));
+            assertEquals(1, scalar(connection, "SELECT COUNT(*) FROM outbox_event WHERE requirement_id = ?", requirement));
+            assertEquals(1, scalar(connection, "SELECT COUNT(*) FROM requirement_idempotency WHERE idempotency_key = ?", legacyKey));
+            assertEquals(false, bool(connection, "SELECT replay_compatible FROM requirement_idempotency WHERE idempotency_key = ?", legacyKey));
             assertTrue(text(connection, "SELECT to_regclass('public.test_case')") != null);
             assertTrue(text(connection, "SELECT to_regclass('public.test_revision')") != null);
             assertTrue(text(connection, "SELECT to_regclass('public.test_step')") != null);
@@ -114,5 +174,24 @@ class TestCaseMigrationUpgradeIT {
             }
         }
     }
-}
 
+    private static boolean bool(Connection connection, String sql, Object... values) throws SQLException {
+        try (var statement = connection.prepareStatement(sql)) {
+            for (int i = 0; i < values.length; i++) statement.setObject(i + 1, values[i]);
+            try (ResultSet result = statement.executeQuery()) {
+                result.next();
+                return result.getBoolean(1);
+            }
+        }
+    }
+
+    private static UUID uuid(Connection connection, String sql, Object... values) throws SQLException {
+        try (var statement = connection.prepareStatement(sql)) {
+            for (int i = 0; i < values.length; i++) statement.setObject(i + 1, values[i]);
+            try (ResultSet result = statement.executeQuery()) {
+                result.next();
+                return result.getObject(1, UUID.class);
+            }
+        }
+    }
+}

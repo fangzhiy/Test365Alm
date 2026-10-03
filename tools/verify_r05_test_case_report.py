@@ -11,6 +11,7 @@ from pathlib import Path
 DATABASE_SUITE = "com.test365alm.server.testcase.TestCaseDatabaseIT"
 HTTP_SUITE = "com.test365alm.server.testcase.TestCaseHttpSecurityIT"
 MIGRATION_SUITE = "com.test365alm.server.testcase.TestCaseMigrationUpgradeIT"
+OIDC_SUITE = "com.test365alm.server.identity.OidcCallbackSecurityIT"
 
 REQUIRED_DATABASE_TESTS = {
     "memberCreatesAndReadsInitialSteps",
@@ -19,6 +20,7 @@ REQUIRED_DATABASE_TESTS = {
     "concurrentRevisionSavesOneWins",
     "idempotentCreateAndRevisionReplay",
     "sameKeyConcurrentCreatesProduceOneCaseAndDifferentKeysKeepNumbersUnique",
+    "sameKeyConcurrentRevisionRequestsReturnOneFrozenResult",
     "viewerCannotModifyHistoryOrWriteOutboxThroughRuntimeRls",
     "auditAndOutboxFailuresRollBack",
 }
@@ -27,6 +29,10 @@ REQUIRED_HTTP_TESTS = {
 }
 REQUIRED_MIGRATION_TESTS = {
     "v9DataSurvivesV10Upgrade",
+}
+REQUIRED_OIDC_TESTS = {
+    "realOidcTestCaseHttpEnforcesStrongEtagsCsrfAndInputBoundary",
+    "realOidcTestCaseHttpScopesReferencesAndRefreshesOldSessionPermissions",
 }
 
 
@@ -59,6 +65,7 @@ def verify_test_case_report(directory: Path) -> tuple[bool, str]:
         (DATABASE_SUITE, REQUIRED_DATABASE_TESTS),
         (HTTP_SUITE, REQUIRED_HTTP_TESTS),
         (MIGRATION_SUITE, REQUIRED_MIGRATION_TESTS),
+        (OIDC_SUITE, REQUIRED_OIDC_TESTS),
     )
     summaries: list[str] = []
     valid = True
@@ -84,4 +91,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

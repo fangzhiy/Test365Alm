@@ -6,9 +6,11 @@ from tools.verify_r05_test_case_report import (
     DATABASE_SUITE,
     HTTP_SUITE,
     MIGRATION_SUITE,
+    OIDC_SUITE,
     REQUIRED_DATABASE_TESTS,
     REQUIRED_HTTP_TESTS,
     REQUIRED_MIGRATION_TESTS,
+    REQUIRED_OIDC_TESTS,
     verify_test_case_report,
 )
 
@@ -28,6 +30,7 @@ class R05TestCaseEvidenceTests(unittest.TestCase):
             _write(root, DATABASE_SUITE, REQUIRED_DATABASE_TESTS)
             _write(root, HTTP_SUITE, REQUIRED_HTTP_TESTS)
             _write(root, MIGRATION_SUITE, REQUIRED_MIGRATION_TESTS)
+            _write(root, OIDC_SUITE, REQUIRED_OIDC_TESTS)
             valid, summary = verify_test_case_report(root)
             self.assertTrue(valid, summary)
 
@@ -40,6 +43,7 @@ class R05TestCaseEvidenceTests(unittest.TestCase):
             root = Path(directory)
             _write(root, DATABASE_SUITE, REQUIRED_DATABASE_TESTS - {next(iter(REQUIRED_DATABASE_TESTS))})
             _write(root, HTTP_SUITE, REQUIRED_HTTP_TESTS)
+            _write(root, OIDC_SUITE, REQUIRED_OIDC_TESTS)
             valid, summary = verify_test_case_report(root)
             self.assertFalse(valid)
             self.assertIn("missing=", summary)
@@ -53,10 +57,10 @@ class R05TestCaseEvidenceTests(unittest.TestCase):
             )
             _write(root, HTTP_SUITE, REQUIRED_HTTP_TESTS)
             _write(root, MIGRATION_SUITE, REQUIRED_MIGRATION_TESTS)
+            _write(root, OIDC_SUITE, REQUIRED_OIDC_TESTS)
             valid, _ = verify_test_case_report(root)
             self.assertFalse(valid)
 
 
 if __name__ == "__main__":
     unittest.main()
-

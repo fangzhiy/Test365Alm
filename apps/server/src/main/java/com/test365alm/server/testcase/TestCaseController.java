@@ -132,7 +132,9 @@ public class TestCaseController {
                     : Set.of("ordinal", "action", "expected");
             validateObject(node, fields);
             JsonNode ordinal = node.get("ordinal");
-            if (ordinal != null && !ordinal.isNumber()) throw new IllegalArgumentException("ordinal must be a number");
+            if (ordinal != null && (!ordinal.isIntegralNumber() || !ordinal.canConvertToInt() || ordinal.intValue() < 1)) {
+                throw new IllegalArgumentException("ordinal must be a positive integer");
+            }
             UUID stepKey = null;
             if (allowStepKey && node.get("stepKey") != null && !node.get("stepKey").isNull()) {
                 String raw = text(node.get("stepKey"), "stepKey");
@@ -166,4 +168,3 @@ public class TestCaseController {
         }
     }
 }
-

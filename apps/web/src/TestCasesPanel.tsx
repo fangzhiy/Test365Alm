@@ -46,6 +46,7 @@ export default function TestCasesPanel({ projectId, access, resetSignal = 0 }: T
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailReady, setDetailReady] = useState(false)
   const [scopeInvalid, setScopeInvalid] = useState(false)
+  const [writeDenied, setWriteDenied] = useState(false)
   const readRoundRef = useRef(0)
   const writeRoundRef = useRef(0)
   const readControllerRef = useRef<AbortController | null>(null)
@@ -55,7 +56,7 @@ export default function TestCasesPanel({ projectId, access, resetSignal = 0 }: T
   const contextRef = useRef<Context>({ projectId, resetSignal })
   const lastResetRef = useRef(resetSignal)
   const activeProjectRef = useRef(projectId)
-  const createIntentRef = useRef<string | null>(null)
+  const createIntentRef = useRef<{ key: string; input: TestCaseInput } | null>(null)
   const saveIntentRef = useRef<{ key: string; testId: string; etag: string; input: TestCaseInput } | null>(null)
   contextRef.current = { projectId, resetSignal }
 
@@ -76,14 +77,14 @@ export default function TestCasesPanel({ projectId, access, resetSignal = 0 }: T
     setItems([]); setNextCursor(null); setSelected(null); setRevisions([]); setSelectedRevision(null)
     setTitle(''); setDescription(''); setPreconditions(''); setSteps([])
     setCreateTitle(''); setCreateDescription(''); setCreatePreconditions(''); setCreateSteps([])
-    setConflict(false); setSaving(false); setDetailLoading(false); setDetailReady(false); setScopeInvalid(true); createIntentRef.current = null; saveIntentRef.current = null
+    setConflict(false); setSaving(false); setDetailLoading(false); setDetailReady(false); setScopeInvalid(true); setWriteDenied(false); createIntentRef.current = null; saveIntentRef.current = null
     setState('error'); setNotice(message)
   }
   const resetData = () => {
     setState('idle'); setItems([]); setNextCursor(null); setSelected(null); setRevisions([]); setSelectedRevision(null)
     setTitle(''); setDescription(''); setPreconditions(''); setSteps([])
     setCreateTitle(''); setCreateDescription(''); setCreatePreconditions(''); setCreateSteps([])
-    setNotice(''); setConflict(false); setSaving(false); setDetailLoading(false); setDetailReady(false); setScopeInvalid(false); createIntentRef.current = null; saveIntentRef.current = null
+    setNotice(''); setConflict(false); setSaving(false); setDetailLoading(false); setDetailReady(false); setScopeInvalid(false); setWriteDenied(false); createIntentRef.current = null; saveIntentRef.current = null
   }
 
   useEffect(() => () => { readRoundRef.current += 1; writeRoundRef.current += 1; cancelAll() }, [])
@@ -102,7 +103,7 @@ export default function TestCasesPanel({ projectId, access, resetSignal = 0 }: T
     const controller = new AbortController()
     readControllerRef.current = controller
     readTimeoutRef.current = window.setTimeout(() => controller.abort(), 5000)
-    setState('loading'); setScopeInvalid(false); setNotice(''); setConflict(false); setDetailLoading(false); setDetailReady(false); setSelected(null); setRevisions([]); setSelectedRevision(null); setItems(cursor ? items : []); setNextCursor(cursor ? nextCursor : null)
+    setState('loading'); setScopeInvalid(false); setWriteDenied(false); setNotice(''); setConflict(false); setDetailLoading(false); setDetailReady(false); setSelected(null); setRevisions([]); setSelectedRevision(null); setItems(cursor ? items : []); setNextCursor(cursor ? nextCursor : null)
     if (!cursor) { setTitle(''); setDescription(''); setPreconditions(''); setSteps([]); saveIntentRef.current = null }
     try {
       const page = await testsApi.list(context.projectId, query, cursor, { signal: controller.signal })
@@ -122,6 +123,9 @@ export default function TestCasesPanel({ projectId, access, resetSignal = 0 }: T
   useEffect(() => {
     const changed = activeProjectRef.current !== projectId
     activeProjectRef.current = projectId
+    if (changed) {
+      readRoundRef.current += 1; writeRoundRef.current += 1; cancelAll(); resetData()
+    }
     if (!projectId || !access || !can(access, 'test:read')) { resetData(); return }
     void load(null, changed ? '' : search)
   }, [projectId, access?.permissions.join('|')])
@@ -159,7 +163,10 @@ export default function TestCasesPanel({ projectId, access, resetSignal = 0 }: T
     event.preventDefault()
     if (!projectId || !can(access, 'test:create') || !createTitle.trim() || saving) return
     const context = contextRef.current; const operation = ++writeRoundRef.current; readRoundRef.current += 1; cancelRead(); cancelWrite()
-    const input = createInput(); const key = createIntentRef.current ?? (createIntentRef.current = newIdempotencyKey()); const controller = new AbortController()
+    const input = createInput(); const existingIntent = createIntentRef.current
+    const key = existingIntent && JSON.stringify(existingIntent.input) === JSON.stringify(input) ? existingIntent.key : newIdempotencyKey()
+    createIntentRef.current = { key, input }
+    const controller = new AbortController()
     writeControllerRef.current = controller; writeTimeoutRef.current = window.setTimeout(() => controller.abort(), 5000); setSaving(true); setNotice('')
     try {
       const created = await testsApi.create(context.projectId, input, { signal: controller.signal, idempotencyKey: key })
@@ -170,6 +177,7 @@ export default function TestCasesPanel({ projectId, access, resetSignal = 0 }: T
     } catch (error) {
       if (writeRoundRef.current !== operation || !isCurrentContext(context)) return
       if (isAccessError(error, true)) { clearInvalidData('当前项目不可访问，请重新选择项目'); return }
+      if (codeFor(error) === 'FORBIDDEN' || codeFor(error) === 'HTTP_403') { setWriteDenied(true); setState('ready'); setNotice('当前主体没有修改该项目测试用例的权限。'); return }
       setState('ready'); setNotice(isAbort(error) ? '创建请求超时，请保留原意图后重试' : messageFor(error))
     } finally {
       if (writeRoundRef.current === operation && isCurrentContext(context)) { setSaving(false); writeControllerRef.current = null; if (writeTimeoutRef.current !== null) { window.clearTimeout(writeTimeoutRef.current); writeTimeoutRef.current = null } }
@@ -191,6 +199,7 @@ export default function TestCasesPanel({ projectId, access, resetSignal = 0 }: T
     } catch (error) {
       if (writeRoundRef.current !== operation || !isCurrentContext(context)) return
       if (isAccessError(error, true)) { clearInvalidData('当前测试用例不可访问，请重新选择项目'); return }
+      if (codeFor(error) === 'FORBIDDEN' || codeFor(error) === 'HTTP_403') { setWriteDenied(true); setState('ready'); setNotice('当前主体没有修改该项目测试用例的权限。'); return }
       setState('ready')
       if (codeFor(error) === 'HTTP_412' || codeFor(error) === 'STALE_VERSION' || codeFor(error) === 'PRECONDITION_FAILED') { setConflict(true); setNotice('测试用例已被其他人更新。步骤和正文草稿已保留，请查看最新版本后再决定如何修改。') }
       else setNotice(isAbort(error) ? '保存请求超时，请保留原意图后重试' : messageFor(error))
@@ -214,7 +223,7 @@ export default function TestCasesPanel({ projectId, access, resetSignal = 0 }: T
 
   if (!projectId) return <section className="test-cases-panel" aria-labelledby="test-cases-heading"><div className="access-panel-header"><div><span className="panel-label">M08 · 手工测试用例</span><h2 id="test-cases-heading">测试用例</h2></div></div><p className="access-empty" role="status">请选择一个项目以查看测试用例。</p></section>
   if (!access || !can(access, 'test:read')) return <section className="test-cases-panel" aria-labelledby="test-cases-heading"><div className="access-panel-header"><div><span className="panel-label">M08 · 手工测试用例</span><h2 id="test-cases-heading">测试用例</h2></div></div><p className="access-error" role="alert">当前会话没有读取该项目测试用例的权限。</p></section>
-  const creator = can(access, 'test:create'); const writable = can(access, 'test:update'); const historyReadable = can(access, 'test:history:read') || can(access, 'test:read')
+  const creator = can(access, 'test:create') && !writeDenied; const writable = can(access, 'test:update') && !writeDenied; const historyReadable = can(access, 'test:history:read') || can(access, 'test:read')
   return <section className="test-cases-panel" aria-labelledby="test-cases-heading">
     <div className="access-panel-header"><div><span className="panel-label">M08 · 手工测试用例</span><h2 id="test-cases-heading">测试用例</h2><p>项目内手工用例、步骤和不可变修订。</p></div><button type="button" className="secondary-button" onClick={() => void load()} disabled={state === 'loading' || saving}>{state === 'loading' ? '加载中…' : '刷新用例'}</button></div>
     <form className="test-search-form" onSubmit={(event) => { event.preventDefault(); setSearch(searchInput); void load(null, searchInput) }}><label>查询<input aria-label="查询测试用例" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="标题或编号" maxLength={200} /></label><button type="submit" className="secondary-button" disabled={state === 'loading' || saving}>查询</button></form>
@@ -229,4 +238,3 @@ export default function TestCasesPanel({ projectId, access, resetSignal = 0 }: T
     </div>}
   </section>
 }
-

@@ -209,9 +209,31 @@ CREATE POLICY test_case_idempotency_scope ON test_case_idempotency USING (
     AND app_has_active_project_writer(tenant_id, project_id,
         NULLIF(current_setting('test365alm.principal_id', true), '')::UUID));
 
--- Extend the existing application audit boundary only for the strongly typed
--- test-case actions.  Requirement and project administration rules remain
--- unchanged; viewers cannot append test-case audit rows.
+-- Extend the existing application audit boundary only for strongly typed
+-- actions.  A project/tenant administrator may still record administrative
+-- actions, but a test-case event must name an existing target revision and
+-- must be authored by the principal in the transaction-local context.  This
+-- prevents a writer from using a broad action prefix to forge an audit row.
+CREATE OR REPLACE FUNCTION app_test_case_target(p_tenant UUID, p_project UUID,
+        p_test_case UUID, p_revision BIGINT)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = public
+AS $$
+    SELECT EXISTS (
+        SELECT 1
+          FROM test_case tc
+          JOIN test_revision tr
+            ON tr.tenant_id = tc.tenant_id
+           AND tr.project_id = tc.project_id
+           AND tr.test_case_id = tc.id
+         WHERE tc.tenant_id = p_tenant
+           AND tc.project_id = p_project
+           AND tc.id = p_test_case
+           AND (p_revision IS NULL OR tr.revision_no = p_revision)
+    )
+$$;
+
 DROP POLICY IF EXISTS audit_event_insert ON audit_event;
 CREATE POLICY audit_event_insert ON audit_event FOR INSERT WITH CHECK (
     tenant_id::TEXT = NULLIF(current_setting('test365alm.tenant_id', true), '')
@@ -221,14 +243,25 @@ CREATE POLICY audit_event_insert ON audit_event FOR INSERT WITH CHECK (
         (project_id IS NULL AND app_has_tenant_admin(tenant_id,
             NULLIF(current_setting('test365alm.principal_id', true), '')::UUID))
         OR (project_id IS NOT NULL AND (
-            app_has_tenant_admin(tenant_id,
-                NULLIF(current_setting('test365alm.principal_id', true), '')::UUID)
-            OR app_has_project_admin(tenant_id, project_id,
-                NULLIF(current_setting('test365alm.principal_id', true), '')::UUID)
-            OR (action LIKE 'requirement.%' AND app_has_active_project_writer(tenant_id, project_id,
-                NULLIF(current_setting('test365alm.principal_id', true), '')::UUID))
-            OR (action LIKE 'test_case.%' AND app_has_active_project_writer(tenant_id, project_id,
-                NULLIF(current_setting('test365alm.principal_id', true), '')::UUID))
+            (object_type = 'requirement' AND app_requirement_target(tenant_id, project_id, object_id)
+                AND action IN ('requirement.created', 'requirement.updated')
+                AND actor_principal_id = NULLIF(current_setting('test365alm.principal_id', true), '')::UUID
+                AND (app_has_tenant_admin(tenant_id,
+                    NULLIF(current_setting('test365alm.principal_id', true), '')::UUID)
+                    OR app_has_project_admin(tenant_id, project_id,
+                        NULLIF(current_setting('test365alm.principal_id', true), '')::UUID)
+                    OR app_has_active_project_writer(tenant_id, project_id,
+                        NULLIF(current_setting('test365alm.principal_id', true), '')::UUID)))
+            OR (object_type = 'test_case' AND action IN ('test_case.created', 'test_case.revised')
+                AND app_test_case_target(tenant_id, project_id, object_id, object_revision)
+                AND actor_principal_id = NULLIF(current_setting('test365alm.principal_id', true), '')::UUID
+                AND app_has_active_project_writer(tenant_id, project_id,
+                    NULLIF(current_setting('test365alm.principal_id', true), '')::UUID))
+            OR (object_type NOT IN ('requirement', 'test_case') AND (
+                app_has_tenant_admin(tenant_id,
+                    NULLIF(current_setting('test365alm.principal_id', true), '')::UUID)
+                OR app_has_project_admin(tenant_id, project_id,
+                    NULLIF(current_setting('test365alm.principal_id', true), '')::UUID)))
         ))
     )
 );
@@ -253,4 +286,3 @@ DO $$ BEGIN
         GRANT DELETE ON test_case_idempotency TO test365alm_runtime;
     END IF;
 END $$;
-
