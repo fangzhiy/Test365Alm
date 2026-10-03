@@ -1,5 +1,17 @@
 # Test365Alm 开发状态
 
+> 当前轮次：`R05-M08-001`。已在独立 `feat/r05-m08-001` 分支实现 MANUAL 手工测试用例第一切片（列表、创建、详情、步骤快照、不可变修订、项目权限、ETag/幂等和前端工作台）；真实 PostgreSQL/Keycloak 及远端 CI 结果以本轮记录为准，尚未将 M08 或完整 ALM 标为完成。
+
+## R05-M08-001 当前状态（实施中）
+
+- 起点为远端已核查的需求分支 `feat/r04-m07-001` head `32ee886d3ea4745da3af14fd23886abf777442ea`；新任务分支 `feat/r05-m08-001` 已建立，PR #4 保持 Open/未合并，本轮 PR 将以 `feat/r04-m07-001` 为 base 并明确依赖。Windows fetch/推送若受 Schannel 限制，须以 GitHub API/远端 ref 和 CI checkout SHA 核对，不能把本地 SHA 当远端成功。
+- 已实现 V10 迁移与后端 `tests` HTTP/service 边界：项目内并发安全显示编号、MANUAL 类型、稳定 UUID/step_key、完整不可变修订/步骤、强 ETag/If-Match、持久化幂等、同事务审计/Outbox、runtime RLS/受限权限；普通成员读写、viewer 只读、非项目成员不自动获得访问。前端新增真实 API 解析和项目工作台，保留请求取消、项目切换和冲突草稿边界。迁移集成类已构造真实 V1—V9 数据后再执行 V10，并断言旧数据保留与重跑不重复。
+- 已实测的本地基础检查：系统 Maven compile/test、前端 npm build/lint/Vitest 和 Python 工具；Windows Docker/Testcontainers 的真实 PostgreSQL 集成是否可运行仍待本轮最终执行，如阻塞须记录具体 JNA/Docker 原因。CI 报告门禁要求 `TestCaseDatabaseIT`、`TestCaseHttpSecurityIT`、`TestCaseMigrationUpgradeIT` 的指定测试名全部实际执行且无失败、错误、跳过。
+- 本轮只覆盖 M08 手工用例/步骤第一条闭环；测试树、复制、配置、参数、被调用测试、执行/结果、附件、需求关联、生产迁移和完整 M08 验收继续保留为未实现/未验证。
+
+最后更新：2026-10-03
+状态：`IMPLEMENTING / LOCAL_DOCKER_PENDING / CI_PENDING`
+
 > 当前轮次：`R04-M07-001-FIX02`。GitHub 代码提交为 `3e6055a9c1f33dbca34e84c977fb0ad1a19a9df2`，Push CI `36968392677` 与 PR CI `36968396770` 均成功；Windows Testcontainers 仍受 Docker/JNA 权限限制。详见文末 FIX02 状态与 [`docs/progress/runs/R04-M07-001-FIX02.md`](progress/runs/R04-M07-001-FIX02.md)。
 
 ## R04-M07-001-FIX01 当前状态

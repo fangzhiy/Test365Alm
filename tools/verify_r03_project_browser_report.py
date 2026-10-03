@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Require the real dual-user project authorization browser case in CI."""
+"""Require the real dual-user project, requirement, and manual test-case browser cases in CI."""
 from __future__ import annotations
 
 import sys
@@ -13,6 +13,7 @@ REQUIRED_TEST = (
 )
 REQUIRED_UI_TEST = "real Keycloak UI project flow shows scoped viewer controls and clears revoked access"
 REQUIRED_REQUIREMENT_UI_TEST = "real Keycloak UI requirement flow creates edits and keeps viewer read-only"
+REQUIRED_MANUAL_TEST_CASE_UI_TEST = "real Keycloak UI manual test case flow creates steps, edits order, and keeps viewer read-only"
 
 
 def read_report(path: Path) -> tuple[int, int, int, int, set[str]]:
@@ -29,7 +30,7 @@ def read_report(path: Path) -> tuple[int, int, int, int, set[str]]:
 def verify(path: Path) -> tuple[bool, str]:
     tests, failures, errors, skipped, names = read_report(path)
     summary = f"project browser tests={tests} failures={failures} errors={errors} skipped={skipped}"
-    missing = [name for name in (REQUIRED_TEST, REQUIRED_UI_TEST, REQUIRED_REQUIREMENT_UI_TEST) if name not in names]
+    missing = [name for name in (REQUIRED_TEST, REQUIRED_UI_TEST, REQUIRED_REQUIREMENT_UI_TEST, REQUIRED_MANUAL_TEST_CASE_UI_TEST) if name not in names]
     if missing:
         return False, summary + f" missing={','.join(missing)}"
     if failures or errors or skipped:
@@ -56,3 +57,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

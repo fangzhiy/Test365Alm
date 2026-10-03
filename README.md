@@ -2,9 +2,34 @@
 
 企业级应用质量管理平台研发规划基线。对标原 ALM/Quality Center 产品体系；具体目标版本、Edition、扩展和旧生态兼容范围须在 P0 冻结。
 
-> **当前状态：R04-M07-001 需求最小业务切片实施中。** R02 工程底座与 R03 OIDC/项目访问切片保留；新增需求闭环不代表完整 M07、M03 或完整 ALM 已完成。
+> **当前状态：R05-M08-001 手工测试用例第一切片实施中。** R02 工程底座、R03 OIDC/项目访问和 R04 需求切片保留；新增用例闭环不代表完整 M08、M07、M03 或完整 ALM 已完成。
 
 当前开发状态以 [development-status.md](docs/development-status.md) 和最新轮次记录为准；R03/R02 历史记录保留供追溯。
+
+## R05-M08-001 手工测试用例第一切片
+
+当前切片在已选项目中提供 MANUAL 测试用例列表、创建、详情、纯文本标题/说明/前置条件、步骤新增/移除/调序、不可变修订历史和项目角色边界。`PROJECT_ADMIN`/`PROJECT_MEMBER` 可读写，`PROJECT_VIEWER` 只读；服务端生成稳定步骤键和项目内显示编号，追加修订使用强 ETag 与持久化幂等键。真实数据库迁移为 V10，运行时继续使用受限 PostgreSQL 账户，历史修订/步骤不允许更新、删除或清空。
+
+本轮明确不包含测试树、复制、配置/参数、被调用测试、附件、执行、结果、需求关联或完整 M08。接口字段与错误约束见 [test-cases.json](contracts/test-cases.json)，设计决定见 [ADR-017](docs/adr/017-r05-manual-test-case-slice.md)。
+
+真实 M08 PostgreSQL 集成验证使用隔离 Testcontainers，不读取日常 `.env`：
+
+```powershell
+Set-Location apps/server
+mvn -B -ntp test
+mvn -B -ntp -Pintegration verify '-Dbuild.commit=local-r05-m08-001'
+python ..\..\tools\verify_r05_test_case_report.py target\failsafe-reports
+```
+
+Linux CI 使用 `./mvnw`；Windows 本机应分别记录 `mvnw.cmd` 的实际退出码和系统 Maven 结果，不能混写。Docker/Testcontainers 不可用时，集成检查必须记录 `BLOCKED/NOT_RUN`，不能用单元测试替代真实 PostgreSQL 证据。前端工作台验证：
+
+```powershell
+Set-Location apps/web
+npm ci
+npm run lint
+npm run test:run
+npm run build
+```
 
 ## R03-M03-002 项目访问最小切片
 
@@ -239,3 +264,4 @@ python tools/publish_github.py --owner fangzhiy --repo Test365Alm --execute
 ## 实施纪律
 
 按主方案前6周启动，再按迭代目标拆细Issue；使用真实样本测试迁移、版本和兼容；完成定义以证据为准。不要把全量目标缩水为几个管理页面，也不要把旧 ALM 服务端共存算成独立替代。
+

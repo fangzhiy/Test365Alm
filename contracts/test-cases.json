@@ -1,0 +1,104 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Test365Alm Manual Test Case API",
+    "version": "0.1.0",
+    "description": "R05-M08-001 的项目级手工测试用例、步骤和不可变修订历史契约。此切片只支持 MANUAL 类型和根级列表；不包含配置、参数、调用测试、执行、附件或需求关联。正文按纯文本保存和返回。"
+  },
+  "security": [{ "SessionCookie": [] }],
+  "paths": {
+    "/api/v1/projects/{projectId}/tests": {
+      "parameters": [{ "$ref": "#/components/parameters/ProjectId" }],
+      "get": {
+        "operationId": "listTestCases",
+        "parameters": [
+          { "$ref": "#/components/parameters/Query" },
+          { "$ref": "#/components/parameters/Cursor" },
+          { "$ref": "#/components/parameters/Limit" }
+        ],
+        "responses": {
+          "200": { "description": "按显示编号稳定升序的当前用例列表", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TestCasePage" } } } },
+          "default": { "$ref": "#/components/responses/ErrorResponse" }
+        }
+      },
+      "post": {
+        "operationId": "createTestCase",
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TestCaseCreate" } } } },
+        "responses": {
+          "201": { "description": "创建用例及初始修订", "headers": { "ETag": { "$ref": "#/components/headers/ETag" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TestCase" } } } },
+          "409": { "description": "同键请求内容不一致或编号冲突", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "default": { "$ref": "#/components/responses/ErrorResponse" }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/tests/{testId}": {
+      "parameters": [{ "$ref": "#/components/parameters/ProjectId" }, { "$ref": "#/components/parameters/TestId" }],
+      "get": {
+        "operationId": "getTestCase",
+        "responses": {
+          "200": { "description": "当前用例及当前修订步骤", "headers": { "ETag": { "$ref": "#/components/headers/ETag" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TestCase" } } } },
+          "default": { "$ref": "#/components/responses/ErrorResponse" }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/tests/{testId}/revisions": {
+      "parameters": [{ "$ref": "#/components/parameters/ProjectId" }, { "$ref": "#/components/parameters/TestId" }],
+      "get": {
+        "operationId": "listTestCaseRevisions",
+        "responses": {
+          "200": { "description": "按修订号倒序的不可变完整快照", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/TestRevision" } } } } },
+          "default": { "$ref": "#/components/responses/ErrorResponse" }
+        }
+      },
+      "post": {
+        "operationId": "appendTestCaseRevision",
+        "parameters": [{ "$ref": "#/components/parameters/IdempotencyKey" }, { "$ref": "#/components/parameters/IfMatch" }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TestCaseRevisionCreate" } } } },
+        "responses": {
+          "200": { "description": "追加新修订并移动当前指针", "headers": { "ETag": { "$ref": "#/components/headers/ETag" } }, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TestCase" } } } },
+          "412": { "description": "If-Match 不是当前版本", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "428": { "description": "缺少具体 If-Match", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "default": { "$ref": "#/components/responses/ErrorResponse" }
+        }
+      }
+    },
+    "/api/v1/projects/{projectId}/tests/{testId}/revisions/{revisionId}": {
+      "parameters": [{ "$ref": "#/components/parameters/ProjectId" }, { "$ref": "#/components/parameters/TestId" }, { "$ref": "#/components/parameters/RevisionId" }],
+      "get": {
+        "operationId": "getTestCaseRevision",
+        "responses": {
+          "200": { "description": "不可变修订正文和步骤", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TestRevision" } } } },
+          "default": { "$ref": "#/components/responses/ErrorResponse" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": { "SessionCookie": { "type": "apiKey", "in": "cookie", "name": "JSESSIONID" } },
+    "parameters": {
+      "ProjectId": { "name": "projectId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+      "TestId": { "name": "testId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+      "RevisionId": { "name": "revisionId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+      "Query": { "name": "q", "in": "query", "schema": { "type": "string", "maxLength": 200 } },
+      "Cursor": { "name": "cursor", "in": "query", "schema": { "type": "string", "pattern": "^[1-9][0-9]*$" } },
+      "Limit": { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 200, "default": 50 } },
+      "IdempotencyKey": { "name": "Idempotency-Key", "in": "header", "required": true, "schema": { "type": "string", "minLength": 8, "maxLength": 128 }, "description": "按主体、项目和路由作用域；响应丢失后复用同一意图。相同键不同正文返回 409。" },
+      "IfMatch": { "name": "If-Match", "in": "header", "required": true, "schema": { "type": "string", "pattern": "^\\\"[1-9][0-9]*\\\"$" }, "description": "具体强 ETag；不接受裸数字、弱标签或通配符。" }
+    },
+    "headers": { "ETag": { "description": "带引号的当前用例 row_version", "schema": { "type": "string", "pattern": "^\\\"[1-9][0-9]*\\\"$" } } },
+    "responses": { "ErrorResponse": { "description": "结构化错误（401/403/404/409/412/428 等）", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } } },
+    "schemas": {
+      "TestStepInput": { "type": "object", "additionalProperties": false, "required": ["action", "expected"], "properties": { "stepKey": { "type": "string", "minLength": 1, "maxLength": 64, "description": "编辑既有步骤时必须属于当前用例；创建新步骤由服务端生成。" }, "ordinal": { "type": "integer", "minimum": 1 }, "action": { "type": "string", "minLength": 1, "maxLength": 10000 }, "expected": { "type": "string", "minLength": 1, "maxLength": 10000 } } },
+      "TestStep": { "type": "object", "additionalProperties": false, "required": ["stepKey", "ordinal", "action", "expected"], "properties": { "stepKey": { "type": "string", "minLength": 1, "maxLength": 64 }, "ordinal": { "type": "integer", "minimum": 1 }, "action": { "type": "string", "minLength": 1, "maxLength": 10000 }, "expected": { "type": "string", "minLength": 1, "maxLength": 10000 } } },
+      "TestCaseCreate": { "type": "object", "additionalProperties": false, "required": ["title", "testType", "steps"], "properties": { "title": { "type": "string", "minLength": 1, "maxLength": 500 }, "description": { "type": "string", "maxLength": 100000 }, "preconditions": { "type": "string", "maxLength": 100000 }, "testType": { "const": "MANUAL" }, "steps": { "type": "array", "maxItems": 200, "items": { "$ref": "#/components/schemas/TestStepInput" } } } },
+      "TestCaseRevisionCreate": { "type": "object", "additionalProperties": false, "required": ["title", "description", "preconditions", "steps"], "properties": { "title": { "type": "string", "minLength": 1, "maxLength": 500 }, "description": { "type": "string", "maxLength": 100000 }, "preconditions": { "type": "string", "maxLength": 100000 }, "steps": { "type": "array", "maxItems": 200, "items": { "$ref": "#/components/schemas/TestStepInput" } } } },
+      "TestCase": { "type": "object", "additionalProperties": false, "required": ["id", "projectId", "displayNumber", "testType", "rowVersion", "createdAt", "createdBy", "currentRevision"], "properties": { "id": { "type": "string", "format": "uuid" }, "projectId": { "type": "string", "format": "uuid" }, "displayNumber": { "type": "integer", "minimum": 1 }, "testType": { "const": "MANUAL" }, "rowVersion": { "type": "integer", "minimum": 1 }, "createdAt": { "type": "string", "format": "date-time" }, "createdBy": { "type": "string", "format": "uuid" }, "currentRevision": { "$ref": "#/components/schemas/TestRevision" } } },
+      "TestRevision": { "type": "object", "additionalProperties": false, "required": ["id", "testCaseId", "revisionNo", "title", "description", "preconditions", "createdAt", "createdBy", "steps"], "properties": { "id": { "type": "string", "format": "uuid" }, "testCaseId": { "type": "string", "format": "uuid" }, "revisionNo": { "type": "integer", "minimum": 1 }, "title": { "type": "string" }, "description": { "type": "string" }, "preconditions": { "type": "string" }, "createdAt": { "type": "string", "format": "date-time" }, "createdBy": { "type": "string", "format": "uuid" }, "steps": { "type": "array", "items": { "$ref": "#/components/schemas/TestStep" } } } },
+      "TestCaseSummary": { "type": "object", "additionalProperties": false, "required": ["id", "projectId", "displayNumber", "testType", "rowVersion", "createdAt", "createdBy", "currentRevisionId", "revisionNo", "title", "description", "preconditions"], "properties": { "id": { "type": "string", "format": "uuid" }, "projectId": { "type": "string", "format": "uuid" }, "displayNumber": { "type": "integer", "minimum": 1 }, "testType": { "const": "MANUAL" }, "rowVersion": { "type": "integer", "minimum": 1 }, "createdAt": { "type": "string", "format": "date-time" }, "createdBy": { "type": "string", "format": "uuid" }, "currentRevisionId": { "type": "string", "format": "uuid" }, "revisionNo": { "type": "integer", "minimum": 1 }, "title": { "type": "string" }, "description": { "type": "string" }, "preconditions": { "type": "string" } } },
+      "TestCasePage": { "type": "object", "additionalProperties": false, "required": ["items", "nextCursor"], "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/TestCaseSummary" } }, "nextCursor": { "type": ["string", "null"] } } },
+      "Error": { "type": "object", "additionalProperties": false, "required": ["code", "message", "requestId"], "properties": { "code": { "type": "string" }, "message": { "type": "string" }, "requestId": { "type": "string", "format": "uuid" } } }
+    }
+  }
+}
+
