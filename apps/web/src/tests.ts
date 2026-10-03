@@ -142,11 +142,11 @@ const responseEtag = (response: Response) => response.headers.get('ETag') ?? res
 const pendingIntentKeys = new Map<string, string>()
 const intentKey = (scope: string, input: unknown) => `${scope}\u0000${JSON.stringify(input)}`
 
-const encodeInput = (input: TestCaseInput, preserveStepKeys = true) => ({
+const encodeInput = (input: TestCaseInput, preserveStepKeys = true, includeTestType = false) => ({
+  ...(includeTestType ? { testType: 'MANUAL' } : {}),
   title: input.title,
   description: input.description,
   preconditions: input.preconditions,
-  testType: 'MANUAL',
   steps: input.steps.map((step, index) => ({ ...(preserveStepKeys && isServerStepKey(step.stepKey) ? { stepKey: step.stepKey } : {}), ordinal: index + 1, action: step.action, expected: step.expected })),
 })
 
@@ -167,7 +167,7 @@ export const testsApi = {
     const key = options?.idempotencyKey ?? pendingIntentKeys.get(intent) ?? newIdempotencyKey()
     if (!options?.idempotencyKey) pendingIntentKeys.set(intent, key)
     try {
-      const result = await requestJsonWithResponse(`/api/v1/projects/${encodeURIComponent(projectId)}/tests`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify(encodeInput(input, false)) }, options)
+      const result = await requestJsonWithResponse(`/api/v1/projects/${encodeURIComponent(projectId)}/tests`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify(encodeInput(input, false, true)) }, options)
       return parseOne(result.body, responseEtag(result.response))
     } finally {
       pendingIntentKeys.delete(intent)
