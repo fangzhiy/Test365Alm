@@ -26,7 +26,7 @@ import com.test365alm.server.testcase.TestCaseService;
 
 /** Real PostgreSQL proof for the first M09 persisted execution slice. */
 @ActiveProfiles("integration")
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Testcontainers
 class ManualExecutionDatabaseIT {
     private static final String IMAGE = "postgres:17.11@sha256:f4c66b820c6f974249089d3d16d86a3698eae11e8746eb6644b2271031e91232";

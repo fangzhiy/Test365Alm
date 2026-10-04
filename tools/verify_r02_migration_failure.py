@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify formal Flyway V11, then a deliberate V12 startup failure in owned resources."""
+"""Verify formal Flyway V12, then a deliberate V13 startup failure in owned resources."""
 
 from __future__ import annotations
 
@@ -36,8 +36,8 @@ from tools.r02_resource_guard import (
     new_run_id,
 )
 
-FORMAL_MIGRATION_VERSION = "11"
-INTENTIONAL_FAILURE_VERSION = "12"
+FORMAL_MIGRATION_VERSION = "12"
+INTENTIONAL_FAILURE_VERSION = "13"
 INTENTIONAL_FAILURE_MARKER = "R03_INTENTIONAL_MIGRATION_FAILURE"
 
 
