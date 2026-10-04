@@ -175,6 +175,11 @@ jobs:
         run: |
           set -o pipefail
           python ../../tools/verify_r05_test_case_report.py target/failsafe-reports 2>&1 | tee test-case-report.txt
+      - name: Require real PostgreSQL manual execution integration report
+        if: always()
+        run: |
+          set -o pipefail
+          python ../../tools/verify_r06_manual_execution_report.py target/failsafe-reports 2>&1 | tee manual-execution-report.txt
       - name: Upload backend evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -190,6 +195,7 @@ jobs:
             apps/server/project-access-report.txt
             apps/server/requirement-report.txt
             apps/server/test-case-report.txt
+            apps/server/manual-execution-report.txt
             apps/server/target/surefire-reports/**
             apps/server/target/failsafe-reports/**
           if-no-files-found: error

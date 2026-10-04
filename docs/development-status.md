@@ -1,5 +1,15 @@
 # Test365Alm 开发状态
 
+## R06-M09-001 当前状态（首个手工执行切片，等待审核）
+
+- 已从实际 `feat/r05-m08-001` 基线建立 `feat/r06-m09-001`；本地起点为 `f8e8d89df15a8fe62b726cc478d90416e4679567`，对应 Git Data API 审核基线 `845acde47e5f9cd2c330878b383aa2ce0611b992`。本轮原始输入已归档到 [`docs/progress/inputs/R06-M09-001.md`](progress/inputs/R06-M09-001.md)。
+- 新增 V12 迁移、受限 runtime/RLS 表结构和执行服务：测试集、固定用例修订实例、不可变 manifest、运行/尝试/步骤、暂停/继续/完成、重跑、幂等、execution event、audit_event 和 Outbox 同事务。接口契约见 [`contracts/manual-execution.json`](../contracts/manual-execution.json)，决策见 [`ADR-019`](adr/019-r06-manual-execution-slice.md)。
+- 前端新增真实 API 驱动的“测试集与手工运行”工作台；用例修订选择器从 `/tests` 和 `/revisions` 读取，展示步骤结果、尝试历史和读写权限状态。无静态假数据接通。
+- 本机系统 Maven 单元/边界测试 `mvn -B -ntp test`：30 tests，0 failures/errors/skipped；前端 9 files/113 tests、`tsc --noEmit`、build 通过。`npm run lint` 退出 0，仅既有 React effect/ref warnings。Testcontainers 集成 `mvn -B -ntp -Pintegration verify` 已实际运行但因本机没有可用 Docker 环境在 11 个 IT 的容器启动阶段失败；不能把真实 PostgreSQL 结果写成通过，等待 Ubuntu CI。
+- M09 只实现本轮最小闭环；测试树、批量、参数/配置/环境、调度、Agent、附件、截图、缺陷关联、离线、导出和复杂报表仍未实现。M08、M09 不标记整体完成。
+
+详细记录见 [`R06-M09-001.md`](progress/runs/R06-M09-001.md)。
+
 ## R05-M08-001-FIX02 当前状态（等待最终审核）
 
 - 本轮继续 `feat/r05-m08-001` / PR #5（base `feat/r04-m07-001`）。开始时 GitHub API 核对远端 head 为 `7722dcfa9533ba19a90a08e847f8ec2c2aa54d4f`，PR Open、未合并；普通 Windows Git fetch 仍因 Schannel `SEC_E_NO_CREDENTIALS (0x8009030E)` 失败，未 reset、回退或强推。

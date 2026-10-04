@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Test365Alm M09 manual execution slice",
+  "description": "The first persisted test-set, manifest, run and attempt contract. It is intentionally limited to MANUAL execution.",
+  "version": "m09-manual-execution-1",
+  "paths": {
+    "testSets": "/api/v1/projects/{projectId}/test-sets",
+    "instances": "/api/v1/projects/{projectId}/test-sets/{setId}/instances",
+    "runs": "/api/v1/projects/{projectId}/runs",
+    "attempt": "/api/v1/projects/{projectId}/runs/{runId}/attempts/{attemptId}",
+    "step": "/api/v1/projects/{projectId}/runs/{runId}/attempts/{attemptId}/steps/{stepKey}"
+  },
+  "executionStatus": ["RUNNING", "PAUSED", "FINISHED"],
+  "stepConclusion": ["NOT_RUN", "PASS", "FAIL", "BLOCKED"],
+  "attemptConclusion": ["PASS", "FAIL", "BLOCKED"],
+  "idempotency": {
+    "header": "Idempotency-Key",
+    "minLength": 8,
+    "maxLength": 128,
+    "scope": "tenant + project + principal + route + key"
+  },
+  "versioning": {
+    "stepWrite": "If-Match is a strong quoted positive integer; expectedVersion in JSON must match it when both are supplied",
+    "stale": "409/412 business error; no partial step, event, audit or outbox write"
+  },
+  "resources": {
+    "testSet": { "required": ["id", "projectId", "name", "description", "rowVersion"] },
+    "testInstance": { "required": ["id", "projectId", "testSetId", "testCaseId", "testRevisionId", "title", "revisionNumber"] },
+    "run": { "required": ["id", "projectId", "testInstanceId", "manifestId", "status", "rowVersion"] },
+    "manifest": { "required": ["id", "sourceTestCaseId", "sourceRevisionId", "sourceRevisionNo", "snapshotHash", "steps"], "immutable": true },
+    "attempt": { "required": ["id", "runId", "attemptNo", "status", "rowVersion", "steps"] },
+    "step": { "required": ["stepKey", "ordinal", "action", "expected", "actualResult", "conclusion", "rowVersion"] }
+  },
+  "rules": {
+    "revisionPolicy": "FIXED",
+    "manifestImmutable": true,
+    "runAttemptRetryCreatesNewAttempt": true,
+    "finishRequiresAllSteps": true,
+    "failAndBlockedRequireActualResult": true,
+    "unsupportedFields": "rejected"
+  }
+}

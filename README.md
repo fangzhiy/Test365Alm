@@ -252,6 +252,35 @@ python -m unittest discover -s tools/tests -v
 
 这些只验证文档包结构、预算算术和辅助工具，不会启动 ALM 服务，也不代表业务测试通过。
 
+## R06-M09-001 手工执行切片
+
+在选择项目并登录后，工作台的“测试集与手工运行”区域从真实后端读取测试集、已保存 MANUAL 用例修订和运行记录。成员可以创建根测试集、加入某个已保存修订、启动运行、记录每步 `PASS`/`FAIL`/`BLOCKED`、暂停/继续/完成并重新运行；查看者只读。运行会固定不可变清单，重跑会产生新的尝试，不会修改原测试用例修订。
+
+后端单元/边界测试：
+
+```powershell
+Set-Location apps/server
+mvn -B -ntp test
+```
+
+真实 PostgreSQL 集成测试使用 Testcontainers 的一次性数据库和受限 runtime（不读取日常 `.env`）：
+
+```powershell
+mvn -B -ntp -Pintegration verify '-Dbuild.commit=local-r06-m09-001'
+```
+
+本机无 Docker 时该命令会在 Testcontainers 启动阶段失败；这属于未运行的真实数据库证据，不能用单元测试替代。CI 的 `server` Job 在 Ubuntu 上执行同一集成 profile。前端回归仍使用：
+
+```powershell
+Set-Location apps/web
+npm ci
+npm run lint
+npm run test:run -- --reporter=dot
+npm run build
+```
+
+M09 尚未包含测试树、批量/参数/配置/环境、调度、Agent、附件、截图、缺陷关联、离线、导出或复杂报表。
+
 ## GitHub 发布
 
 代码仓库已位于 [github.com/fangzhiy/Test365Alm](https://github.com/fangzhiy/Test365Alm)。本项目按任务分支和 Pull Request 协作；推送或 CI 的实际状态以 GitHub 页面和轮次记录为准，本地提交不代表 PR 已合并或生产已部署。不修改无关仓库，不强制推送。
