@@ -329,8 +329,13 @@ public class ExecutionService {
         String hash = hash("rerun", runId.toString());
         UUID replay = claim(project, actor, "rerun:" + runId, key, hash);
         if (replay != null) return attempt(actor, projectId, runId, replay);
-        jdbc.query("SELECT id FROM execution_run WHERE tenant_id=? AND project_id=? AND id=? FOR UPDATE",
-                rs -> { if (!rs.next()) throw ProjectAccessException.notFound(); }, project.tenantId(), projectId, runId);
+        // JdbcTemplate invokes a RowMapper with the result set already positioned
+        // on a row.  Do not call ResultSet.next() from a callback here: doing so
+        // skips the only visible row and makes every legitimate rerun look like
+        // a missing run under the runtime RLS policy.
+        List<UUID> runs = jdbc.query("SELECT id FROM execution_run WHERE tenant_id=? AND project_id=? AND id=? FOR UPDATE",
+                (rs, row) -> rs.getObject("id", UUID.class), project.tenantId(), projectId, runId);
+        if (runs.isEmpty()) throw ProjectAccessException.notFound();
         Integer active = jdbc.queryForObject("SELECT COUNT(*) FROM run_attempt WHERE tenant_id=? AND project_id=? AND run_id=? AND status <> 'FINISHED'",
                 Integer.class, project.tenantId(), projectId, runId);
         if (active != null && active > 0) throw ProjectAccessException.conflict("ACTIVE_ATTEMPT_EXISTS", "A run already has an active attempt");
@@ -544,3 +549,4 @@ public class ExecutionService {
     private record Claim(String hash, UUID id) { }
     private record AttemptState(String status, long rowVersion) { }
 }
+
