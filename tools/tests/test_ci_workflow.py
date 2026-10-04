@@ -28,8 +28,8 @@ class CiWorkflowTests(unittest.TestCase):
 
     def test_migration_job_records_formal_v11_before_intentional_v12_failure(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("Verify formal V12 then intentional V13 migration startup failure", workflow)
-        self.assertIn("Formal V12 migration and intentional V13 failure were detected", workflow)
+        self.assertIn("Verify formal V13 then intentional V14 migration startup failure", workflow)
+        self.assertIn("Formal V13 migration and intentional V14 failure were detected", workflow)
         self.assertIn("verify_r02_migration_failure.py", workflow)
 
     def test_server_job_requires_project_access_rls_evidence(self):
