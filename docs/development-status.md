@@ -6,7 +6,7 @@
 - 新增 V12 迁移、受限 runtime/RLS 表结构和执行服务：测试集、固定用例修订实例、不可变 manifest、运行/尝试/步骤、暂停/继续/完成、重跑、幂等、execution event、audit_event 和 Outbox 同事务。接口契约见 [`contracts/manual-execution.json`](../contracts/manual-execution.json)，决策见 [`ADR-019`](adr/019-r06-manual-execution-slice.md)。
 - 前端新增真实 API 驱动的“测试集与手工运行”工作台；用例修订选择器从 `/tests` 和 `/revisions` 读取，展示步骤结果、尝试历史和读写权限状态。无静态假数据接通。
 - 本机系统 Maven 单元/边界测试 `mvn -B -ntp test`：30 tests，0 failures/errors/skipped；前端 9 files/113 tests、`tsc --noEmit`、build 通过。`npm run lint` 退出 0，仅既有 React effect/ref warnings。Testcontainers 集成 `mvn -B -ntp -Pintegration verify` 已实际运行但因本机没有可用 Docker 环境在 11 个 IT 的容器启动阶段失败；不能把真实 PostgreSQL 结果写成通过，等待 Ubuntu CI。
-- 首个远端 PR CI `37181708139`（checkout `dc3e7cda54d92d276652b344c787573e27c696af`）暴露三项接入问题：旧升级断言未计入正式 V12、迁移失败探针与正式 V12 同号、M09 集成类使用无 Web 上下文导致缺少 `HttpSecurity`。随后 Push `37182544571` 已验证前两项修复和其他回归通过，但 `ManualExecutionDatabaseIT` 暴露 runtime 清理过期幂等记录缺少 DELETE 权限。已新增 V13 受控授权，并将探针顺延为正式 V13 后故意失败 V14；最新本地修复待新远端 CI 核对。
+- 首个远端 PR CI `37181708139`（checkout `dc3e7cda54d92d276652b344c787573e27c696af`）暴露三项接入问题：旧升级断言未计入正式 V12、迁移失败探针与正式 V12 同号、M09 集成类使用无 Web 上下文导致缺少 `HttpSecurity`。随后 Push `37182544571` 已验证前两项修复和其他回归通过，但 `ManualExecutionDatabaseIT` 暴露 runtime 清理过期幂等记录缺少 DELETE 权限。第三轮 [37183266578](https://github.com/fangzhiy/Test365Alm/actions/runs/37183266578) 进一步确认 V13 无条件授权会在探针数据库缺少 runtime 角色时先失败；本地 `417ee6ba99223b064c66aa39e22eb0fd2b0adc94` 已改为条件授权，并将探针顺延为正式 V13 后故意失败 V14，发布后的最终 CI 待核对。
 - M09 只实现本轮最小闭环；测试树、批量、参数/配置/环境、调度、Agent、附件、截图、缺陷关联、离线、导出和复杂报表仍未实现。M08、M09 不标记整体完成。
 
 详细记录见 [`R06-M09-001.md`](progress/runs/R06-M09-001.md)。
@@ -301,3 +301,4 @@
 本轮本机验证：前端 `npm ci`（126 packages）、Vitest 6 文件/77 测试、lint（0 error，3 个既有 React warning）、Vite build 均通过；系统 Maven `mvn -B -ntp test` 21 tests 通过；Python 工具 52 tests 通过。真实 Testcontainers/Failsafe 在 Windows 因 JNA `jnidispatch.dll` 临时文件/ Docker named pipe 权限退出码 1，Maven Wrapper 独立退出码 1（PowerShell `icm : Cannot index into a null array`）；均未混写成通过。Push [36968392677](https://github.com/fangzhiy/Test365Alm/actions/runs/36968392677) 六个 job 成功，Push checkout 为 `3e6055a9c1f33dbca34e84c977fb0ad1a19a9df2`；PR [36968396770](https://github.com/fangzhiy/Test365Alm/actions/runs/36968396770) 六个 job 成功，PR merge-ref checkout 为 `6a04165d3cee6c78298643f9a905a9ad8df2bb82`。server 报告 unit 21、OIDC 12、project access 12、requirement 12、upgrade 1，均 failures/errors/skipped=0；browser 8/0/0/0。
 
 本轮 I01–I10：I01 PASS（V7→V8 升级）；I02 PASS（HTTP/数据库创建）；I03 PASS（不可变历史）；I04 PASS（精确并发 412）；I05 PASS（真实 HTTP 12 用例）；I06 PASS（RLS/runtime 隔离）；I07 PASS（撤权/停用原会话直接请求）；I08 PASS（并发幂等）；I09 PASS（回滚与 runtime）；I10 PASS（浏览器 8 用例及 Push/PR CI）。本机 Testcontainers 阻塞已由隔离 Ubuntu CI 覆盖；不标记完整 M07、R04 或生产部署完成。完整结论见 [`docs/progress/runs/R04-M07-001-FIX02.md`](progress/runs/R04-M07-001-FIX02.md)。
+
