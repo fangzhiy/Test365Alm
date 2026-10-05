@@ -1,5 +1,17 @@
 # Test365Alm 开发状态
 
+## R06-M09-001-FIX03 当前状态（代码与最终 Push/PR CI 已完成）
+
+- 本轮继续 `feat/r06-m09-001` / [PR #6](https://github.com/fangzhiy/Test365Alm/pull/6)，base `feat/r05-m08-001`。审核基线为代码 `9845d7a0b31b481f6eac8947e295f6ed6cce1e0e`、交付 `fe366798275410bd5ba99d04a9057bb0c6990326`；本轮远端代码提交为 `457b962a3127fe4b89cbf190eea98982af65ff37`，父提交为 `86c52fd005fcc327571fa78780f765437606c25a`。输入全文见 [`R06-M09-001-FIX03.md`](progress/inputs/R06-M09-001-FIX03.md)，执行记录见 [`R06-M09-001-FIX03.md`](progress/runs/R06-M09-001-FIX03.md)。
+- 补齐 `verify_r03_project_browser_report.py` 的 M09 精确用例、缺失/重复/失败/跳过拒绝回归；`TestExecutionPanel` 保留草稿与结果、提供运行详情 GET-only 刷新、绑定 project/run/attempt/step/version，并在失权和迟到响应时使读写轮次失效。M09 浏览器场景增加真实 reload、服务器恢复、首次 FAIL 历史、VIEWER 读取和直接写拒绝。
+- 新增 V15 执行构建/终态/manifest 目标保护、真实源快照、稳定分页与运行汇总；M09 HTTP 回归覆盖 CSRF、版本冲突、未知引用/字段和 VIEWER 写拒绝。正式 V15 后的迁移升级断言已更新；故意失败探针为 V16，不改写 V1—V14。
+- Push [37319446796](https://github.com/fangzhiy/Test365Alm/actions/runs/37319446796) 与 PR merge [37319452595](https://github.com/fangzhiy/Test365Alm/actions/runs/37319452595) 均已完成且 success，六个 Job 全部通过。Push server checkout 为 `457b962a3127fe4b89cbf190eea98982af65ff37`；PR merge checkout 为 `93661dcc609c00a60fb9af46723e30bb2cf712c6`（`refs/pull/6/merge`）。远端报告为 Surefire 37、Failsafe 80，`ManualExecutionDatabaseIT` 20、`OidcCallbackSecurityIT` 15，失败/错误/跳过均为 0；浏览器 10/0/0/0，workers=1、retries=0，并包含 M09 两步执行用例。此前代码提交 `86c52fd` 的 server 失败及三项升级数量偏差已保留，修正提交 `457b962` 后重新验证通过。
+- 本机系统 Maven 单元测试 37/37、Python 工具 64/64、规划校验、前端隔离 Vitest 129/129、TypeScript、build、lint 均通过；本机 Wrapper PowerShell 仍以退出码 1 失败，仓库 `npm ci` 仍受 Windows rolldown 文件 EPERM，Docker/Testcontainers/JNA 集成未在本机通过。真实 PostgreSQL、OIDC 和 Keycloak 页面以 Ubuntu CI 结果为准。当前仅收口 M09 手工执行切片，不代表完整 M09 或后续模块完成。
+
+最后更新：2026-10-05
+当前轮次：`R06-M09-001-FIX03`
+状态：`IMPLEMENTED / LOCAL_DOCKER_BLOCKED / PUSH_AND_PR_CI_PASS`
+
 ## R06-M09-001-FIX02 当前状态（远端 Push/PR CI 已完成）
 
 - 本轮继续 feat/r06-m09-001 / PR #6，基线为 FIX01 代码 fceef8b076daf665fad7c0680caea6f7194de7f5、交付 1b31f3d941e01583b18866a2595923c69157645b。原始输入全文归档于 progress/inputs/R06-M09-001-FIX02.md，执行记录见 progress/runs/R06-M09-001-FIX02.md。
@@ -317,4 +329,3 @@
 本轮本机验证：前端 `npm ci`（126 packages）、Vitest 6 文件/77 测试、lint（0 error，3 个既有 React warning）、Vite build 均通过；系统 Maven `mvn -B -ntp test` 21 tests 通过；Python 工具 52 tests 通过。真实 Testcontainers/Failsafe 在 Windows 因 JNA `jnidispatch.dll` 临时文件/ Docker named pipe 权限退出码 1，Maven Wrapper 独立退出码 1（PowerShell `icm : Cannot index into a null array`）；均未混写成通过。Push [36968392677](https://github.com/fangzhiy/Test365Alm/actions/runs/36968392677) 六个 job 成功，Push checkout 为 `3e6055a9c1f33dbca34e84c977fb0ad1a19a9df2`；PR [36968396770](https://github.com/fangzhiy/Test365Alm/actions/runs/36968396770) 六个 job 成功，PR merge-ref checkout 为 `6a04165d3cee6c78298643f9a905a9ad8df2bb82`。server 报告 unit 21、OIDC 12、project access 12、requirement 12、upgrade 1，均 failures/errors/skipped=0；browser 8/0/0/0。
 
 本轮 I01–I10：I01 PASS（V7→V8 升级）；I02 PASS（HTTP/数据库创建）；I03 PASS（不可变历史）；I04 PASS（精确并发 412）；I05 PASS（真实 HTTP 12 用例）；I06 PASS（RLS/runtime 隔离）；I07 PASS（撤权/停用原会话直接请求）；I08 PASS（并发幂等）；I09 PASS（回滚与 runtime）；I10 PASS（浏览器 8 用例及 Push/PR CI）。本机 Testcontainers 阻塞已由隔离 Ubuntu CI 覆盖；不标记完整 M07、R04 或生产部署完成。完整结论见 [`docs/progress/runs/R04-M07-001-FIX02.md`](progress/runs/R04-M07-001-FIX02.md)。
-

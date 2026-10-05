@@ -12,6 +12,8 @@
 
 - 以追加迁移 V14 增加 manifest/manifest step 的构建完成边界、来源与项目复合归属、run/attempt/step 归属约束，以及运行步骤和 attempt 终态/版本单调性约束；V1–V13 不改写。
 - 应用在同一事务内以 `test365alm.execution_building` 标记执行清单的受控构建，构建完成后只允许封存，不允许再增加、修改或删除清单步骤。正式迁移后的故意失败探针编号为 V15，避免与正式 V14 混用。
+
+FIX03 修订：新增正式 V15 迁移，明确 manifest 必须以未封存状态开始、attempt 必须以 RUNNING/版本 1 开始、run step 必须以 NOT_RUN/版本 1 且绑定运行中的 manifest 开始。既有 V1—V14 不改写；故意失败探针顺延为 V16。历史记录中的 V15 探针描述保留为当时的执行记录，不代表当前版本号。
 - `run_step.row_version` 只用于步骤写入，`run_attempt.row_version` 只用于状态转换；HTTP 写请求要求强 `If-Match` 与 JSON `expectedVersion` 一致且为正整数。
 - 事件、审计意图和 Outbox 与业务写入在同一事务中提交，事件 payload 包含对象、前后状态/版本和操作者；无 run 对象的 set/instance 事件通过显式 object_type/object_id 表达。
 - 成功幂等操作保存完整响应 JSON 并按相同键重放；旧记录缺少快照时安全拒绝为 `IDEMPOTENCY_RESPONSE_UNAVAILABLE`，不拼装当前可变响应、不伪造历史。

@@ -5,10 +5,25 @@
   "version": "m09-manual-execution-2",
   "paths": {
     "testSets": "/api/v1/projects/{projectId}/test-sets",
+    "testSetsPage": "/api/v1/projects/{projectId}/test-sets/page",
     "instances": "/api/v1/projects/{projectId}/test-sets/{setId}/instances",
+    "instancesPage": "/api/v1/projects/{projectId}/test-sets/{setId}/instances/page",
     "runs": "/api/v1/projects/{projectId}/runs",
+    "runsPage": "/api/v1/projects/{projectId}/runs/page",
+    "runSummary": "/api/v1/projects/{projectId}/runs/summary",
+    "attemptsPage": "/api/v1/projects/{projectId}/runs/{runId}/attempts/page",
     "attempt": "/api/v1/projects/{projectId}/runs/{runId}/attempts/{attemptId}",
     "step": "/api/v1/projects/{projectId}/runs/{runId}/attempts/{attemptId}/steps/{stepKey}"
+  },
+  "pagination": {
+    "query": { "limit": "positive integer from 1 to 200", "cursor": "opaque continuation token" },
+    "response": { "items": "bounded page of the resource", "nextCursor": "opaque token or null" },
+    "ordering": "stable resource-specific keyset order; callers must follow nextCursor rather than increasing an offset"
+  },
+  "summary": {
+    "path": "/api/v1/projects/{projectId}/runs/summary",
+    "fields": ["totalInstances", "unrunInstances", "activeAttempts", "latestPass", "latestFail", "latestBlocked"],
+    "latestRule": "latest finished attempt per test instance by finished_at, then attempt_no"
   },
   "executionStatus": ["RUNNING", "PAUSED", "FINISHED"],
   "stepConclusion": ["NOT_RUN", "PASS", "FAIL", "BLOCKED"],

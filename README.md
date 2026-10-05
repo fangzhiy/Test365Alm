@@ -281,7 +281,7 @@ npm run build
 
 R06-M09-001-FIX01 在 V14 中以追加迁移补齐执行数据完整性：运行清单及步骤建立时受事务构建标记保护，保存后的 manifest/manifest step、终态 attempt 和运行步骤受数据库约束保护；步骤结果使用 `run_step.row_version`，暂停/继续/完成使用 `run_attempt.row_version`，接口同时要求一致的强 `If-Match` 和 JSON `expectedVersion`。事件、审计意图、Outbox 与业务写入同事务；幂等成功响应保存为冻结 JSON 快照，历史记录没有响应快照时返回 `IDEMPOTENCY_RESPONSE_UNAVAILABLE`，不会重新读取可变当前状态。
 
-FIX01 的前端测试还覆盖待处理写操作、显示值与提交值一致、乱序运行响应和未知结果重试的同一幂等键。FIX02 增加真实数据库并发步骤/完成/重跑、同键冻结重放、sealed runtime 完整性、审计和 Outbox 故障回滚，以及真实 OIDC HTTP 的一条 M09 运行路径；`ManualExecutionDatabaseIT` 报告门禁要求 17 个确切用例，不能用总测试数替代。V14 正常迁移后的专用迁移失败探针使用故意失败的 V15，不修改正式迁移文件。报告门禁命令为：
+FIX01 的前端测试还覆盖待处理写操作、显示值与提交值一致、乱序运行响应和未知结果重试的同一幂等键。FIX02 增加真实数据库并发步骤/完成/重跑、同键冻结重放、sealed runtime 完整性、审计和 Outbox 故障回滚，以及真实 OIDC HTTP 的一条 M09 运行路径；FIX03 增加构建初始状态约束、可继续分页、运行汇总、页面重开和 VIEWER 直接写拒绝；`ManualExecutionDatabaseIT` 报告门禁要求至少包含历史记录中列出的确切用例，不能用总测试数替代。V15 为正式的构建状态约束迁移；正常迁移后的专用迁移失败探针使用故意失败的 V16，不修改正式迁移文件。报告门禁命令为：
 
 ```powershell
 Set-Location apps/server
@@ -312,4 +312,3 @@ python tools/publish_github.py --owner fangzhiy --repo Test365Alm --execute
 ## 实施纪律
 
 按主方案前6周启动，再按迭代目标拆细Issue；使用真实样本测试迁移、版本和兼容；完成定义以证据为准。不要把全量目标缩水为几个管理页面，也不要把旧 ALM 服务端共存算成独立替代。
-

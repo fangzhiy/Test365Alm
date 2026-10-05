@@ -31,6 +31,9 @@ REQUIRED = {
     "outboxInsertFailureRollsBackStepAndAttemptVersion",
     "outboxInsertFailureRollsBackFinish",
     "pauseReplayReturnsTheOriginalFrozenResponseAfterResume",
+    "sourceRevisionChangesDoNotRewriteAnExistingRunManifest",
+    "executionBuildingStillRejectsHistoricalManifestAndTerminalAttemptWrites",
+    "pagedExecutionReadsAndSummaryUseStableProjectScopedCounts",
 }
 
 

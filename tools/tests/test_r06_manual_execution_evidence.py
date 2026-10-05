@@ -23,6 +23,9 @@ REQUIRED_CASES = [
     "outboxInsertFailureRollsBackStepAndAttemptVersion",
     "outboxInsertFailureRollsBackFinish",
     "pauseReplayReturnsTheOriginalFrozenResponseAfterResume",
+    "sourceRevisionChangesDoNotRewriteAnExistingRunManifest",
+    "executionBuildingStillRejectsHistoricalManifestAndTerminalAttemptWrites",
+    "pagedExecutionReadsAndSummaryUseStableProjectScopedCounts",
 ]
 
 
