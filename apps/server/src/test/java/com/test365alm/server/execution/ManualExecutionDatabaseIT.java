@@ -219,8 +219,10 @@ class ManualExecutionDatabaseIT {
                 .findFirst().orElseThrow().error();
         assertEquals("STALE_VERSION", rejected.code());
         ExecutionService.AttemptView current = executions.attempt(actor, project, run, attempt);
-        assertTrue("RUNNING".equals(current.status()) || "FINISHED".equals(current.status()));
-        assertEquals(2, ownerCount("SELECT row_version FROM run_step WHERE attempt_id=?", attempt));
+        boolean finishWon = outcomes.stream().filter(Outcome::succeeded)
+                .findFirst().orElseThrow().value().status().equals("FINISHED");
+        assertEquals(finishWon ? "FINISHED" : "RUNNING", current.status());
+        assertEquals(finishWon ? 2 : 3, ownerCount("SELECT row_version FROM run_step WHERE attempt_id=?", attempt));
         assertTrue(ownerCount("SELECT COUNT(*) FROM execution_event WHERE run_id=? AND event_type IN ('STEP_RECORDED','RUN_FINISHED')", run) >= 2);
     }
 
