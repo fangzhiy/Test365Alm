@@ -26,10 +26,10 @@ class CiWorkflowTests(unittest.TestCase):
         self.assertIn("github_sha=", workflow)
         self.assertIn("checkout_sha=", workflow)
 
-    def test_migration_job_records_formal_v14_before_intentional_v15_failure(self):
+    def test_migration_job_records_formal_v15_before_intentional_v16_failure(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("Verify formal V14 then intentional V15 migration startup failure", workflow)
-        self.assertIn("Formal V14 migration and intentional V15 failure were detected", workflow)
+        self.assertIn("Verify formal V15 then intentional V16 migration startup failure", workflow)
+        self.assertIn("Formal V15 migration and intentional V16 failure were detected", workflow)
         self.assertIn("verify_r02_migration_failure.py", workflow)
 
     def test_server_job_requires_project_access_rls_evidence(self):
@@ -94,4 +94,3 @@ class CiWorkflowTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

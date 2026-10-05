@@ -89,6 +89,36 @@ class ExecutionControllerTest {
         verify(service).pause(actor, project, run, attempt, 1L, "pause-key-002");
     }
 
+    @Test
+    void pagedReadEndpointsAreAdditiveAndUseOpaqueCursor() {
+        when(actors.requirePrincipal(authentication)).thenReturn(actor);
+        ExecutionService.TestSetPage sets = new ExecutionService.TestSetPage(List.of(), "next-set");
+        ExecutionService.InstancePage instances = new ExecutionService.InstancePage(List.of(), "next-instance");
+        ExecutionService.RunPage runs = new ExecutionService.RunPage(List.of(), "next-run");
+        ExecutionService.AttemptPage attempts = new ExecutionService.AttemptPage(List.of(), "next-attempt");
+        when(service.pageSets(actor, project, "cursor", 1)).thenReturn(sets);
+        when(service.pageInstances(actor, project, project, "cursor", 1)).thenReturn(instances);
+        when(service.pageRuns(actor, project, "cursor", 1)).thenReturn(runs);
+        when(service.pageAttempts(actor, project, run, "cursor", 1)).thenReturn(attempts);
+        assertEquals("next-set", controller.pageSets(authentication, project, "cursor", 1).nextCursor());
+        assertEquals("next-instance", controller.pageInstances(authentication, project, project, "cursor", 1).nextCursor());
+        assertEquals("next-run", controller.pageRuns(authentication, project, "cursor", 1).nextCursor());
+        assertEquals("next-attempt", controller.pageAttempts(authentication, project, run, "cursor", 1).nextCursor());
+        verify(service).pageSets(actor, project, "cursor", 1);
+        verify(service).pageInstances(actor, project, project, "cursor", 1);
+        verify(service).pageRuns(actor, project, "cursor", 1);
+        verify(service).pageAttempts(actor, project, run, "cursor", 1);
+    }
+
+    @Test
+    void runSummaryIsReadThroughTheProjectScopedService() {
+        when(actors.requirePrincipal(authentication)).thenReturn(actor);
+        ExecutionService.RunSummary summary = new ExecutionService.RunSummary(3, 1, 1, 1, 0, 1);
+        when(service.summary(actor, project)).thenReturn(summary);
+        assertEquals(summary, controller.summary(authentication, project));
+        verify(service).summary(actor, project);
+    }
+
     private ExecutionService.RunDetail detail(UUID instance) {
         ExecutionService.RunView runView = new ExecutionService.RunView(run, project, instance, UUID.randomUUID(), "RUNNING", 1, null);
         return new ExecutionService.RunDetail(runView, null, null, List.of());
@@ -103,4 +133,3 @@ class ExecutionControllerTest {
         catch (Exception ex) { throw new IllegalStateException(ex); }
     }
 }
-

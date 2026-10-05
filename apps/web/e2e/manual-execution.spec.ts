@@ -139,10 +139,60 @@ test('real Keycloak UI manual execution creates, resumes, finishes and reruns a 
     await expect(execution.getByRole('button', { name: '尝试 1 · FAIL' })).toBeVisible()
     await expect(execution.getByRole('button', { name: '尝试 2 · PASS' })).toBeVisible()
 
+    // Re-open the page and select every scope again.  This proves the values
+    // and attempt history are read from the server, rather than retained in
+    // the previous React tree.
+    await memberPage.reload()
+    await selectProject(memberPage, tenantId, projectId)
+    const reopenedExecution = memberPage.locator('section.execution-panel')
+    await reopenedExecution.getByRole('button', { name: new RegExp(setName) }).click()
+    const persistedRun = reopenedExecution.getByRole('button', { name: /运行 .*FINISHED/ }).first()
+    await persistedRun.click()
+    await expect(reopenedExecution).toContainText('运行详情 · 尝试 2')
+    await reopenedExecution.getByRole('button', { name: '刷新运行详情' }).click()
+    await expect(reopenedExecution).toContainText('运行详情 · 尝试 2')
+    await reopenedExecution.getByRole('button', { name: '尝试 1 · FAIL' }).click()
+    await expect(reopenedExecution.getByLabel('步骤 1 实际结果')).toHaveValue('Login form is visible')
+    await expect(reopenedExecution.getByLabel('步骤 2 实际结果')).toHaveValue('Server rejected credentials')
+    await expect(reopenedExecution.getByLabel('步骤 1 结论')).toHaveValue('PASS')
+    await expect(reopenedExecution.getByLabel('步骤 2 结论')).toHaveValue('FAIL')
+
     await selectProject(viewerPage, tenantId, projectId)
     const viewerExecution = viewerPage.locator('section.execution-panel')
     await expect(viewerExecution).toContainText(setName)
     await expect(viewerExecution.getByRole('button', { name: '启动手工运行' })).not.toBeVisible()
+    await viewerExecution.getByRole('button', { name: new RegExp(setName) }).click()
+    const viewerRun = viewerExecution.getByRole('button', { name: /运行 .*FINISHED/ }).first()
+    await viewerRun.click()
+    await expect(viewerExecution).toContainText('运行详情 · 尝试 2')
+    await viewerExecution.getByRole('button', { name: '尝试 1 · FAIL' }).click()
+    await expect(viewerExecution.getByLabel('步骤 1 实际结果')).toHaveValue('Login form is visible')
+    await expect(viewerExecution.getByLabel('步骤 2 结论')).toHaveValue('FAIL')
+    await expect(viewerExecution.getByRole('button', { name: '刷新运行详情' })).toBeVisible()
+    await expect(viewerExecution.getByRole('button', { name: '完成运行' })).not.toBeVisible()
+
+    const viewerRunsResponse = await viewerPage.request.get(`/api/v1/projects/${projectId}/runs`)
+    expect(viewerRunsResponse.status()).toBe(200)
+    const viewerRuns = await viewerRunsResponse.json() as Array<{ id: string }>
+    const viewerRunId = viewerRuns[0]?.id
+    if (!viewerRunId) throw new Error('Viewer could not read the persisted run id')
+    const viewerDetailResponse = await viewerPage.request.get(`/api/v1/projects/${projectId}/runs/${viewerRunId}`)
+    expect(viewerDetailResponse.status()).toBe(200)
+    const viewerDetail = await viewerDetailResponse.json() as { currentAttempt: { id: string, rowVersion: number, steps: Array<{ stepKey: string, rowVersion: number, actualResult: string, conclusion: string }> } }
+    const viewerAttempt = viewerDetail.currentAttempt
+    const viewerStep = viewerAttempt.steps[0]
+    if (!viewerStep) throw new Error('Viewer run has no persisted step')
+    const deniedStepSave = await write(viewerPage, 'PUT', `/api/v1/projects/${projectId}/runs/${viewerRunId}/attempts/${viewerAttempt.id}/steps/${viewerStep.stepKey}`, {
+      actualResult: viewerStep.actualResult, conclusion: viewerStep.conclusion, expectedVersion: viewerStep.rowVersion,
+    })
+    expect(deniedStepSave.status()).toBe(403)
+    await expect(deniedStepSave.json()).resolves.toMatchObject({ code: 'FORBIDDEN' })
+    const deniedFinish = await write(viewerPage, 'POST', `/api/v1/projects/${projectId}/runs/${viewerRunId}/attempts/${viewerAttempt.id}/finish`, { expectedVersion: viewerAttempt.rowVersion })
+    expect(deniedFinish.status()).toBe(403)
+    await expect(deniedFinish.json()).resolves.toMatchObject({ code: 'FORBIDDEN' })
+    const deniedRerun = await write(viewerPage, 'POST', `/api/v1/projects/${projectId}/runs/${viewerRunId}/attempts`, {})
+    expect(deniedRerun.status()).toBe(403)
+    await expect(deniedRerun.json()).resolves.toMatchObject({ code: 'FORBIDDEN' })
     const denied = await write(viewerPage, 'POST', `/api/v1/projects/${projectId}/test-sets`, { name: 'viewer forbidden', description: '' })
     expect(denied.status()).toBe(403)
     await expect(denied.json()).resolves.toMatchObject({ code: 'FORBIDDEN' })
@@ -151,5 +201,3 @@ test('real Keycloak UI manual execution creates, resumes, finishes and reruns a 
     await viewerContext.close()
   }
 })
-
-

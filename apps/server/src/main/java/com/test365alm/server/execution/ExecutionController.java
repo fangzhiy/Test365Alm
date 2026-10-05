@@ -50,6 +50,13 @@ public class ExecutionController {
         return executions.listSets(actors.requirePrincipal(authentication), projectId, limit);
     }
 
+    @GetMapping("/test-sets/page")
+    public ExecutionService.TestSetPage pageSets(Authentication authentication, @PathVariable UUID projectId,
+            @RequestParam(name="cursor", required=false) String cursor,
+            @RequestParam(name="limit", required=false) Integer limit) {
+        return executions.pageSets(actors.requirePrincipal(authentication), projectId, cursor, limit);
+    }
+
     @GetMapping("/test-sets/{setId}")
     public ExecutionService.TestSetDetail getSet(Authentication authentication, @PathVariable UUID projectId, @PathVariable UUID setId) {
         return executions.getSet(actors.requirePrincipal(authentication), projectId, setId);
@@ -69,6 +76,13 @@ public class ExecutionController {
     public List<ExecutionService.InstanceView> listInstances(Authentication authentication, @PathVariable UUID projectId, @PathVariable UUID setId,
             @RequestParam(name="limit", required=false) Integer limit) {
         return executions.listInstances(actors.requirePrincipal(authentication), projectId, setId, limit);
+    }
+
+    @GetMapping("/test-sets/{setId}/instances/page")
+    public ExecutionService.InstancePage pageInstances(Authentication authentication, @PathVariable UUID projectId, @PathVariable UUID setId,
+            @RequestParam(name="cursor", required=false) String cursor,
+            @RequestParam(name="limit", required=false) Integer limit) {
+        return executions.pageInstances(actors.requirePrincipal(authentication), projectId, setId, cursor, limit);
     }
 
     @PostMapping("/runs")
@@ -91,6 +105,18 @@ public class ExecutionController {
         return executions.listRuns(actors.requirePrincipal(authentication), projectId, limit);
     }
 
+    @GetMapping("/runs/page")
+    public ExecutionService.RunPage pageRuns(Authentication authentication, @PathVariable UUID projectId,
+            @RequestParam(name="cursor", required=false) String cursor,
+            @RequestParam(name="limit", required=false) Integer limit) {
+        return executions.pageRuns(actors.requirePrincipal(authentication), projectId, cursor, limit);
+    }
+
+    @GetMapping("/runs/summary")
+    public ExecutionService.RunSummary summary(Authentication authentication, @PathVariable UUID projectId) {
+        return executions.summary(actors.requirePrincipal(authentication), projectId);
+    }
+
     @GetMapping("/runs/{runId}")
     public ExecutionService.RunDetail getRun(Authentication authentication, @PathVariable UUID projectId, @PathVariable UUID runId) {
         return executions.run(actors.requirePrincipal(authentication), projectId, runId);
@@ -100,6 +126,13 @@ public class ExecutionController {
     public List<ExecutionService.AttemptView> attempts(Authentication authentication, @PathVariable UUID projectId, @PathVariable UUID runId,
             @RequestParam(name="limit", required=false) Integer limit) {
         return executions.attempts(actors.requirePrincipal(authentication), projectId, runId, limit);
+    }
+
+    @GetMapping("/runs/{runId}/attempts/page")
+    public ExecutionService.AttemptPage pageAttempts(Authentication authentication, @PathVariable UUID projectId, @PathVariable UUID runId,
+            @RequestParam(name="cursor", required=false) String cursor,
+            @RequestParam(name="limit", required=false) Integer limit) {
+        return executions.pageAttempts(actors.requirePrincipal(authentication), projectId, runId, cursor, limit);
     }
 
     @GetMapping("/runs/{runId}/attempts/{attemptId}")
@@ -211,4 +244,3 @@ public class ExecutionController {
         }
     }
 }
-

@@ -472,6 +472,126 @@ class ManualExecutionDatabaseIT {
         assertEquals(1, ownerCount("SELECT COUNT(*) FROM run_attempt WHERE id=? AND status='FINISHED'", attempt));
     }
 
+    /** K02: changing the source case after a run starts never changes its snapshot. */
+    @Test
+    void sourceRevisionChangesDoNotRewriteAnExistingRunManifest() throws Exception {
+        Fixture f = fixture();
+        TestCaseService.TestCaseView source = tests.create(f.member(), f.project(),
+                new TestCaseService.CreateCommand("MANUAL", "Original title", "Original description", "Original setup",
+                        List.of(new TestCaseService.StepCommand(null, 1, "Open", "Page is visible"),
+                                new TestCaseService.StepCommand(null, 2, "Submit", "Confirmation is visible"))),
+                "m09-k02-source-snapshot");
+        ExecutionService.TestSetView set = executions.createSet(f.member(), f.project(), "Snapshot", "", "m09-k02-snapshot-set");
+        ExecutionService.InstanceView instance = executions.addInstance(f.member(), f.project(), set.id(), source.id(),
+                source.currentRevision().id(), "m09-k02-snapshot-instance");
+        ExecutionService.RunDetail before = executions.createRun(f.member(), f.project(), instance.id(), "m09-k02-snapshot-run");
+        List<TestCaseService.StepView> originalSteps = source.currentRevision().steps();
+
+        TestCaseService.TestCaseView revised = tests.appendRevision(f.member(), f.project(), source.id(),
+                new TestCaseService.RevisionCommand("Changed title", "Changed description", "Changed setup",
+                        List.of(new TestCaseService.StepCommand(originalSteps.get(1).stepKey(), 1, "Submit changed", "Changed confirmation"),
+                                new TestCaseService.StepCommand(originalSteps.get(0).stepKey(), 2, "Open changed", "Changed page"))),
+                "\"1\"", "m09-k02-source-revision");
+        assertEquals(2, revised.currentRevision().revisionNo());
+
+        ExecutionService.RunDetail after = executions.run(f.member(), f.project(), before.run().id());
+        assertEquals("Original title", after.manifest().title());
+        assertEquals("Original description", after.manifest().description());
+        assertEquals(originalSteps.get(0).stepKey(), after.manifest().steps().get(0).stepKey());
+        assertEquals(originalSteps.get(0).action(), after.manifest().steps().get(0).action());
+        assertEquals(originalSteps.get(1).stepKey(), after.manifest().steps().get(1).stepKey());
+        assertEquals(originalSteps.get(1).action(), after.manifest().steps().get(1).action());
+        assertEquals("Open", after.currentAttempt().steps().get(0).action());
+        assertEquals("Confirmation is visible", after.currentAttempt().steps().get(1).expected());
+    }
+
+    /** K05: the execution-building flag cannot reopen sealed or terminal targets. */
+    @Test
+    void executionBuildingStillRejectsHistoricalManifestAndTerminalAttemptWrites() throws Exception {
+        PreparedRun prepared = preparedRun("m09-k05-building", "m09-k05-building-source");
+        UUID project = prepared.fixture().project();
+        UUID tenant = prepared.fixture().tenant();
+        UUID run = prepared.run().run().id();
+        UUID attempt = prepared.run().currentAttempt().id();
+        UUID manifest = prepared.run().manifest().id();
+        UUID step = prepared.run().currentAttempt().steps().get(0).stepKey();
+        ExecutionService.AttemptView saved = executions.saveStep(prepared.fixture().member(), project, run, attempt, step,
+                "done", "PASS", 1, "m09-k05-building-step");
+        executions.finish(prepared.fixture().member(), project, run, attempt, saved.rowVersion(), "m09-k05-building-finish");
+
+        try (Connection runtime = runtimeConnection(prepared.fixture())) {
+            setConfig(runtime, "test365alm.execution_building", "true");
+            UUID illegalStep = UUID.randomUUID();
+            SQLException sealed = assertThrows(SQLException.class, () -> execute(runtime,
+                    "INSERT INTO execution_manifest_step (tenant_id, project_id, manifest_id, step_key, ordinal, action, expected) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    tenant, project, manifest, illegalStep, 2, "illegal", "illegal"));
+            assertEquals("55006", sealed.getSQLState());
+            runtime.rollback();
+
+            UUID illegalAttempt = UUID.randomUUID();
+            SQLException terminalAttempt = assertThrows(SQLException.class, () -> execute(runtime,
+                    "INSERT INTO run_attempt (tenant_id, project_id, id, run_id, manifest_id, attempt_no, status, conclusion, finished_at, started_by) VALUES (?, ?, ?, ?, ?, ?, 'FINISHED', 'PASS', CURRENT_TIMESTAMP, ?)",
+                    tenant, project, illegalAttempt, run, manifest, 2, prepared.fixture().member()));
+            assertEquals("55006", terminalAttempt.getSQLState());
+            runtime.rollback();
+
+        }
+        assertEquals(1, ownerCount("SELECT COUNT(*) FROM execution_manifest_step WHERE manifest_id=?", manifest));
+        assertEquals(1, ownerCount("SELECT COUNT(*) FROM run_attempt WHERE run_id=?", run));
+        assertEquals(1, ownerCount("SELECT COUNT(*) FROM run_step WHERE attempt_id=?", attempt));
+    }
+
+    /** K06: bounded keyset pages continue without loading the full history, and summary uses all rows. */
+    @Test
+    void pagedExecutionReadsAndSummaryUseStableProjectScopedCounts() throws Exception {
+        Fixture f = fixture();
+        TestCaseService.TestCaseView first = tests.create(f.member(), f.project(),
+                new TestCaseService.CreateCommand("MANUAL", "Page one", "", "",
+                        List.of(new TestCaseService.StepCommand(null, 1, "Open", "Visible"))), "m09-page-case-001");
+        TestCaseService.TestCaseView second = tests.create(f.member(), f.project(),
+                new TestCaseService.CreateCommand("MANUAL", "Page two", "", "",
+                        List.of(new TestCaseService.StepCommand(null, 1, "Submit", "Saved"))), "m09-page-case-002");
+        ExecutionService.TestSetView firstSet = executions.createSet(f.member(), f.project(), "Page one", "", "m09-page-set-001");
+        ExecutionService.TestSetView secondSet = executions.createSet(f.member(), f.project(), "Page two", "", "m09-page-set-002");
+        ExecutionService.InstanceView firstInstance = executions.addInstance(f.member(), f.project(), firstSet.id(), first.id(),
+                first.currentRevision().id(), "m09-page-instance-001");
+        executions.addInstance(f.member(), f.project(), firstSet.id(), second.id(), second.currentRevision().id(), "m09-page-instance-002");
+
+        ExecutionService.TestSetPage sets = executions.pageSets(f.member(), f.project(), null, 1);
+        assertEquals(1, sets.items().size());
+        assertTrue(sets.nextCursor() != null);
+        ExecutionService.TestSetPage setsNext = executions.pageSets(f.member(), f.project(), sets.nextCursor(), 1);
+        assertEquals(1, setsNext.items().size());
+        assertTrue(List.of(firstSet.id(), secondSet.id()).contains(sets.items().get(0).id()));
+        assertTrue(List.of(firstSet.id(), secondSet.id()).contains(setsNext.items().get(0).id()));
+        assertTrue(!sets.items().get(0).id().equals(setsNext.items().get(0).id()));
+
+        ExecutionService.InstancePage instances = executions.pageInstances(f.member(), f.project(), firstSet.id(), null, 1);
+        assertEquals(1, instances.items().size());
+        assertTrue(instances.nextCursor() != null);
+        assertEquals(1, executions.pageInstances(f.member(), f.project(), firstSet.id(), instances.nextCursor(), 1).items().size());
+
+        ExecutionService.RunDetail run = executions.createRun(f.member(), f.project(), firstInstance.id(), "m09-page-run-001");
+        ExecutionService.AttemptView saved = executions.saveStep(f.member(), f.project(), run.run().id(), run.currentAttempt().id(),
+                run.currentAttempt().steps().get(0).stepKey(), "done", "PASS", 1, "m09-page-step-001");
+        executions.finish(f.member(), f.project(), run.run().id(), run.currentAttempt().id(), saved.rowVersion(), "m09-page-finish-001");
+        executions.rerun(f.member(), f.project(), run.run().id(), "m09-page-rerun-001");
+
+        ExecutionService.AttemptPage attempts = executions.pageAttempts(f.member(), f.project(), run.run().id(), null, 1);
+        assertEquals(1, attempts.items().size());
+        assertTrue(attempts.nextCursor() != null);
+        assertEquals(1, executions.pageAttempts(f.member(), f.project(), run.run().id(), attempts.nextCursor(), 1).items().size());
+        ExecutionService.RunPage runs = executions.pageRuns(f.member(), f.project(), null, 1);
+        assertEquals(1, runs.items().size());
+        assertEquals(run.run().id(), runs.items().get(0).id());
+
+        ExecutionService.RunSummary summary = executions.summary(f.member(), f.project());
+        assertEquals(2, summary.totalInstances());
+        assertEquals(1, summary.unrunInstances());
+        assertEquals(1, summary.activeAttempts());
+        assertEquals(1, summary.latestCompletedPass());
+    }
+
     private PreparedRun preparedSource(String setKey, String sourceKey) throws Exception {
         Fixture f = fixture();
         TestCaseService.TestCaseView source = tests.create(f.member(), f.project(),
@@ -601,4 +721,3 @@ class ManualExecutionDatabaseIT {
         boolean succeeded() { return error == null; }
     }
 }
-

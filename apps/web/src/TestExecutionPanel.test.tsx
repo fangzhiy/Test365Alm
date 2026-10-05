@@ -75,6 +75,63 @@ describe('TestExecutionPanel', () => {
     expect(vi.mocked(executionApi.saveStep).mock.calls[0]?.[4]?.rowVersion).toBe(7)
   })
 
+  it('keeps a conflicted draft and saved result visible when refreshing run details fails', async () => {
+    let getRunCalls = 0
+    vi.mocked(executionApi.listSets).mockResolvedValue([set]); vi.mocked(executionApi.getSet).mockResolvedValue(set); vi.mocked(executionApi.listInstances).mockResolvedValue([instance]); vi.mocked(executionApi.listRuns).mockResolvedValue([run]);
+    vi.mocked(executionApi.getRun).mockImplementation(async () => { getRunCalls += 1; if (getRunCalls > 1) throw { code: 'HTTP_503', message: '运行详情暂时不可用' }; return run })
+    vi.mocked(executionApi.listAttempts).mockResolvedValue([attempt]); vi.mocked(executionApi.saveStep).mockRejectedValue({ code: 'STALE_VERSION', message: '步骤版本已过期' })
+    render(<TestExecutionPanel projectId="project-1" access={access} />)
+    fireEvent.click(await screen.findByRole('button', { name: /登录冒烟/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /运行 run-1/ }))
+    await screen.findByText('运行中')
+    fireEvent.change(screen.getByLabelText('步骤 1 实际结果'), { target: { value: '冲突后仍保留' } })
+    fireEvent.change(screen.getByLabelText('步骤 1 结论'), { target: { value: 'FAIL' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存步骤结果' }))
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('步骤版本已过期'))
+    fireEvent.click(screen.getByRole('button', { name: '刷新运行详情' }))
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('运行详情暂时不可用'))
+    expect(screen.getByLabelText('步骤 1 实际结果')).toHaveValue('冲突后仍保留')
+    expect(screen.getByLabelText('步骤 1 结论')).toHaveValue('FAIL')
+    expect(screen.getByRole('button', { name: '刷新运行详情' })).toBeEnabled()
+  })
+
+  it('keeps a successful step result visible when the follow-up detail read fails', async () => {
+    let getRunCalls = 0
+    const saved = { ...attempt, steps: [{ ...step, actual: '服务器已保存', outcome: 'PASS' as const, rowVersion: 8 }] }
+    vi.mocked(executionApi.listSets).mockResolvedValue([set]); vi.mocked(executionApi.getSet).mockResolvedValue(set); vi.mocked(executionApi.listInstances).mockResolvedValue([instance]); vi.mocked(executionApi.listRuns).mockResolvedValue([run]);
+    vi.mocked(executionApi.getRun).mockImplementation(async () => { getRunCalls += 1; if (getRunCalls > 1) throw { code: 'HTTP_503', message: '运行详情暂时不可用' }; return run })
+    vi.mocked(executionApi.listAttempts).mockResolvedValue([attempt]); vi.mocked(executionApi.saveStep).mockResolvedValue(saved)
+    render(<TestExecutionPanel projectId="project-1" access={access} />)
+    fireEvent.click(await screen.findByRole('button', { name: /登录冒烟/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /运行 run-1/ }))
+    await screen.findByText('运行中')
+    fireEvent.change(screen.getByLabelText('步骤 1 实际结果'), { target: { value: '服务器已保存' } })
+    fireEvent.change(screen.getByLabelText('步骤 1 结论'), { target: { value: 'PASS' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存步骤结果' }))
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('步骤结果已保存'))
+    fireEvent.click(screen.getByRole('button', { name: '刷新运行详情' }))
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('运行详情暂时不可用'))
+    expect(screen.getByLabelText('步骤 1 实际结果')).toHaveValue('服务器已保存')
+    expect(screen.getByLabelText('步骤 1 结论')).toHaveValue('PASS')
+  })
+
+  it('clears run data after an API access denial and allows a fresh read retry', async () => {
+    let getRunCalls = 0
+    vi.mocked(executionApi.listSets).mockResolvedValue([set]); vi.mocked(executionApi.getSet).mockResolvedValue(set); vi.mocked(executionApi.listInstances).mockResolvedValue([instance]); vi.mocked(executionApi.listRuns).mockResolvedValue([run]);
+    vi.mocked(executionApi.getRun).mockImplementation(async () => { getRunCalls += 1; if (getRunCalls > 1) throw { code: 'FORBIDDEN', status: 403, message: '项目访问已撤销' }; return run })
+    vi.mocked(executionApi.listAttempts).mockResolvedValue([attempt])
+    render(<TestExecutionPanel projectId="project-1" access={access} />)
+    fireEvent.click(await screen.findByRole('button', { name: /登录冒烟/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /运行 run-1/ }))
+    await screen.findByText('运行中')
+    fireEvent.click(screen.getByRole('button', { name: '刷新运行详情' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('没有读取测试集和运行记录的权限')
+    expect(screen.queryByText('运行详情 · 尝试 1')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '重试读取' }))
+    expect(await screen.findByText('登录冒烟')).toBeVisible()
+    expect(screen.queryByText('运行详情 · 尝试 1')).not.toBeInTheDocument()
+  })
+
   it('disables step controls during a save and re-enables them after the result arrives', async () => {
     let resolveSave!: (value: RunAttempt) => void
     const deferred = new Promise<RunAttempt>((resolve) => { resolveSave = resolve })
@@ -233,6 +290,17 @@ describe('TestExecutionPanel', () => {
     expect(screen.queryByText('late success')).not.toBeInTheDocument()
   })
 
+  it('clears the scope when a real step write returns a forbidden response', async () => {
+    vi.mocked(executionApi.listSets).mockResolvedValue([set]); vi.mocked(executionApi.getSet).mockResolvedValue(set); vi.mocked(executionApi.listInstances).mockResolvedValue([instance]); vi.mocked(executionApi.createRun).mockResolvedValue(run); vi.mocked(executionApi.getRun).mockResolvedValue(run); vi.mocked(executionApi.listAttempts).mockResolvedValue([attempt]); vi.mocked(executionApi.saveStep).mockRejectedValue({ code: 'FORBIDDEN', status: 403, message: '项目访问已撤销' })
+    render(<TestExecutionPanel projectId="project-1" access={access} />)
+    fireEvent.click(await screen.findByRole('button', { name: /登录冒烟/ }))
+    fireEvent.click(await screen.findByRole('button', { name: '启动手工运行' }))
+    await screen.findByText('运行中')
+    fireEvent.click(screen.getByRole('button', { name: '保存步骤结果' }))
+    expect(await screen.findByRole('alert')).toHaveTextContent('没有读取测试集和运行记录的权限')
+    expect(screen.queryByText('运行详情 · 尝试 1')).not.toBeInTheDocument()
+  })
+
   it('locks case discovery while a step write is pending instead of aborting an unknown result', async () => {
     let resolveSave!: (value: RunAttempt) => void
     const pendingSave = new Promise<RunAttempt>((resolve) => { resolveSave = resolve })
@@ -248,4 +316,3 @@ describe('TestExecutionPanel', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: '加载已保存用例' })).toBeEnabled())
   })
 })
-

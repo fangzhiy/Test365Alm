@@ -304,6 +304,16 @@ class OidcCallbackSecurityIT {
         long attemptVersion = jsonLong(createdRun.body(), "currentAttempt", "rowVersion");
         UUID step = UUID.fromString(jsonText(createdRun.body(), "currentAttempt", "steps", "0", "stepKey"));
         long stepVersion = jsonLong(createdRun.body(), "currentAttempt", "steps", "0", "rowVersion");
+        HttpResponse<String> missingCsrf = putExecutionStep(member.client,
+                "/api/v1/projects/" + project + "/runs/" + run + "/attempts/" + attempt + "/steps/" + step,
+                null, null, stepVersion, "m09-http-missing-csrf-" + UUID.randomUUID(),
+                "{\"actualResult\":\"Visible\",\"conclusion\":\"PASS\",\"expectedVersion\":" + stepVersion + "}");
+        assertEquals(403, missingCsrf.statusCode(), missingCsrf.body());
+        HttpResponse<String> conflictingVersion = putExecutionStep(member.client,
+                "/api/v1/projects/" + project + "/runs/" + run + "/attempts/" + attempt + "/steps/" + step,
+                memberCsrfHeader, memberCsrf, stepVersion, "m09-http-conflicting-version-" + UUID.randomUUID(),
+                "{\"actualResult\":\"Visible\",\"conclusion\":\"PASS\",\"expectedVersion\":" + (stepVersion + 1) + "}");
+        assertEquals(400, conflictingVersion.statusCode(), conflictingVersion.body());
         HttpResponse<String> saved = putExecutionStep(member.client,
                 "/api/v1/projects/" + project + "/runs/" + run + "/attempts/" + attempt + "/steps/" + step,
                 memberCsrfHeader, memberCsrf, stepVersion, "m09-http-step-" + UUID.randomUUID(),
@@ -314,15 +324,40 @@ class OidcCallbackSecurityIT {
                 memberCsrfHeader, memberCsrf, attemptVersion + 1, "m09-http-finish-" + UUID.randomUUID());
         assertEquals(200, finished.statusCode(), finished.body());
         assertEquals("FINISHED", jsonText(finished.body(), "status"));
+        assertEquals(404, get(member.client, "/api/v1/projects/" + project + "/runs/" + UUID.randomUUID()).statusCode());
+        HttpResponse<String> unknownStep = putExecutionStep(member.client,
+                "/api/v1/projects/" + project + "/runs/" + run + "/attempts/" + attempt + "/steps/" + UUID.randomUUID(),
+                memberCsrfHeader, memberCsrf, stepVersion, "m09-http-unknown-step-" + UUID.randomUUID(),
+                "{\"actualResult\":\"unknown\",\"conclusion\":\"PASS\",\"expectedVersion\":" + stepVersion + "}");
+        assertEquals(404, unknownStep.statusCode(), unknownStep.body());
+        HttpResponse<String> unknownTransitionField = postExecution(member.client,
+                "/api/v1/projects/" + project + "/runs/" + run + "/attempts/" + attempt + "/pause",
+                memberCsrfHeader, memberCsrf, "m09-http-unknown-field-" + UUID.randomUUID(),
+                "{\"expectedVersion\":1,\"unexpected\":true}");
+        assertEquals(400, unknownTransitionField.statusCode(), unknownTransitionField.body());
 
         String viewerCsrfBody = get(viewer.client, "/api/v1/csrf").body();
         String viewerCsrfHeader = jsonField(viewerCsrfBody, "headerName");
         String viewerCsrf = jsonField(viewerCsrfBody, "token");
         assertEquals(200, get(viewer.client, "/api/v1/projects/" + project + "/test-sets").statusCode());
+        assertEquals(200, get(viewer.client, "/api/v1/projects/" + project + "/runs/" + run).statusCode());
         HttpResponse<String> denied = postExecution(viewer.client, setPath, viewerCsrfHeader, viewerCsrf,
                 "m09-http-viewer-denied-" + UUID.randomUUID(), "{\"name\":\"denied\",\"description\":\"\"}");
         assertEquals(403, denied.statusCode(), denied.body());
         assertEquals("FORBIDDEN", jsonField(denied.body(), "code"));
+        HttpResponse<String> deniedStep = putExecutionStep(viewer.client,
+                "/api/v1/projects/" + project + "/runs/" + run + "/attempts/" + attempt + "/steps/" + step,
+                viewerCsrfHeader, viewerCsrf, stepVersion, "m09-http-viewer-step-" + UUID.randomUUID(),
+                "{\"actualResult\":\"viewer\",\"conclusion\":\"PASS\",\"expectedVersion\":" + stepVersion + "}");
+        assertEquals(403, deniedStep.statusCode(), deniedStep.body());
+        HttpResponse<String> deniedFinish = postExecutionVersion(viewer.client,
+                "/api/v1/projects/" + project + "/runs/" + run + "/attempts/" + attempt + "/finish",
+                viewerCsrfHeader, viewerCsrf, attemptVersion, "m09-http-viewer-finish-" + UUID.randomUUID());
+        assertEquals(403, deniedFinish.statusCode(), deniedFinish.body());
+        HttpResponse<String> deniedRerun = postExecution(viewer.client,
+                "/api/v1/projects/" + project + "/runs/" + run + "/attempts",
+                viewerCsrfHeader, viewerCsrf, "m09-http-viewer-rerun-" + UUID.randomUUID(), "{}");
+        assertEquals(403, deniedRerun.statusCode(), deniedRerun.body());
     }
 
     @Test
@@ -1319,30 +1354,33 @@ class OidcCallbackSecurityIT {
 
     private HttpResponse<String> postExecution(HttpClient client, String path, String csrfHeader, String csrfToken,
             String idempotencyKey, String body) throws Exception {
-        return client.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + appPort + path))
+        var builder = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + appPort + path))
                 .timeout(REQUEST_TIMEOUT).header("Content-Type", "application/json")
-                .header(csrfHeader, csrfToken).header("Idempotency-Key", idempotencyKey)
-                .POST(HttpRequest.BodyPublishers.ofString(body)).build(),
+                .header("Idempotency-Key", idempotencyKey);
+        if (csrfHeader != null && csrfToken != null) builder.header(csrfHeader, csrfToken);
+        return client.send(builder.POST(HttpRequest.BodyPublishers.ofString(body)).build(),
                 HttpResponse.BodyHandlers.ofString());
     }
 
     private HttpResponse<String> postExecutionVersion(HttpClient client, String path, String csrfHeader,
             String csrfToken, long version, String idempotencyKey) throws Exception {
-        return client.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + appPort + path))
+        var builder = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + appPort + path))
                 .timeout(REQUEST_TIMEOUT).header("Content-Type", "application/json")
-                .header(csrfHeader, csrfToken).header("Idempotency-Key", idempotencyKey)
-                .header("If-Match", "\"" + version + "\"")
-                .POST(HttpRequest.BodyPublishers.ofString("{\"expectedVersion\":" + version + "}"))
+                .header("Idempotency-Key", idempotencyKey)
+                .header("If-Match", "\"" + version + "\"");
+        if (csrfHeader != null && csrfToken != null) builder.header(csrfHeader, csrfToken);
+        return client.send(builder.POST(HttpRequest.BodyPublishers.ofString("{\"expectedVersion\":" + version + "}"))
                 .build(), HttpResponse.BodyHandlers.ofString());
     }
 
     private HttpResponse<String> putExecutionStep(HttpClient client, String path, String csrfHeader,
             String csrfToken, long version, String idempotencyKey, String body) throws Exception {
-        return client.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + appPort + path))
+        var builder = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + appPort + path))
                 .timeout(REQUEST_TIMEOUT).header("Content-Type", "application/json")
-                .header(csrfHeader, csrfToken).header("Idempotency-Key", idempotencyKey)
-                .header("If-Match", "\"" + version + "\"")
-                .PUT(HttpRequest.BodyPublishers.ofString(body)).build(),
+                .header("Idempotency-Key", idempotencyKey)
+                .header("If-Match", "\"" + version + "\"");
+        if (csrfHeader != null && csrfToken != null) builder.header(csrfHeader, csrfToken);
+        return client.send(builder.PUT(HttpRequest.BodyPublishers.ofString(body)).build(),
                 HttpResponse.BodyHandlers.ofString());
     }
 
@@ -1722,4 +1760,3 @@ class OidcCallbackSecurityIT {
         }
     }
 }
-

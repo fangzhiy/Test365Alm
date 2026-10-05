@@ -70,4 +70,3 @@ class ManualExecutionEvidenceTests(unittest.TestCase):
         valid, summary = verify_manual_execution_report(self.write(xml))
         self.assertFalse(valid)
         self.assertIn("unexpected-testcase-classname", summary)
-
