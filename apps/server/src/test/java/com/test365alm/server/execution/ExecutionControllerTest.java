@@ -56,6 +56,17 @@ class ExecutionControllerTest {
                 json("{\"testInstanceId\":\"" + UUID.randomUUID() + "\",\"mode\":\"AUTOMATED\"}"), "run-key-002"));
     }
 
+    @Test
+    void expectedVersionMustMatchStrongIfMatchAndRejectOverflow() {
+        when(actors.requirePrincipal(authentication)).thenReturn(actor);
+        assertThrows(ProjectAccessException.class, () -> controller.saveStep(authentication, project, run, attempt, step,
+                json("{\"actualResult\":\"done\",\"conclusion\":\"PASS\",\"expectedVersion\":1}"),
+                "step-key-002", "\"2\""));
+        assertThrows(ProjectAccessException.class, () -> controller.saveStep(authentication, project, run, attempt, step,
+                json("{\"actualResult\":\"done\",\"conclusion\":\"PASS\"}"),
+                "step-key-003", "\"999999999999999999999999999999\""));
+    }
+
     private ExecutionService.RunDetail detail(UUID instance) {
         ExecutionService.RunView runView = new ExecutionService.RunView(run, project, instance, UUID.randomUUID(), "RUNNING", 1, null);
         return new ExecutionService.RunDetail(runView, null, null, List.of());

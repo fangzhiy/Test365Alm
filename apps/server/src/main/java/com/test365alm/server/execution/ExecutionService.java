@@ -8,13 +8,17 @@ import java.sql.SQLException;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import tools.jackson.databind.json.JsonMapper;
 
 import com.test365alm.server.project.ProjectAccessException;
 import com.test365alm.server.project.ProjectService;
@@ -26,8 +30,10 @@ import com.test365alm.server.project.ProjectService;
  */
 @Service
 public class ExecutionService {
-    static final String FORMAT_VERSION = "m09-manifest-1";
+    /** Canonical snapshot encoding is length-prefixed and unambiguous. */
+    static final String FORMAT_VERSION = "m09-manifest-2";
     static final String RULES_VERSION = "m09-manual-results-1";
+    private static final JsonMapper JSON = JsonMapper.builder().findAndAddModules().build();
     private final JdbcTemplate jdbc;
     private final ProjectService projects;
 
@@ -44,16 +50,17 @@ public class ExecutionService {
         String safeDescription = optional(description, "description", 100_000);
         setContext(project, actor);
         String hash = hash("set", safeName, safeDescription);
-        UUID replay = claim(project, actor, "set:create", key, hash);
-        if (replay != null) return set(actor, projectId, replay);
+        Claim replay = claim(project, actor, "set:create", key, hash);
+        if (replay != null) return decode(replay.responseJson(), TestSetView.class);
         UUID id = UUID.randomUUID();
         jdbc.update("""
                 INSERT INTO test_set (tenant_id, project_id, id, name, description, created_by)
                 VALUES (?, ?, ?, ?, ?, ?)
                 """, project.tenantId(), projectId, id, safeName, safeDescription, actor);
-        appendEvent(project, actor, null, null, "TEST_SET_CREATED");
-        saveClaim(project, actor, "set:create", key, hash, id, "TEST_SET");
-        return set(actor, projectId, id);
+        appendEvent(project, actor, null, null, "TEST_SET_CREATED", "test_set", id, "{}");
+        TestSetView result = set(actor, projectId, id);
+        saveClaim(project, actor, "set:create", key, hash, id, "TEST_SET", result);
+        return result;
     }
 
     @Transactional(readOnly = true)
@@ -95,8 +102,8 @@ public class ExecutionService {
         requireKey(key);
         setContext(project, actor);
         String hash = hash("instance", setId.toString(), testCaseId.toString(), revisionId.toString());
-        UUID replay = claim(project, actor, "instance:create:" + setId, key, hash);
-        if (replay != null) return instance(actor, projectId, replay);
+        Claim replay = claim(project, actor, "instance:create:" + setId, key, hash);
+        if (replay != null) return decode(replay.responseJson(), InstanceView.class);
         if (count("SELECT COUNT(*) FROM test_set WHERE tenant_id=? AND project_id=? AND id=?",
                 project.tenantId(), projectId, setId) == 0) throw ProjectAccessException.notFound();
         List<SourceRevision> source = jdbc.query("""
@@ -121,9 +128,10 @@ public class ExecutionService {
         } catch (DataIntegrityViolationException ex) {
             throw ProjectAccessException.conflict("INSTANCE_ALREADY_EXISTS", "This revision is already in the test set");
         }
-        appendEvent(project, actor, null, null, "TEST_INSTANCE_ADDED");
-        saveClaim(project, actor, "instance:create:" + setId, key, hash, id, "TEST_INSTANCE");
-        return instance(actor, projectId, id);
+        appendEvent(project, actor, null, null, "TEST_INSTANCE_ADDED", "test_instance", id, "{}");
+        InstanceView result = instance(actor, projectId, id);
+        saveClaim(project, actor, "instance:create:" + setId, key, hash, id, "TEST_INSTANCE", result);
+        return result;
     }
 
     @Transactional(readOnly = true)
@@ -149,15 +157,15 @@ public class ExecutionService {
         ProjectService.ProjectView project = writeProject(actor, projectId);
         requireKey(key);
         setContext(project, actor);
+        setExecutionBuilding(true);
         String hash = hash("run", instanceId.toString());
-        UUID replay = claim(project, actor, "run:create", key, hash);
-        if (replay != null) return run(actor, projectId, replay);
+        Claim replay = claim(project, actor, "run:create", key, hash);
+        if (replay != null) return decode(replay.responseJson(), RunDetail.class);
         InstanceSnapshot instance = instanceSnapshot(project, projectId, instanceId);
         List<StepSnapshot> steps = sourceSteps(project, projectId, instance.testCaseId(), instance.revisionId());
         if (steps.isEmpty()) throw ProjectAccessException.conflict("NO_EXECUTABLE_STEPS", "A zero-step revision cannot be run");
         UUID manifestId = UUID.randomUUID();
-        String snapshotHash = hash("manifest", instance.revisionId().toString(), instance.title(), instance.description(), instance.preconditions(),
-                steps.stream().map(s -> s.stepKey()+"|"+s.ordinal()+"|"+s.action()+"|"+s.expected()).toList().toString());
+        String snapshotHash = manifestHash(instance, steps);
         jdbc.update("""
                 INSERT INTO execution_manifest (tenant_id, project_id, id, test_instance_id, source_test_case_id,
                     source_revision_id, source_revision_no, title, description, preconditions, format_version, rules_version, snapshot_hash)
@@ -170,15 +178,27 @@ public class ExecutionService {
                     VALUES (?, ?, ?, ?, ?, ?, ?)
                     """, project.tenantId(), projectId, manifestId, step.stepKey(), step.ordinal(), step.action(), step.expected());
         }
+        // The trigger in V14 permits step INSERTs only while the manifest is
+        // being assembled. Once complete, even the schema owner cannot append
+        // or alter a historical snapshot.
+        jdbc.update("UPDATE execution_manifest SET build_complete=TRUE WHERE tenant_id=? AND project_id=? AND id=?",
+                project.tenantId(), projectId, manifestId);
         UUID runId = UUID.randomUUID();
         jdbc.update("""
                 INSERT INTO execution_run (tenant_id, project_id, id, test_instance_id, manifest_id, created_by)
                 VALUES (?, ?, ?, ?, ?, ?)
                 """, project.tenantId(), projectId, runId, instance.id(), manifestId, actor);
         UUID attemptId = createAttemptRows(project, actor, runId, manifestId, steps, 1);
-        appendEvent(project, actor, runId, attemptId, "RUN_STARTED");
-        saveClaim(project, actor, "run:create", key, hash, runId, "RUN");
-        return run(actor, projectId, runId);
+        Map<String, Object> startPayload = new LinkedHashMap<>();
+        startPayload.put("runId", runId);
+        startPayload.put("attemptId", attemptId);
+        startPayload.put("afterStatus", "RUNNING");
+        startPayload.put("afterVersion", 1);
+        startPayload.put("actor", actor);
+        appendEvent(project, actor, runId, attemptId, "RUN_STARTED", null, null, serialize(startPayload));
+        RunDetail result = run(actor, projectId, runId);
+        saveClaim(project, actor, "run:create", key, hash, runId, "RUN", result);
+        return result;
     }
 
     @Transactional(readOnly = true)
@@ -217,7 +237,13 @@ public class ExecutionService {
 
     @Transactional(readOnly = true)
     public List<AttemptView> attempts(UUID actor, UUID projectId, UUID runId) {
-        return run(actor, projectId, runId).attempts().stream()
+        return attempts(actor, projectId, runId, null);
+    }
+
+    @Transactional(readOnly = true)
+    public List<AttemptView> attempts(UUID actor, UUID projectId, UUID runId, Integer requestedLimit) {
+        int limit = boundedLimit(requestedLimit);
+        return run(actor, projectId, runId).attempts().stream().limit(limit)
                 .map(summary -> attempt(actor, projectId, runId, summary.id())).toList();
     }
 
@@ -240,14 +266,18 @@ public class ExecutionService {
         requireKey(key);
         setContext(project, actor);
         String normalizedConclusion = normalizeConclusion(conclusion);
-        String actual = actualResult == null ? "" : actualResult;
+        String actual = optional(actualResult, "actualResult", 100_000);
         if (("FAIL".equals(normalizedConclusion) || "BLOCKED".equals(normalizedConclusion)) && actual.isBlank()) {
             throw ProjectAccessException.invalid("actualResult is required for FAIL or BLOCKED");
         }
         String hash = hash("step", runId.toString(), attemptId.toString(), stepKey.toString(), actual, normalizedConclusion, Long.toString(expectedVersion));
-        UUID replay = claim(project, actor, "step:" + attemptId + ":" + stepKey, key, hash);
-        if (replay != null) return attempt(actor, projectId, runId, attemptId);
+        Claim replay = claim(project, actor, "step:" + attemptId + ":" + stepKey, key, hash);
+        if (replay != null) return decode(replay.responseJson(), AttemptView.class);
         lockAttempt(project, projectId, runId, attemptId);
+        StepState before = jdbc.query("SELECT actual_result, conclusion, row_version FROM run_step WHERE tenant_id=? AND project_id=? AND attempt_id=? AND step_key=?",
+                (rs, row) -> new StepState(rs.getString("actual_result"), rs.getString("conclusion"), rs.getLong("row_version")),
+                project.tenantId(), projectId, attemptId, stepKey).stream().findFirst()
+                .orElseThrow(ProjectAccessException::notFound);
         int updated = jdbc.update("""
                 UPDATE run_step SET actual_result=?, conclusion=?, row_version=row_version+1, updated_by=?, updated_at=CURRENT_TIMESTAMP
                 WHERE tenant_id=? AND project_id=? AND attempt_id=? AND step_key=? AND row_version=?
@@ -255,9 +285,21 @@ public class ExecutionService {
                 """, actual, normalizedConclusion, actor, project.tenantId(), projectId, attemptId, stepKey, expectedVersion);
         if (updated != 1) throw ProjectAccessException.preconditionFailed("STALE_VERSION", "Step is no longer editable or version is stale");
         jdbc.update("UPDATE run_attempt SET row_version=row_version+1 WHERE tenant_id=? AND project_id=? AND id=?", project.tenantId(), projectId, attemptId);
-        appendEvent(project, actor, runId, attemptId, "STEP_RECORDED");
-        saveClaim(project, actor, "step:" + attemptId + ":" + stepKey, key, hash, attemptId, "ATTEMPT");
-        return attempt(actor, projectId, runId, attemptId);
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("runId", runId);
+        payload.put("attemptId", attemptId);
+        payload.put("stepKey", stepKey);
+        payload.put("beforeActualResult", before.actualResult());
+        payload.put("afterActualResult", actual);
+        payload.put("beforeConclusion", before.conclusion());
+        payload.put("afterConclusion", normalizedConclusion);
+        payload.put("beforeVersion", before.rowVersion());
+        payload.put("afterVersion", before.rowVersion() + 1);
+        payload.put("actor", actor);
+        appendEvent(project, actor, runId, attemptId, "STEP_RECORDED", null, null, serialize(payload));
+        AttemptView result = attempt(actor, projectId, runId, attemptId);
+        saveClaim(project, actor, "step:" + attemptId + ":" + stepKey, key, hash, attemptId, "ATTEMPT", result);
+        return result;
     }
 
     @Transactional
@@ -276,9 +318,12 @@ public class ExecutionService {
         requireKey(key);
         setContext(project, actor);
         String hash = hash(event, runId.toString(), attemptId.toString(), Long.toString(expectedVersion));
-        UUID replay = claim(project, actor, event.toLowerCase()+":"+attemptId, key, hash);
-        if (replay != null) return attempt(actor, projectId, runId, attemptId);
+        Claim replay = claim(project, actor, event.toLowerCase()+":"+attemptId, key, hash);
+        if (replay != null) return decode(replay.responseJson(), AttemptView.class);
         lockAttempt(project, projectId, runId, attemptId);
+        AttemptState before = jdbc.queryForObject("SELECT status, row_version FROM run_attempt WHERE tenant_id=? AND project_id=? AND run_id=? AND id=?",
+                (rs, row) -> new AttemptState(rs.getString("status"), rs.getLong("row_version")),
+                project.tenantId(), projectId, runId, attemptId);
         int updated = jdbc.update("""
                 UPDATE run_attempt SET status=?, row_version=row_version+1
                 WHERE tenant_id=? AND project_id=? AND run_id=? AND id=? AND status=? AND row_version=?
@@ -286,9 +331,18 @@ public class ExecutionService {
         if (updated != 1) throw ProjectAccessException.conflict("INVALID_ATTEMPT_STATE", "Attempt is not in the expected state");
         jdbc.update("UPDATE execution_run SET status=?, row_version=row_version+1, updated_at=CURRENT_TIMESTAMP WHERE tenant_id=? AND project_id=? AND id=?",
                 status, project.tenantId(), projectId, runId);
-        appendEvent(project, actor, runId, attemptId, event + "D");
-        saveClaim(project, actor, event.toLowerCase()+":"+attemptId, key, hash, attemptId, "ATTEMPT");
-        return attempt(actor, projectId, runId, attemptId);
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("runId", runId);
+        payload.put("attemptId", attemptId);
+        payload.put("beforeStatus", before.status());
+        payload.put("afterStatus", status);
+        payload.put("beforeVersion", before.rowVersion());
+        payload.put("afterVersion", before.rowVersion() + 1);
+        payload.put("actor", actor);
+        appendEvent(project, actor, runId, attemptId, event + "D", null, null, serialize(payload));
+        AttemptView result = attempt(actor, projectId, runId, attemptId);
+        saveClaim(project, actor, event.toLowerCase()+":"+attemptId, key, hash, attemptId, "ATTEMPT", result);
+        return result;
     }
 
     @Transactional
@@ -297,8 +351,8 @@ public class ExecutionService {
         requireKey(key);
         setContext(project, actor);
         String hash = hash("finish", runId.toString(), attemptId.toString(), Long.toString(expectedVersion));
-        UUID replay = claim(project, actor, "finish:" + attemptId, key, hash);
-        if (replay != null) return attempt(actor, projectId, runId, attemptId);
+        Claim replay = claim(project, actor, "finish:" + attemptId, key, hash);
+        if (replay != null) return decode(replay.responseJson(), AttemptView.class);
         lockAttempt(project, projectId, runId, attemptId);
         AttemptState state = jdbc.queryForObject("SELECT status, row_version FROM run_attempt WHERE tenant_id=? AND project_id=? AND run_id=? AND id=?",
                 (rs, row) -> new AttemptState(rs.getString("status"), rs.getLong("row_version")), project.tenantId(), projectId, runId, attemptId);
@@ -316,9 +370,19 @@ public class ExecutionService {
                 conclusion, project.tenantId(), projectId, attemptId, expectedVersion);
         jdbc.update("UPDATE execution_run SET status='FINISHED', row_version=row_version+1, updated_at=CURRENT_TIMESTAMP WHERE tenant_id=? AND project_id=? AND id=?",
                 project.tenantId(), projectId, runId);
-        appendEvent(project, actor, runId, attemptId, "RUN_FINISHED");
-        saveClaim(project, actor, "finish:" + attemptId, key, hash, attemptId, "ATTEMPT");
-        return attempt(actor, projectId, runId, attemptId);
+        Map<String, Object> finishPayload = new LinkedHashMap<>();
+        finishPayload.put("runId", runId);
+        finishPayload.put("attemptId", attemptId);
+        finishPayload.put("beforeStatus", state.status());
+        finishPayload.put("afterStatus", "FINISHED");
+        finishPayload.put("beforeVersion", state.rowVersion());
+        finishPayload.put("afterVersion", state.rowVersion() + 1);
+        finishPayload.put("conclusion", conclusion);
+        finishPayload.put("actor", actor);
+        appendEvent(project, actor, runId, attemptId, "RUN_FINISHED", null, null, serialize(finishPayload));
+        AttemptView result = attempt(actor, projectId, runId, attemptId);
+        saveClaim(project, actor, "finish:" + attemptId, key, hash, attemptId, "ATTEMPT", result);
+        return result;
     }
 
     @Transactional
@@ -326,9 +390,10 @@ public class ExecutionService {
         ProjectService.ProjectView project = writeProject(actor, projectId);
         requireKey(key);
         setContext(project, actor);
+        setExecutionBuilding(true);
         String hash = hash("rerun", runId.toString());
-        UUID replay = claim(project, actor, "rerun:" + runId, key, hash);
-        if (replay != null) return attempt(actor, projectId, runId, replay);
+        Claim replay = claim(project, actor, "rerun:" + runId, key, hash);
+        if (replay != null) return decode(replay.responseJson(), AttemptView.class);
         // JdbcTemplate invokes a RowMapper with the result set already positioned
         // on a row.  Do not call ResultSet.next() from a callback here: doing so
         // skips the only visible row and makes every legitimate rerun look like
@@ -349,21 +414,28 @@ public class ExecutionService {
         UUID attemptId = createAttemptRows(project, actor, runId, manifestId, steps, next);
         jdbc.update("UPDATE execution_run SET status='RUNNING', row_version=row_version+1, updated_at=CURRENT_TIMESTAMP WHERE tenant_id=? AND project_id=? AND id=?",
                 project.tenantId(), projectId, runId);
-        appendEvent(project, actor, runId, attemptId, "RUN_RETRIED");
-        saveClaim(project, actor, "rerun:" + runId, key, hash, attemptId, "ATTEMPT");
-        return attempt(actor, projectId, runId, attemptId);
+        Map<String, Object> rerunPayload = new LinkedHashMap<>();
+        rerunPayload.put("runId", runId);
+        rerunPayload.put("attemptId", attemptId);
+        rerunPayload.put("attemptNo", next);
+        rerunPayload.put("actor", actor);
+        appendEvent(project, actor, runId, attemptId, "RUN_RETRIED", null, null, serialize(rerunPayload));
+        AttemptView result = attempt(actor, projectId, runId, attemptId);
+        saveClaim(project, actor, "rerun:" + runId, key, hash, attemptId, "ATTEMPT", result);
+        return result;
     }
 
     private UUID createAttemptRows(ProjectService.ProjectView project, UUID actor, UUID runId, UUID manifestId,
             List<StepSnapshot> steps, int no) {
+        setExecutionBuilding(true);
         UUID id = UUID.randomUUID();
-        jdbc.update("INSERT INTO run_attempt (tenant_id, project_id, id, run_id, attempt_no, started_by) VALUES (?, ?, ?, ?, ?, ?)",
-                project.tenantId(), project.id(), id, runId, no, actor);
+        jdbc.update("INSERT INTO run_attempt (tenant_id, project_id, id, run_id, manifest_id, attempt_no, started_by) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                project.tenantId(), project.id(), id, runId, manifestId, no, actor);
         for (StepSnapshot step : steps) {
-            jdbc.update("""
-                    INSERT INTO run_step (tenant_id, project_id, attempt_id, step_key, ordinal, action, expected)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """, project.tenantId(), project.id(), id, step.stepKey(), step.ordinal(), step.action(), step.expected());
+                jdbc.update("""
+                    INSERT INTO run_step (tenant_id, project_id, attempt_id, manifest_id, step_key, ordinal, action, expected)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, project.tenantId(), project.id(), id, manifestId, step.stepKey(), step.ordinal(), step.action(), step.expected());
         }
         return id;
     }
@@ -461,30 +533,52 @@ public class ExecutionService {
         if (found.isEmpty()) throw ProjectAccessException.notFound();
     }
 
-    private UUID claim(ProjectService.ProjectView project, UUID actor, String route, String key, String hash) {
+    private Claim claim(ProjectService.ProjectView project, UUID actor, String route, String key, String hash) {
         jdbc.query("SELECT pg_advisory_xact_lock(hashtextextended(?, 0))", rs -> { }, project.tenantId()+":"+project.id()+":"+actor+":"+route+":"+key);
         jdbc.update("DELETE FROM execution_idempotency WHERE tenant_id=? AND project_id=? AND principal_id=? AND route=? AND idempotency_key=? AND expires_at<=CURRENT_TIMESTAMP",
                 project.tenantId(), project.id(), actor, route, key);
-        List<Claim> values = jdbc.query("SELECT request_hash, object_id FROM execution_idempotency WHERE tenant_id=? AND project_id=? AND principal_id=? AND route=? AND idempotency_key=?",
-                (rs, row) -> new Claim(rs.getString("request_hash"), rs.getObject("object_id", UUID.class)), project.tenantId(), project.id(), actor, route, key);
+        List<Claim> values = jdbc.query("SELECT request_hash, object_id, response_json::text AS response_json FROM execution_idempotency WHERE tenant_id=? AND project_id=? AND principal_id=? AND route=? AND idempotency_key=?",
+                (rs, row) -> new Claim(rs.getString("request_hash"), rs.getObject("object_id", UUID.class), rs.getString("response_json")), project.tenantId(), project.id(), actor, route, key);
         if (values.isEmpty()) return null;
         if (!hash.equals(values.get(0).hash())) throw ProjectAccessException.conflict("IDEMPOTENCY_KEY_REUSED", "Idempotency-Key was used for a different request");
-        return values.get(0).id();
+        if (values.get(0).responseJson() == null) {
+            throw ProjectAccessException.conflict("IDEMPOTENCY_RESPONSE_UNAVAILABLE",
+                    "The original idempotent response is no longer available; use a new key for a new intent");
+        }
+        return values.get(0);
     }
     private void saveClaim(ProjectService.ProjectView project, UUID actor, String route, String key, String hash, UUID id, String type) {
-        jdbc.update("INSERT INTO execution_idempotency (tenant_id, project_id, principal_id, route, idempotency_key, request_hash, object_id, object_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                project.tenantId(), project.id(), actor, route, key, hash, id, type);
+        saveClaim(project, actor, route, key, hash, id, type, null);
+    }
+    private void saveClaim(ProjectService.ProjectView project, UUID actor, String route, String key, String hash,
+            UUID id, String type, Object response) {
+        String json = response == null ? null : serialize(response);
+        jdbc.update("INSERT INTO execution_idempotency (tenant_id, project_id, principal_id, route, idempotency_key, request_hash, object_id, object_type, response_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb)",
+                project.tenantId(), project.id(), actor, route, key, hash, id, type, json);
     }
     private void appendEvent(ProjectService.ProjectView project, UUID actor, UUID runId, UUID attemptId, String type) {
-        if (runId == null) return;
-        jdbc.update("INSERT INTO execution_event (tenant_id, project_id, run_id, attempt_id, event_type, actor_principal_id) VALUES (?, ?, ?, ?, ?, ?)",
-                project.tenantId(), project.id(), runId, attemptId, type, actor);
-        jdbc.update("INSERT INTO execution_outbox_event (tenant_id, project_id, run_id, attempt_id, event_type) VALUES (?, ?, ?, ?, ?)",
-                project.tenantId(), project.id(), runId, attemptId, type);
+        appendEvent(project, actor, runId, attemptId, type, null, null, "{}");
+    }
+    private void appendEvent(ProjectService.ProjectView project, UUID actor, UUID runId, UUID attemptId, String type,
+            String objectType, UUID objectId, String payload) {
+        jdbc.update("INSERT INTO execution_event (tenant_id, project_id, run_id, attempt_id, event_type, actor_principal_id, payload, object_type, object_id) VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?)",
+                project.tenantId(), project.id(), runId, attemptId, type, actor, payload, objectType, objectId);
+        jdbc.update("INSERT INTO execution_outbox_event (tenant_id, project_id, run_id, attempt_id, event_type, payload, object_type, object_id) VALUES (?, ?, ?, ?, ?, ?::jsonb, ?, ?)",
+                project.tenantId(), project.id(), runId, attemptId, type, payload, objectType, objectId);
         jdbc.update("""
                 INSERT INTO audit_event (tenant_id, project_id, actor_principal_id, action, object_type, object_id, object_revision)
-                VALUES (?, ?, ?, ?, 'run', ?, 0)
-                """, project.tenantId(), project.id(), actor, "run." + type.toLowerCase(), runId);
+                VALUES (?, ?, ?, ?, ?, ?, 0)
+                """, project.tenantId(), project.id(), actor, type.toLowerCase().replace('_', '.'), objectType == null ? "run" : objectType,
+                objectType == null ? runId : objectId);
+    }
+
+    private static String serialize(Object value) {
+        try { return JSON.writeValueAsString(value); }
+        catch (RuntimeException ex) { throw new IllegalStateException("Could not persist idempotent response", ex); }
+    }
+    private static <T> T decode(String value, Class<T> type) {
+        try { return JSON.readValue(value, type); }
+        catch (RuntimeException ex) { throw new IllegalStateException("Could not restore idempotent response", ex); }
     }
     private ProjectService.ProjectView readProject(UUID actor, UUID id) { return projects.requireTestReadAccess(actor, id); }
     private ProjectService.ProjectView writeProject(UUID actor, UUID id) { return projects.requireTestWriteAccess(actor, id); }
@@ -492,6 +586,9 @@ public class ExecutionService {
         jdbc.queryForObject("SELECT set_config('test365alm.tenant_id', ?, true)", String.class, project.tenantId().toString());
         jdbc.queryForObject("SELECT set_config('test365alm.principal_id', ?, true)", String.class, actor.toString());
         jdbc.queryForObject("SELECT set_config('test365alm.project_id', ?, true)", String.class, project.id().toString());
+    }
+    private void setExecutionBuilding(boolean enabled) {
+        jdbc.queryForObject("SELECT set_config('test365alm.execution_building', ?, true)", String.class, Boolean.toString(enabled));
     }
     private int count(String sql, Object... args) { Integer value = jdbc.queryForObject(sql, Integer.class, args); return value == null ? 0 : value; }
     private static int boundedLimit(Integer value) {
@@ -524,6 +621,26 @@ public class ExecutionService {
         } catch (NoSuchAlgorithmException ex) { throw new IllegalStateException(ex); }
     }
 
+    private static String manifestHash(InstanceSnapshot instance, List<StepSnapshot> steps) {
+        List<String> fields = new ArrayList<>();
+        fields.add(FORMAT_VERSION);
+        fields.add(RULES_VERSION);
+        fields.add(instance.testCaseId().toString());
+        fields.add(instance.revisionId().toString());
+        fields.add(Long.toString(instance.revisionNo()));
+        fields.add(instance.title());
+        fields.add(instance.description());
+        fields.add(instance.preconditions());
+        fields.add(Integer.toString(steps.size()));
+        for (StepSnapshot step : steps) {
+            fields.add(step.stepKey().toString());
+            fields.add(Integer.toString(step.ordinal()));
+            fields.add(step.action());
+            fields.add(step.expected());
+        }
+        return hash(fields.toArray(String[]::new));
+    }
+
     public record TestSetView(UUID id, UUID projectId, String name, String description, long rowVersion, OffsetDateTime createdAt) { }
     public record TestSetDetail(TestSetView testSet, List<InstanceView> instances) { }
     public record InstanceView(UUID id, UUID projectId, UUID testSetId, UUID testCaseId, UUID testRevisionId,
@@ -546,7 +663,7 @@ public class ExecutionService {
     public record StepSnapshot(UUID stepKey, int ordinal, String action, String expected) { }
     private record SourceRevision(UUID id, UUID testCaseId, long revisionNo, String title, String description, String preconditions, OffsetDateTime sealedAt) { }
     private record InstanceSnapshot(UUID id, UUID testCaseId, UUID revisionId, long revisionNo, String title, String description, String preconditions) { }
-    private record Claim(String hash, UUID id) { }
+    private record Claim(String hash, UUID id, String responseJson) { }
+    private record StepState(String actualResult, String conclusion, long rowVersion) { }
     private record AttemptState(String status, long rowVersion) { }
 }
-

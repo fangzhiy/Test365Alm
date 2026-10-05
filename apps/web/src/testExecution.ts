@@ -7,7 +7,10 @@ export type AttemptOutcome = 'PASS' | 'FAIL' | 'BLOCKED' | null
 
 export type TestSet = { id: string; projectId: string; name: string; description: string; rowVersion?: number; instanceCount?: number }
 export type TestInstance = { id: string; projectId?: string; setId: string; testCaseId: string; testRevisionId: string; title: string; revisionNumber: number; displayNumber?: string }
-export type RunStep = { stepKey: string; ordinal: number; action: string; expected: string; actual: string; outcome: StepOutcome }
+// A run step carries its own optimistic-lock version.  The attempt version
+// protects state transitions, but it is not interchangeable with a step
+// version: two step updates may advance different rows independently.
+export type RunStep = { stepKey: string; ordinal: number; action: string; expected: string; actual: string; outcome: StepOutcome; rowVersion?: number }
 export type RunAttempt = { id: string; attemptNo: number; state: ExecutionState; outcome: AttemptOutcome; rowVersion?: number; steps: RunStep[]; updatedAt?: string }
 export type Run = { id: string; projectId: string; instanceId: string; manifestId: string; attemptId: string; state: ExecutionState; outcome: AttemptOutcome; rowVersion: number; attempt?: RunAttempt; manifest?: { title: string; description: string; preconditions: string; steps: RunStep[]; formatVersion?: string; rulesVersion?: string } }
 
@@ -34,30 +37,34 @@ const parseInstance = (value: unknown): TestInstance | null => {
 const parseOutcome = (value: unknown): AttemptOutcome => value === undefined || value === null ? null : value === 'PASS' || value === 'FAIL' || value === 'BLOCKED' ? value : null
 const parseState = (value: unknown): ExecutionState | null => value === 'RUNNING' || value === 'PAUSED' || value === 'FINISHED' ? value : null
 const parseStep = (value: unknown): RunStep | null => {
-  if (!isRecord(value) || !isString(value.stepKey) || !isPositiveInteger(value.ordinal) || !isString(value.action) || !isString(value.expected)) return null
+  if (!isRecord(value) || !isString(value.stepKey) || !isPositiveInteger(value.ordinal) || !isString(value.action) || !isString(value.expected) || !isPositiveInteger(value.rowVersion)) return null
   const actual = value.actual === undefined ? value.actualResult : value.actual
   const outcome = value.outcome === undefined ? value.conclusion : value.outcome
   if (!isString(actual) || !(outcome === 'NOT_RUN' || outcome === 'PASS' || outcome === 'FAIL' || outcome === 'BLOCKED')) return null
-  return { stepKey: value.stepKey, ordinal: value.ordinal, action: value.action, expected: value.expected, actual, outcome }
+  return { stepKey: value.stepKey, ordinal: value.ordinal, action: value.action, expected: value.expected, actual, outcome, rowVersion: value.rowVersion }
 }
 const parseManifestStep = (value: unknown): RunStep | null => {
   if (!isRecord(value) || !isString(value.stepKey) || !isPositiveInteger(value.ordinal) || !isString(value.action) || !isString(value.expected)) return null
   return { stepKey: value.stepKey, ordinal: value.ordinal, action: value.action, expected: value.expected, actual: '', outcome: 'NOT_RUN' }
 }
 const parseAttempt = (value: unknown): RunAttempt | null => {
-  if (!isRecord(value) || !isString(value.id) || !isPositiveInteger(value.attemptNo)) return null
+  if (!isRecord(value) || !isString(value.id) || !isPositiveInteger(value.attemptNo) || !isPositiveInteger(value.rowVersion)) return null
   const state = parseState(value.state ?? value.status); const outcome = parseOutcome(value.outcome ?? value.conclusion); const values = value.steps === undefined ? [] : value.steps
   if (!state || !Array.isArray(values)) return null
   const steps = values.map(parseStep); if (steps.some((step) => step === null)) return null
-  return { id: value.id, attemptNo: value.attemptNo, state, outcome, rowVersion: isPositiveInteger(value.rowVersion) ? value.rowVersion : undefined, steps: steps as RunStep[], updatedAt: isString(value.updatedAt) ? value.updatedAt : undefined }
+  return { id: value.id, attemptNo: value.attemptNo, state, outcome, rowVersion: value.rowVersion, steps: steps as RunStep[], updatedAt: isString(value.updatedAt) ? value.updatedAt : undefined }
 }
 const parseRun = (value: unknown): Run | null => {
   if (!isRecord(value)) return null
   if (isRecord(value.run)) {
     const base = parseRun(value.run); if (!base) return null
-    const attempt = value.currentAttempt === undefined || value.currentAttempt === null ? base.attempt : parseAttempt(value.currentAttempt)
-    const manifest = isRecord(value.manifest) && isString(value.manifest.title) && isString(value.manifest.description) && isString(value.manifest.preconditions) && Array.isArray(value.manifest.steps)
-      ? { title: value.manifest.title, description: value.manifest.description, preconditions: value.manifest.preconditions, formatVersion: isString(value.manifest.formatVersion) ? value.manifest.formatVersion : undefined, rulesVersion: isString(value.manifest.rulesVersion) ? value.manifest.rulesVersion : undefined, steps: (value.manifest.steps.map(parseManifestStep).filter((step): step is RunStep => step !== null)) }
+    const hasCurrentAttempt = value.currentAttempt !== undefined && value.currentAttempt !== null
+    const attempt = hasCurrentAttempt ? parseAttempt(value.currentAttempt) : base.attempt
+    if (hasCurrentAttempt && !attempt) return null
+    const manifestSteps = isRecord(value.manifest) && Array.isArray(value.manifest.steps) ? value.manifest.steps.map(parseManifestStep) : null
+    if (manifestSteps?.some((step) => step === null)) return null
+    const manifest = isRecord(value.manifest) && isString(value.manifest.title) && isString(value.manifest.description) && isString(value.manifest.preconditions) && manifestSteps
+      ? { title: value.manifest.title, description: value.manifest.description, preconditions: value.manifest.preconditions, formatVersion: isString(value.manifest.formatVersion) ? value.manifest.formatVersion : undefined, rulesVersion: isString(value.manifest.rulesVersion) ? value.manifest.rulesVersion : undefined, steps: manifestSteps as RunStep[] }
       : base.manifest
     return { ...base, attempt: attempt ?? undefined, attemptId: attempt?.id ?? base.attemptId, manifest }
   }
@@ -71,6 +78,11 @@ const parse = <T>(body: unknown, parser: (value: unknown) => T | null, message: 
 const parseList = <T>(body: unknown, parser: (value: unknown) => T | null, message: string): T[] => { const result = listBody(body).map(parser); if (result.some((value) => value === null)) throw invalid(message); return result as T[] }
 const path = (projectId: string, suffix: string) => `/api/v1/projects/${encodeURIComponent(projectId)}${suffix}`
 const write = (input: RequestInfo | URL, body: unknown, options?: AccessRequestOptions) => requestJson(input, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, { ...options, idempotencyKey: options?.idempotencyKey ?? newIdempotencyKey() })
+const requireVersion = (version: number) => { if (!isPositiveInteger(version)) throw invalid('尝试版本是必填的正整数'); return version }
+const versionedWrite = (input: RequestInfo | URL, version: number, options?: AccessRequestOptions) => {
+  const expectedVersion = requireVersion(version)
+  return requestJson(input, { method: 'POST', headers: { 'Content-Type': 'application/json', 'If-Match': `"${expectedVersion}"` }, body: JSON.stringify({ expectedVersion }) }, { ...options, idempotencyKey: options?.idempotencyKey ?? newIdempotencyKey() })
+}
 
 export const executionApi = {
   async listSets(projectId: string, options?: AccessRequestOptions) { return parseList(await requestJson(path(projectId, '/test-sets'), undefined, options), parseSet, '服务返回了无效测试集列表') },
@@ -83,9 +95,12 @@ export const executionApi = {
   async getRun(projectId: string, runId: string, options?: AccessRequestOptions) { return parse(await requestJson(path(projectId, `/runs/${encodeURIComponent(runId)}`), undefined, options), parseRun, '服务返回了无效运行') },
   async listAttempts(projectId: string, runId: string, options?: AccessRequestOptions) { return parseList(await requestJson(path(projectId, `/runs/${encodeURIComponent(runId)}/attempts`), undefined, options), parseAttempt, '服务返回了无效尝试列表') },
   async getAttempt(projectId: string, runId: string, attemptId: string, options?: AccessRequestOptions) { return parse(await requestJson(path(projectId, `/runs/${encodeURIComponent(runId)}/attempts/${encodeURIComponent(attemptId)}`), undefined, options), parseAttempt, '服务返回了无效尝试') },
-  async saveStep(projectId: string, runId: string, attemptId: string, stepKey: string, input: { outcome: StepOutcome; actual: string; rowVersion?: number }, options?: AccessRequestOptions) { return parse(await requestJson(path(projectId, `/runs/${encodeURIComponent(runId)}/attempts/${encodeURIComponent(attemptId)}/steps/${encodeURIComponent(stepKey)}`), { method: 'PUT', headers: { 'Content-Type': 'application/json', 'If-Match': input.rowVersion ? `"${input.rowVersion}"` : '' }, body: JSON.stringify({ actualResult: input.actual, actual: input.actual, conclusion: input.outcome, outcome: input.outcome, ...(input.rowVersion ? { expectedVersion: input.rowVersion } : {}) }) }, { ...options, idempotencyKey: options?.idempotencyKey ?? newIdempotencyKey() }), parseAttempt, '服务返回了无效尝试') },
-  async pause(projectId: string, runId: string, attemptId: string, version: number, options?: AccessRequestOptions) { return parse(await write(path(projectId, `/runs/${encodeURIComponent(runId)}/attempts/${encodeURIComponent(attemptId)}/pause`), { expectedVersion: version }, options), parseAttempt, '服务返回了无效尝试') },
-  async resume(projectId: string, runId: string, attemptId: string, version: number, options?: AccessRequestOptions) { return parse(await write(path(projectId, `/runs/${encodeURIComponent(runId)}/attempts/${encodeURIComponent(attemptId)}/resume`), { expectedVersion: version }, options), parseAttempt, '服务返回了无效尝试') },
-  async finish(projectId: string, runId: string, attemptId: string, version: number, options?: AccessRequestOptions) { return parse(await write(path(projectId, `/runs/${encodeURIComponent(runId)}/attempts/${encodeURIComponent(attemptId)}/finish`), { expectedVersion: version }, options), parseAttempt, '服务返回了无效尝试') },
+  async saveStep(projectId: string, runId: string, attemptId: string, stepKey: string, input: { outcome: StepOutcome; actual: string; rowVersion: number }, options?: AccessRequestOptions) {
+    if (!isPositiveInteger(input.rowVersion)) throw invalid('步骤版本是必填的正整数')
+    return parse(await requestJson(path(projectId, `/runs/${encodeURIComponent(runId)}/attempts/${encodeURIComponent(attemptId)}/steps/${encodeURIComponent(stepKey)}`), { method: 'PUT', headers: { 'Content-Type': 'application/json', 'If-Match': `"${input.rowVersion}"` }, body: JSON.stringify({ actualResult: input.actual, actual: input.actual, conclusion: input.outcome, outcome: input.outcome, expectedVersion: input.rowVersion }) }, { ...options, idempotencyKey: options?.idempotencyKey ?? newIdempotencyKey() }), parseAttempt, '服务返回了无效尝试')
+  },
+  async pause(projectId: string, runId: string, attemptId: string, version: number, options?: AccessRequestOptions) { return parse(await versionedWrite(path(projectId, `/runs/${encodeURIComponent(runId)}/attempts/${encodeURIComponent(attemptId)}/pause`), version, options), parseAttempt, '服务返回了无效尝试') },
+  async resume(projectId: string, runId: string, attemptId: string, version: number, options?: AccessRequestOptions) { return parse(await versionedWrite(path(projectId, `/runs/${encodeURIComponent(runId)}/attempts/${encodeURIComponent(attemptId)}/resume`), version, options), parseAttempt, '服务返回了无效尝试') },
+  async finish(projectId: string, runId: string, attemptId: string, version: number, options?: AccessRequestOptions) { return parse(await versionedWrite(path(projectId, `/runs/${encodeURIComponent(runId)}/attempts/${encodeURIComponent(attemptId)}/finish`), version, options), parseAttempt, '服务返回了无效尝试') },
   async rerun(projectId: string, runId: string, options?: AccessRequestOptions) { return parse(await write(path(projectId, `/runs/${encodeURIComponent(runId)}/attempts`), {}, options), parseAttempt, '服务返回了无效尝试') },
 }

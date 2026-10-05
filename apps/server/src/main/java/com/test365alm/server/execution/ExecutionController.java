@@ -97,8 +97,9 @@ public class ExecutionController {
     }
 
     @GetMapping("/runs/{runId}/attempts")
-    public List<ExecutionService.AttemptView> attempts(Authentication authentication, @PathVariable UUID projectId, @PathVariable UUID runId) {
-        return executions.attempts(actors.requirePrincipal(authentication), projectId, runId);
+    public List<ExecutionService.AttemptView> attempts(Authentication authentication, @PathVariable UUID projectId, @PathVariable UUID runId,
+            @RequestParam(name="limit", required=false) Integer limit) {
+        return executions.attempts(actors.requirePrincipal(authentication), projectId, runId, limit);
     }
 
     @GetMapping("/runs/{runId}/attempts/{attemptId}")
@@ -113,7 +114,7 @@ public class ExecutionController {
             @RequestBody JsonNode body, @RequestHeader(name="Idempotency-Key", required=false) String key,
             @RequestHeader(name="If-Match", required=false) String ifMatch) {
         fields(body, Set.of("actualResult", "actual", "conclusion", "outcome", "expectedVersion"));
-        long version = body.get("expectedVersion") != null ? number(body.get("expectedVersion"), "expectedVersion") : parseIfMatch(ifMatch);
+        long version = expectedVersion(body, ifMatch);
         JsonNode actual = first(body, "actualResult", "actual");
         JsonNode result = first(body, "conclusion", "outcome");
         return executions.saveStep(actors.requirePrincipal(authentication), projectId, runId, attemptId, stepKey,
@@ -123,22 +124,25 @@ public class ExecutionController {
     @PostMapping("/runs/{runId}/attempts/{attemptId}/pause")
     public ExecutionService.AttemptView pause(Authentication authentication, @PathVariable UUID projectId,
             @PathVariable UUID runId, @PathVariable UUID attemptId, @RequestBody JsonNode body,
-            @RequestHeader(name="Idempotency-Key", required=false) String key) {
-        return executions.pause(actors.requirePrincipal(authentication), projectId, runId, attemptId, version(body), key);
+            @RequestHeader(name="Idempotency-Key", required=false) String key,
+            @RequestHeader(name="If-Match", required=false) String ifMatch) {
+        return executions.pause(actors.requirePrincipal(authentication), projectId, runId, attemptId, expectedVersion(body, ifMatch), key);
     }
 
     @PostMapping("/runs/{runId}/attempts/{attemptId}/resume")
     public ExecutionService.AttemptView resume(Authentication authentication, @PathVariable UUID projectId,
             @PathVariable UUID runId, @PathVariable UUID attemptId, @RequestBody JsonNode body,
-            @RequestHeader(name="Idempotency-Key", required=false) String key) {
-        return executions.resume(actors.requirePrincipal(authentication), projectId, runId, attemptId, version(body), key);
+            @RequestHeader(name="Idempotency-Key", required=false) String key,
+            @RequestHeader(name="If-Match", required=false) String ifMatch) {
+        return executions.resume(actors.requirePrincipal(authentication), projectId, runId, attemptId, expectedVersion(body, ifMatch), key);
     }
 
     @PostMapping("/runs/{runId}/attempts/{attemptId}/finish")
     public ExecutionService.AttemptView finish(Authentication authentication, @PathVariable UUID projectId,
             @PathVariable UUID runId, @PathVariable UUID attemptId, @RequestBody JsonNode body,
-            @RequestHeader(name="Idempotency-Key", required=false) String key) {
-        return executions.finish(actors.requirePrincipal(authentication), projectId, runId, attemptId, version(body), key);
+            @RequestHeader(name="Idempotency-Key", required=false) String key,
+            @RequestHeader(name="If-Match", required=false) String ifMatch) {
+        return executions.finish(actors.requirePrincipal(authentication), projectId, runId, attemptId, expectedVersion(body, ifMatch), key);
     }
 
     @PostMapping("/runs/{runId}/attempts")
@@ -147,15 +151,23 @@ public class ExecutionController {
         return executions.rerun(actors.requirePrincipal(authentication), projectId, runId, key);
     }
 
-    private static long version(JsonNode body) {
-        fields(body, Set.of("expectedVersion"));
-        return number(body == null ? null : body.get("expectedVersion"), "expectedVersion");
-    }
     private static long number(JsonNode value, String field) {
         if (value == null || !value.isIntegralNumber() || !value.canConvertToLong() || value.longValue() < 1) {
             throw ProjectAccessException.invalid(field + " must be a positive integer");
         }
         return value.longValue();
+    }
+    private static long expectedVersion(JsonNode body, String ifMatch) {
+        JsonNode supplied = body == null ? null : body.get("expectedVersion");
+        Long jsonVersion = supplied == null ? null : number(supplied, "expectedVersion");
+        Long headerVersion = ifMatch == null ? null : parseIfMatch(ifMatch);
+        if (jsonVersion == null && headerVersion == null) {
+            throw ProjectAccessException.preconditionRequired("If-Match or expectedVersion is required");
+        }
+        if (jsonVersion != null && headerVersion != null && !jsonVersion.equals(headerVersion)) {
+            throw ProjectAccessException.invalid("If-Match and expectedVersion must match");
+        }
+        return jsonVersion != null ? jsonVersion : headerVersion;
     }
     private static UUID uuid(JsonNode value, String field) {
         String raw = requiredText(value, field);
@@ -185,6 +197,12 @@ public class ExecutionController {
     }
     private static long parseIfMatch(String value) {
         if (value == null || !value.matches("\\\"[1-9][0-9]*\\\"")) throw ProjectAccessException.preconditionRequired("If-Match is required");
-        return Long.parseLong(value.substring(1, value.length() - 1));
+        try {
+            long parsed = Long.parseLong(value.substring(1, value.length() - 1));
+            if (parsed < 1) throw ProjectAccessException.invalid("If-Match must be a positive integer");
+            return parsed;
+        } catch (NumberFormatException ex) {
+            throw ProjectAccessException.invalid("If-Match must be a positive integer");
+        }
     }
 }

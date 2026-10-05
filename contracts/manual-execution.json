@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Test365Alm M09 manual execution slice",
   "description": "The first persisted test-set, manifest, run and attempt contract. It is intentionally limited to MANUAL execution.",
-  "version": "m09-manual-execution-1",
+  "version": "m09-manual-execution-2",
   "paths": {
     "testSets": "/api/v1/projects/{projectId}/test-sets",
     "instances": "/api/v1/projects/{projectId}/test-sets/{setId}/instances",
@@ -17,17 +17,19 @@
     "header": "Idempotency-Key",
     "minLength": 8,
     "maxLength": 128,
-    "scope": "tenant + project + principal + route + key"
+    "scope": "tenant + project + principal + route + key",
+    "replay": "The first successful response is frozen and replayed only after authorization; legacy rows without a frozen response are rejected with IDEMPOTENCY_RESPONSE_UNAVAILABLE"
   },
   "versioning": {
-    "stepWrite": "If-Match is a strong quoted positive integer; expectedVersion in JSON must match it when both are supplied",
+    "stepWrite": "If-Match is a strong quoted positive integer for the target run_step; expectedVersion in JSON must match it when both are supplied",
+    "attemptWrite": "Pause, resume and finish use the target run_attempt rowVersion and accept the same strong If-Match/expectedVersion rule",
     "stale": "409/412 business error; no partial step, event, audit or outbox write"
   },
   "resources": {
     "testSet": { "required": ["id", "projectId", "name", "description", "rowVersion"] },
     "testInstance": { "required": ["id", "projectId", "testSetId", "testCaseId", "testRevisionId", "title", "revisionNumber"] },
     "run": { "required": ["id", "projectId", "testInstanceId", "manifestId", "status", "rowVersion"] },
-    "manifest": { "required": ["id", "sourceTestCaseId", "sourceRevisionId", "sourceRevisionNo", "snapshotHash", "steps"], "immutable": true },
+    "manifest": { "required": ["id", "sourceTestCaseId", "sourceRevisionId", "sourceRevisionNo", "snapshotHash", "steps"], "immutable": true, "formatVersion": "m09-manifest-2" },
     "attempt": { "required": ["id", "runId", "attemptNo", "status", "rowVersion", "steps"] },
     "step": { "required": ["stepKey", "ordinal", "action", "expected", "actualResult", "conclusion", "rowVersion"] }
   },
