@@ -1,5 +1,14 @@
 # Test365Alm 开发状态
 
+## R06-M09-001-FIX01 当前状态（代码已发布，远端 CI 待核对）
+
+- 本轮继续 `feat/r06-m09-001` / PR [#6](https://github.com/fangzhiy/Test365Alm/pull/6)，base `feat/r05-m08-001`。起始远端 head 为 `4ca04dacf604edb16767feafa1cf84eadf3c75f2`，本地工作树起点为 `b811378`；未 reset、回退、强推或合并。
+- 代码修正已在本地 `ba14640` 完成，并以远端起始提交为父通过 GitHub Data API 发布为 `cc561e15b9d5da7cf6225a4e12eb7381745bef09`。原始输入全文归档为 [`R06-M09-001-FIX01.md`](progress/inputs/R06-M09-001-FIX01.md)，执行记录见 [`R06-M09-001-FIX01.md`](progress/runs/R06-M09-001-FIX01.md)。
+- V14 追加执行清单构建/封存、manifest/attempt/step 归属与终态约束、事件/审计/Outbox 目标约束和幂等冻结响应；服务使用独立步骤/attempt 版本，HTTP 要求一致的强 `If-Match` 与 `expectedVersion`。前端补齐严格版本解析、pending/乱序响应/未知重试状态。
+- 本机 Java 17.0.2、Maven 3.9.14、Node 26.0.0、npm 11.12.1、Python 3.12.8；后端单元 33、前端 118、Python 工具 63 均通过，前端类型/构建/lint 通过，规划校验通过。真实 Testcontainers 集成命令实际发现 11 个 IT，但在 Windows JNA/Docker 初始化阶段失败，不能写成 PostgreSQL 业务通过。
+- 远端代码提交已触发 Push run `37259584955`；记录创建时仍 queued。K01–K05/K08 等真实数据库验收、K09 M09 专用浏览器流程和 K10 最终 CI 以本轮远端实际结果为准；不把前一交付的成功运行替代新代码验证。
+- M09 仍不代表完整 M09/M08 或 ALM 产品完成；测试树、批量、参数/配置、调度、Agent、附件、缺陷关联、离线、导出和复杂报表继续未实现。V14 的事务 GUC 构建标记可被 DBA 直接设置的限制已在 ADR-020 记录。
+
 ## R06-M09-001 当前状态（首个手工执行切片，等待审核）
 
 - 已从实际 `feat/r05-m08-001` 基线建立 `feat/r06-m09-001`；本地起点为 `f8e8d89df15a8fe62b726cc478d90416e4679567`，对应 Git Data API 审核基线 `845acde47e5f9cd2c330878b383aa2ce0611b992`。本轮原始输入已归档到 [`docs/progress/inputs/R06-M09-001.md`](progress/inputs/R06-M09-001.md)。
@@ -301,4 +310,3 @@
 本轮本机验证：前端 `npm ci`（126 packages）、Vitest 6 文件/77 测试、lint（0 error，3 个既有 React warning）、Vite build 均通过；系统 Maven `mvn -B -ntp test` 21 tests 通过；Python 工具 52 tests 通过。真实 Testcontainers/Failsafe 在 Windows 因 JNA `jnidispatch.dll` 临时文件/ Docker named pipe 权限退出码 1，Maven Wrapper 独立退出码 1（PowerShell `icm : Cannot index into a null array`）；均未混写成通过。Push [36968392677](https://github.com/fangzhiy/Test365Alm/actions/runs/36968392677) 六个 job 成功，Push checkout 为 `3e6055a9c1f33dbca34e84c977fb0ad1a19a9df2`；PR [36968396770](https://github.com/fangzhiy/Test365Alm/actions/runs/36968396770) 六个 job 成功，PR merge-ref checkout 为 `6a04165d3cee6c78298643f9a905a9ad8df2bb82`。server 报告 unit 21、OIDC 12、project access 12、requirement 12、upgrade 1，均 failures/errors/skipped=0；browser 8/0/0/0。
 
 本轮 I01–I10：I01 PASS（V7→V8 升级）；I02 PASS（HTTP/数据库创建）；I03 PASS（不可变历史）；I04 PASS（精确并发 412）；I05 PASS（真实 HTTP 12 用例）；I06 PASS（RLS/runtime 隔离）；I07 PASS（撤权/停用原会话直接请求）；I08 PASS（并发幂等）；I09 PASS（回滚与 runtime）；I10 PASS（浏览器 8 用例及 Push/PR CI）。本机 Testcontainers 阻塞已由隔离 Ubuntu CI 覆盖；不标记完整 M07、R04 或生产部署完成。完整结论见 [`docs/progress/runs/R04-M07-001-FIX02.md`](progress/runs/R04-M07-001-FIX02.md)。
-
