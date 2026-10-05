@@ -1,12 +1,18 @@
 # Test365Alm 开发状态
 
+## R06-M09-001-FIX02 当前状态（代码已发布，远端 Push/PR CI 待完成）
+
+- 本轮继续 feat/r06-m09-001 / PR #6，基线为 FIX01 代码 fceef8b076daf665fad7c0680caea6f7194de7f5、交付 1b31f3d941e01583b18866a2595923c69157645b。原始输入全文归档于 progress/inputs/R06-M09-001-FIX02.md，执行记录见 progress/runs/R06-M09-001-FIX02.md。
+- FIX01 远端报告实际只有 2 个 ManualExecutionDatabaseIT 测试；记录中的“5”已在 FIX02 记录中更正，不能作为 K07/K08 证据。FIX02 的数据库门禁按 17 个确切方法名校验（原 2 个 + 15 个并发/完整性/回滚/冻结重放/同键异内容拒绝场景），浏览器门禁额外要求 M09 两步执行→暂停/继续→完成→重跑页面用例。
+- 本轮代码验证提交为本地 `d5140f8`，已按远端 `1b31f3d941e01583b18866a2595923c69157645b` 发布代码提交 `5599862ff9a628efe125f781ef1adbd32d80bf22`。系统 Maven 单元测试 35/35、测试编译通过；隔离临时前端安装后 Vitest 9 files/125 tests、TypeScript、build、lint 通过；Python 工具 63/63 与规划校验通过。仓库原 `npm ci` 因 Windows EPERM 锁定 rolldown native 文件失败，隔离临时目录 `npm ci` 127 packages 成功。真实 ManualExecutionDatabaseIT/Testcontainers 在本机实际启动后因 JNA `jnidispatch.dll` Access denied 阻塞（退出码 1），未把它写成业务通过；真实 PostgreSQL、OIDC HTTP 和 Keycloak 页面需本轮远端 CI。
+
 ## R06-M09-001-FIX01 当前状态（修复代码与远端 CI 已完成，等待审核）
 
 - 本轮继续 `feat/r06-m09-001` / PR [#6](https://github.com/fangzhiy/Test365Alm/pull/6)，base `feat/r05-m08-001`。起始远端 head 为 `4ca04dacf604edb16767feafa1cf84eadf3c75f2`，本地工作树起点为 `b811378`；未 reset、回退、强推或合并。
 - 首个代码修正本地 `ba14640`/远端 `cc561e15b9d5da7cf6225a4e12eb7381745bef09` 的 CI 失败原因已保留在执行记录；补丁本地 `94d714b`、`a30ef04` 对应最终远端代码 SHA `fceef8b076daf665fad7c0680caea6f7194de7f5`。原始输入全文归档为 [`R06-M09-001-FIX01.md`](progress/inputs/R06-M09-001-FIX01.md)，执行记录见 [`R06-M09-001-FIX01.md`](progress/runs/R06-M09-001-FIX01.md)。
 - V14 追加执行清单构建/封存、manifest/attempt/step 归属与终态约束、事件/审计/Outbox 目标约束和幂等冻结响应；服务使用独立步骤/attempt 版本，HTTP 要求一致的强 `If-Match` 与 `expectedVersion`。前端补齐严格版本解析、pending/乱序响应/未知重试状态。
 - 本机 Java 17.0.2、Maven 3.9.14、Node 26.0.0、npm 11.12.1、Python 3.12.8；后端单元 33、前端 118、Python 工具 63 均通过，前端类型/构建/lint 通过，规划校验通过。真实 Testcontainers 集成命令实际发现 11 个 IT，但在 Windows JNA/Docker 初始化阶段失败，不能写成 PostgreSQL 业务通过。
-- 修复代码对应 Push [`37260947636`](https://github.com/fangzhiy/Test365Alm/actions/runs/37260947636) 与 PR [`37260950245`](https://github.com/fangzhiy/Test365Alm/actions/runs/37260950245) 六个 Job 全部成功；Push checkout 为 `fceef8b076daf665fad7c0680caea6f7194de7f5`，PR `refs/pull/6/merge` checkout 为 `dead8c7600222fb7fb7685c588e13a914f86f45a`。K01–K06、K10 已有真实 CI 证据；K07/K08 独立并发/故障回滚、K09 M09 专用浏览器流程仍未运行。
+- 修复代码对应 Push [`37260947636`](https://github.com/fangzhiy/Test365Alm/actions/runs/37260947636) 与 PR [`37260950245`](https://github.com/fangzhiy/Test365Alm/actions/runs/37260950245) 六个 Job 全部成功；Push checkout 为 `fceef8b076daf665fad7c0680caea6f7194de7f5`，PR `refs/pull/6/merge` checkout 为 `dead8c7600222fb7fb7685c588e13a914f86f45a`。K01–K06、K10 已有真实 CI 证据；本轮核对确认该 CI 中 ManualExecutionDatabaseIT 实际只有 2 个测试，历史状态中曾写成 5 个，已在 FIX02 记录中更正；K07/K08 独立并发/故障回滚、K09 M09 专用浏览器流程仍未运行。
 - M09 仍不代表完整 M09/M08 或 ALM 产品完成；测试树、批量、参数/配置、调度、Agent、附件、缺陷关联、离线、导出和复杂报表继续未实现。V14 的事务 GUC 构建标记可被 DBA 直接设置的限制已在 ADR-020 记录。
 
 ## R06-M09-001 当前状态（首个手工执行切片，等待审核）
