@@ -238,7 +238,8 @@ CREATE POLICY execution_audit_insert ON audit_event FOR INSERT WITH CHECK (
     AND actor_principal_id = NULLIF(current_setting('test365alm.principal_id', true), '')::uuid
     AND app_has_active_project_writer(tenant_id, project_id,
         NULLIF(current_setting('test365alm.principal_id', true), '')::uuid)
-    AND ((object_type = 'run' AND action LIKE 'run.%' AND EXISTS (SELECT 1 FROM execution_run r
+    AND ((object_type = 'run' AND action IN ('run.started', 'step.recorded', 'paused', 'resumed', 'run.finished', 'run.retried')
+          AND EXISTS (SELECT 1 FROM execution_run r
           WHERE r.tenant_id = audit_event.tenant_id AND r.project_id = audit_event.project_id AND r.id = audit_event.object_id))
       OR (object_type = 'test_set' AND action = 'test.set.created' AND EXISTS (SELECT 1 FROM test_set s
           WHERE s.tenant_id = audit_event.tenant_id AND s.project_id = audit_event.project_id AND s.id = audit_event.object_id))
@@ -254,3 +255,4 @@ DO $$ BEGIN
         GRANT UPDATE (response_json) ON execution_idempotency TO test365alm_runtime;
     END IF;
 END $$;
+

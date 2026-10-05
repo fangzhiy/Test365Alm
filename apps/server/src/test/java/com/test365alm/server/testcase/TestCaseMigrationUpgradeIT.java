@@ -129,10 +129,10 @@ class TestCaseMigrationUpgradeIT {
         }
 
         Flyway latest = flyway(null);
-        assertEquals(3, latest.migrate().migrationsExecuted);
-        assertEquals(0, latest.migrate().migrationsExecuted, "V10/V11/V12/V13 must be idempotent after the upgrade");
+        assertEquals(4, latest.migrate().migrationsExecuted);
+        assertEquals(0, latest.migrate().migrationsExecuted, "V10/V11/V12/V13/V14 must be idempotent after the upgrade");
         try (Connection connection = ownerConnection()) {
-            assertEquals(13, scalar(connection, "SELECT COUNT(*) FROM flyway_schema_history WHERE success = TRUE"));
+            assertEquals(14, scalar(connection, "SELECT COUNT(*) FROM flyway_schema_history WHERE success = TRUE"));
             assertEquals(1, scalar(connection, "SELECT COUNT(*) FROM flyway_schema_history WHERE version = '11' AND success = TRUE"));
             assertEquals("preserved before manual test case migration",
                     text(connection, "SELECT metadata_value FROM platform_metadata WHERE metadata_key = ?", "r05-v9-sentinel"));
@@ -217,3 +217,4 @@ class TestCaseMigrationUpgradeIT {
         }
     }
 }
+
