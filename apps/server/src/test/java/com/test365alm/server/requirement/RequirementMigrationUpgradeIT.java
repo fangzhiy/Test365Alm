@@ -121,7 +121,7 @@ class RequirementMigrationUpgradeIT {
         }
 
         Flyway latest = flyway(null);
-        assertEquals(6, latest.migrate().migrationsExecuted);
+        assertEquals(7, latest.migrate().migrationsExecuted);
         assertEquals(0, latest.migrate().migrationsExecuted, "V8/V9/V10/V11/V12/V13/V14 must be idempotent after the upgrade");
 
         try (Connection connection = ownerConnection()) {
