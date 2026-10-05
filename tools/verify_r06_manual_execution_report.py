@@ -12,6 +12,25 @@ SUITE = "com.test365alm.server.execution.ManualExecutionDatabaseIT"
 REQUIRED = {
     "createsImmutableManifestExecutesAndRerunsWithoutChangingSource",
     "zeroStepRevisionCannotStartAManualRun",
+    # FIX02 closes the M09 evidence gap with deterministic, real-database
+    # concurrency, rollback, and frozen-idempotency scenarios.  Keep these
+    # names explicit: a green Failsafe job with only the two original smoke
+    # cases is not sufficient evidence for K07/K08.
+    "concurrentStepWritesRejectExactlyOneStaleVersion",
+    "concurrentRerunsAllowOnlyOneActiveAttempt",
+    "concurrentStepWriteAndFinishHaveOneVersionedWinner",
+    "concurrentSameKeyRerunReplaysTheFrozenResponse",
+    "concurrentSameKeyRunCreationReplaysTheFrozenResponse",
+    "concurrentSameKeyStepSaveReplaysTheFrozenResponse",
+    "sameKeyDifferentStepContentIsRejectedWithoutSideEffects",
+    "runtimeCannotMutateSealedManifestOrFinishedAttempt",
+    "auditInsertFailureRollsBackRunCreation",
+    "auditInsertFailureRollsBackStepSave",
+    "auditInsertFailureRollsBackFinish",
+    "outboxInsertFailureRollsBackRunCreation",
+    "outboxInsertFailureRollsBackStepAndAttemptVersion",
+    "outboxInsertFailureRollsBackFinish",
+    "pauseReplayReturnsTheOriginalFrozenResponseAfterResume",
 }
 
 
@@ -27,14 +46,23 @@ def verify_manual_execution_report(directory: Path) -> tuple[bool, str]:
         failures = int(root.get("failures", "0"))
         errors = int(root.get("errors", "0"))
         skipped = int(root.get("skipped", "0"))
-        names = {case.get("name", "") for case in root.findall("testcase")}
+        cases = root.findall("testcase")
+        names = [case.get("name", "") for case in cases]
     except (ET.ParseError, ValueError) as exc:
         return False, f"manual execution report invalid: {exc}"
-    missing = REQUIRED - names
+    unique_names = set(names)
+    missing = REQUIRED - unique_names
     summary = f"ManualExecutionDatabaseIT tests={tests} failures={failures} errors={errors} skipped={skipped} cases={len(names)}"
     if missing:
         summary += f" missing={sorted(missing)}"
-    if failures or errors or skipped or missing or tests < len(names) or tests == 0:
+    if tests != len(names):
+        summary += " inconsistent-test-count"
+    if len(unique_names) != len(names):
+        summary += " duplicate-testcase-name"
+    unexpected_classname = any(case.get("classname") != SUITE for case in cases)
+    if unexpected_classname:
+        summary += " unexpected-testcase-classname"
+    if failures or errors or skipped or missing or tests != len(names) or not names or len(unique_names) != len(names) or unexpected_classname:
         return False, summary
     return True, summary
 
@@ -50,3 +78,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

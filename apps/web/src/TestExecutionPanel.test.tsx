@@ -1,5 +1,6 @@
 import '@testing-library/jest-dom/vitest'
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { StrictMode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import TestExecutionPanel from './TestExecutionPanel'
 import { executionApi } from './testExecution'
@@ -58,6 +59,22 @@ describe('TestExecutionPanel', () => {
     render(<TestExecutionPanel projectId="project-1" access={access} />); fireEvent.click(await screen.findByRole('button', { name: /登录冒烟/ })); fireEvent.click(await screen.findByRole('button', { name: '启动手工运行' })); await screen.findByText('运行中'); expect(screen.getByLabelText('步骤 1 实际结果')).toHaveValue('已有结果'); expect(screen.getByLabelText('步骤 1 结论')).toHaveValue('PASS'); fireEvent.click(screen.getByRole('button', { name: '保存步骤结果' })); await waitFor(() => expect(executionApi.saveStep).toHaveBeenCalled()); expect(vi.mocked(executionApi.saveStep).mock.calls[0]?.[4]).toEqual(expect.objectContaining({ actual: '已有结果', outcome: 'PASS', rowVersion: 7 }))
   })
 
+  it('keeps a step draft and the original version after a stale-version response', async () => {
+    vi.mocked(executionApi.listSets).mockResolvedValue([set]); vi.mocked(executionApi.getSet).mockResolvedValue(set); vi.mocked(executionApi.listInstances).mockResolvedValue([instance]); vi.mocked(executionApi.createRun).mockResolvedValue(run); vi.mocked(executionApi.getRun).mockResolvedValue(run); vi.mocked(executionApi.listAttempts).mockResolvedValue([attempt]); vi.mocked(executionApi.saveStep).mockRejectedValue({ code: 'STALE_VERSION', message: '步骤版本已过期' })
+    render(<TestExecutionPanel projectId="project-1" access={access} />)
+    fireEvent.click(await screen.findByRole('button', { name: /登录冒烟/ }))
+    fireEvent.click(await screen.findByRole('button', { name: '启动手工运行' }))
+    await screen.findByText('运行中')
+    fireEvent.change(screen.getByLabelText('步骤 1 实际结果'), { target: { value: '本地未提交结果' } })
+    fireEvent.change(screen.getByLabelText('步骤 1 结论'), { target: { value: 'FAIL' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存步骤结果' }))
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('步骤版本已过期'))
+    expect(screen.getByLabelText('步骤 1 实际结果')).toHaveValue('本地未提交结果')
+    expect(screen.getByLabelText('步骤 1 结论')).toHaveValue('FAIL')
+    expect(screen.getByRole('button', { name: '保存步骤结果' })).toBeEnabled()
+    expect(vi.mocked(executionApi.saveStep).mock.calls[0]?.[4]?.rowVersion).toBe(7)
+  })
+
   it('disables step controls during a save and re-enables them after the result arrives', async () => {
     let resolveSave!: (value: RunAttempt) => void
     const deferred = new Promise<RunAttempt>((resolve) => { resolveSave = resolve })
@@ -88,10 +105,147 @@ describe('TestExecutionPanel', () => {
 
   it('shows a retryable error when set loading fails', async () => { vi.mocked(executionApi.listSets).mockRejectedValue(new Error('服务不可用')); render(<TestExecutionPanel projectId="project-1" access={access} />); expect(await screen.findByRole('alert')).toHaveTextContent('服务不可用'); expect(screen.getByRole('button', { name: '重试' })).toBeEnabled() })
 
+  it('aborts a stalled read at the bounded timeout and leaves the panel retryable', async () => {
+    vi.useFakeTimers()
+    try {
+      let resolveSets!: (value: TestSet[]) => void
+      const stalled = new Promise<TestSet[]>((resolve) => { resolveSets = resolve })
+      vi.mocked(executionApi.listSets).mockImplementation((_projectId, options) => {
+        options?.signal?.addEventListener('abort', () => undefined)
+        return stalled
+      })
+      render(<TestExecutionPanel projectId="project-1" access={access} />)
+      await act(async () => { await Promise.resolve(); await vi.advanceTimersByTimeAsync(5000); await Promise.resolve() })
+      expect(screen.getByRole('alert')).toHaveTextContent('测试集请求超时')
+      expect(screen.getByRole('button', { name: '重试' })).toBeEnabled()
+      resolveSets([set])
+      await act(async () => { await Promise.resolve() })
+      expect(screen.queryByText('登录冒烟')).not.toBeInTheDocument()
+    } finally { vi.useRealTimers() }
+  })
+
+  it('cancels both StrictMode probe and active requests when unmounted', async () => {
+    let resolveSets!: (value: TestSet[]) => void
+    const stalled = new Promise<TestSet[]>((resolve) => { resolveSets = resolve })
+    vi.mocked(executionApi.listSets).mockImplementation((_projectId, options) => {
+      options?.signal?.addEventListener('abort', () => undefined)
+      return stalled
+    })
+    const view = render(<StrictMode><TestExecutionPanel projectId="project-1" access={access} /></StrictMode>)
+    await waitFor(() => expect(executionApi.listSets).toHaveBeenCalledTimes(2))
+    const signals = vi.mocked(executionApi.listSets).mock.calls.map((call) => call[1]?.signal)
+    expect(signals[0]?.aborted).toBe(true)
+    expect(signals[1]?.aborted).toBe(false)
+    view.unmount()
+    expect(signals[1]?.aborted).toBe(true)
+    resolveSets([set])
+    await act(async () => { await Promise.resolve() })
+  })
+
   it('chooses a saved manual case and revision from real API lists instead of requiring UUID entry', async () => {
     vi.mocked(executionApi.listSets).mockResolvedValue([set]); vi.mocked(executionApi.getSet).mockResolvedValue(set); vi.mocked(executionApi.listInstances).mockResolvedValue([]); vi.mocked(executionApi.listRuns).mockResolvedValue([])
     vi.mocked(testsApi.list).mockResolvedValue({ items: [{ id: 'test-1', projectId: 'project-1', displayNumber: 'TC-1', testType: 'MANUAL', rowVersion: 1, currentRevisionId: 'rev-1', revisionNumber: 1, title: '登录', description: '', preconditions: '', steps: [], createdAt: '2026-01-01T00:00:00Z', createdBy: 'principal-1' }], nextCursor: null })
     vi.mocked(testsApi.revisions).mockResolvedValue([{ id: 'rev-1', revisionNumber: 1, title: '登录', description: '', preconditions: '', createdAt: '2026-01-01T00:00:00Z', createdBy: 'principal-1', steps: [] }])
     render(<TestExecutionPanel projectId="project-1" access={access} />); fireEvent.click(await screen.findByRole('button', { name: /登录冒烟/ })); fireEvent.click(await screen.findByRole('button', { name: '加载已保存用例' })); expect(await screen.findByRole('option', { name: /TC-1 · 登录/ })).toBeVisible(); fireEvent.change(screen.getByLabelText('已保存用例'), { target: { value: 'test-1' } }); expect(await screen.findByRole('option', { name: /修订 1 · 登录/ })).toBeVisible()
   })
+
+  it('keeps two-step results and version progression through pause, resume, finish and rerun', async () => {
+    const secondStep: RunStep = { stepKey: 'step-2', ordinal: 2, action: '提交凭据', expected: '显示工作台', actual: '', outcome: 'NOT_RUN', rowVersion: 11 }
+    const twoStepAttempt: RunAttempt = { ...attempt, steps: [step, secondStep] }
+    const twoStepRun: Run = { ...run, attempt: twoStepAttempt }
+    const finished: RunAttempt = { ...twoStepAttempt, state: 'FINISHED', outcome: 'FAIL', steps: [
+      { ...step, actual: '表单可见', outcome: 'PASS', rowVersion: 8 },
+      { ...secondStep, actual: '提交后错误', outcome: 'FAIL', rowVersion: 12 },
+    ] }
+    const retry: RunAttempt = { ...twoStepAttempt, id: 'attempt-2', attemptNo: 2, rowVersion: 43 }
+    vi.mocked(executionApi.listSets).mockResolvedValue([set]); vi.mocked(executionApi.getSet).mockResolvedValue(set); vi.mocked(executionApi.listInstances).mockResolvedValue([instance]); vi.mocked(executionApi.createRun).mockResolvedValue(twoStepRun); vi.mocked(executionApi.getRun).mockResolvedValue(twoStepRun); vi.mocked(executionApi.listAttempts).mockResolvedValue([twoStepAttempt])
+    const savedRunning: RunAttempt = { ...twoStepAttempt, steps: [{ ...step, actual: '表单可见', outcome: 'PASS', rowVersion: 8 }, { ...secondStep, actual: '提交后错误', outcome: 'FAIL', rowVersion: 12 }] }
+    vi.mocked(executionApi.saveStep)
+      .mockResolvedValueOnce({ ...savedRunning, steps: [savedRunning.steps[0], secondStep] })
+      .mockResolvedValueOnce(savedRunning)
+    vi.mocked(executionApi.pause).mockResolvedValue({ ...twoStepAttempt, state: 'PAUSED', rowVersion: 43 })
+    vi.mocked(executionApi.resume).mockResolvedValue({ ...twoStepAttempt, rowVersion: 44 })
+    vi.mocked(executionApi.finish).mockResolvedValue(finished)
+    vi.mocked(executionApi.rerun).mockResolvedValue(retry)
+
+    render(<TestExecutionPanel projectId="project-1" access={access} />)
+    fireEvent.click(await screen.findByRole('button', { name: /登录冒烟/ }))
+    fireEvent.click(await screen.findByRole('button', { name: '启动手工运行' }))
+    expect(await screen.findByLabelText('步骤 2 实际结果')).toBeVisible()
+    fireEvent.change(screen.getByLabelText('步骤 1 实际结果'), { target: { value: '表单可见' } })
+    fireEvent.change(screen.getByLabelText('步骤 1 结论'), { target: { value: 'PASS' } })
+    fireEvent.click(screen.getAllByRole('button', { name: '保存步骤结果' })[0])
+    await waitFor(() => expect(executionApi.saveStep).toHaveBeenCalledTimes(1))
+    fireEvent.change(screen.getByLabelText('步骤 2 实际结果'), { target: { value: '提交后错误' } })
+    fireEvent.change(screen.getByLabelText('步骤 2 结论'), { target: { value: 'FAIL' } })
+    fireEvent.click(screen.getAllByRole('button', { name: '保存步骤结果' })[1])
+    await waitFor(() => expect(executionApi.saveStep).toHaveBeenCalledTimes(2))
+    expect(vi.mocked(executionApi.saveStep).mock.calls.map((call) => call[4]?.rowVersion)).toEqual([7, 11])
+    fireEvent.click(screen.getByRole('button', { name: '暂停' }))
+    await waitFor(() => expect(executionApi.pause).toHaveBeenCalledWith('project-1', 'run-1', 'attempt-1', 42, expect.anything()))
+    fireEvent.click(screen.getByRole('button', { name: '继续' }))
+    await waitFor(() => expect(executionApi.resume).toHaveBeenCalledWith('project-1', 'run-1', 'attempt-1', 43, expect.anything()))
+    fireEvent.click(screen.getByRole('button', { name: '完成运行' }))
+    await waitFor(() => expect(screen.getByText('已完成 · FAIL')).toBeVisible())
+    fireEvent.click(screen.getByRole('button', { name: '重新运行' }))
+    await waitFor(() => expect(screen.getByText('运行详情 · 尝试 2')).toBeVisible())
+    expect(screen.getByRole('button', { name: '尝试 1 · FAIL' })).toBeVisible()
+    expect(screen.getByLabelText('步骤 1 实际结果')).toHaveValue('')
+    expect(screen.getByLabelText('步骤 2 实际结果')).toHaveValue('')
+  })
+
+  it('cancels direct access loss and ignores a late set response, then reloads after access recovery', async () => {
+    let resolveSets!: (value: TestSet[]) => void
+    const deferred = new Promise<TestSet[]>((resolve) => { resolveSets = resolve })
+    vi.mocked(executionApi.listSets).mockReturnValueOnce(deferred).mockResolvedValueOnce([set])
+    const view = render(<TestExecutionPanel projectId="project-1" access={access} />)
+    await waitFor(() => expect(executionApi.listSets).toHaveBeenCalledTimes(1))
+    const firstSignal = vi.mocked(executionApi.listSets).mock.calls[0]?.[1]?.signal
+    expect(firstSignal?.aborted).toBe(false)
+    view.rerender(<TestExecutionPanel projectId="project-1" access={null} />)
+    await waitFor(() => expect(firstSignal?.aborted).toBe(true))
+    resolveSets([set])
+    await Promise.resolve()
+    expect(screen.getByRole('alert')).toHaveTextContent('没有读取测试集')
+    expect(screen.queryByText('登录冒烟')).not.toBeInTheDocument()
+    view.rerender(<TestExecutionPanel projectId="project-1" access={access} />)
+    expect(await screen.findByText('登录冒烟')).toBeVisible()
+    expect(executionApi.listSets).toHaveBeenCalledTimes(2)
+  })
+
+  it('invalidates a pending step write when the same project loses write access directly', async () => {
+    let resolveSave!: (value: RunAttempt) => void
+    const pendingSave = new Promise<RunAttempt>((resolve) => { resolveSave = resolve })
+    vi.mocked(executionApi.listSets).mockResolvedValue([set]); vi.mocked(executionApi.getSet).mockResolvedValue(set); vi.mocked(executionApi.listInstances).mockResolvedValue([instance]); vi.mocked(executionApi.createRun).mockResolvedValue(run); vi.mocked(executionApi.getRun).mockResolvedValue(run); vi.mocked(executionApi.listAttempts).mockResolvedValue([attempt]); vi.mocked(executionApi.saveStep).mockReturnValue(pendingSave)
+    const view = render(<TestExecutionPanel projectId="project-1" access={access} />)
+    fireEvent.click(await screen.findByRole('button', { name: /登录冒烟/ }))
+    fireEvent.click(await screen.findByRole('button', { name: '启动手工运行' }))
+    await screen.findByText('运行中')
+    fireEvent.click(screen.getByRole('button', { name: '保存步骤结果' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: '刷新测试集' })).toBeDisabled())
+    const writeSignal = vi.mocked(executionApi.saveStep).mock.calls[0]?.[5]?.signal
+    expect(writeSignal?.aborted).toBe(false)
+    view.rerender(<TestExecutionPanel projectId="project-1" access={{ ...access, permissions: ['test:read'] }} />)
+    await waitFor(() => expect(writeSignal?.aborted).toBe(true))
+    resolveSave({ ...attempt, steps: [{ ...step, actual: 'late success', outcome: 'PASS', rowVersion: 8 }] })
+    await Promise.resolve()
+    expect(screen.queryByRole('button', { name: '保存步骤结果' })).not.toBeInTheDocument()
+    expect(screen.queryByText('late success')).not.toBeInTheDocument()
+  })
+
+  it('locks case discovery while a step write is pending instead of aborting an unknown result', async () => {
+    let resolveSave!: (value: RunAttempt) => void
+    const pendingSave = new Promise<RunAttempt>((resolve) => { resolveSave = resolve })
+    vi.mocked(executionApi.listSets).mockResolvedValue([set]); vi.mocked(executionApi.getSet).mockResolvedValue(set); vi.mocked(executionApi.listInstances).mockResolvedValue([instance]); vi.mocked(executionApi.createRun).mockResolvedValue(run); vi.mocked(executionApi.getRun).mockResolvedValue(run); vi.mocked(executionApi.listAttempts).mockResolvedValue([attempt]); vi.mocked(executionApi.saveStep).mockReturnValue(pendingSave)
+    render(<TestExecutionPanel projectId="project-1" access={access} />)
+    fireEvent.click(await screen.findByRole('button', { name: /登录冒烟/ }))
+    fireEvent.click(await screen.findByRole('button', { name: '启动手工运行' }))
+    await screen.findByText('运行中')
+    fireEvent.click(screen.getByRole('button', { name: '保存步骤结果' }))
+    await waitFor(() => expect(screen.getByRole('button', { name: '加载已保存用例' })).toBeDisabled())
+    expect(testsApi.list).not.toHaveBeenCalled()
+    resolveSave(attempt)
+    await waitFor(() => expect(screen.getByRole('button', { name: '加载已保存用例' })).toBeEnabled())
+  })
 })
+

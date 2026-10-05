@@ -67,9 +67,35 @@ class ExecutionControllerTest {
                 "step-key-003", "\"999999999999999999999999999999\""));
     }
 
+    @Test
+    void transitionBodiesRejectUnknownFieldsAndNonObjects() {
+        assertThrows(ProjectAccessException.class, () -> controller.pause(authentication, project, run, attempt,
+                json("{\"expectedVersion\":1,\"unexpected\":true}"), "pause-key-001", "\"1\""));
+        assertThrows(ProjectAccessException.class, () -> controller.resume(authentication, project, run, attempt,
+                json("null"), "resume-key-001", "\"1\""));
+        assertThrows(ProjectAccessException.class, () -> controller.finish(authentication, project, run, attempt,
+                json("{\"expectedVersion\":1,\"reason\":\"not accepted\"}"), "finish-key-001", "\"1\""));
+        assertThrows(ProjectAccessException.class, () -> controller.rerun(authentication, project, run,
+                json("{\"reason\":\"not accepted\"}"), "rerun-key-001"));
+    }
+
+    @Test
+    void transitionBodiesAcceptOnlyTheVersionContract() {
+        when(actors.requirePrincipal(authentication)).thenReturn(actor);
+        when(service.pause(eq(actor), eq(project), eq(run), eq(attempt), eq(1L), eq("pause-key-002")))
+                .thenReturn(attemptView());
+        controller.pause(authentication, project, run, attempt, json("{\"expectedVersion\":1}"),
+                "pause-key-002", "\"1\"");
+        verify(service).pause(actor, project, run, attempt, 1L, "pause-key-002");
+    }
+
     private ExecutionService.RunDetail detail(UUID instance) {
         ExecutionService.RunView runView = new ExecutionService.RunView(run, project, instance, UUID.randomUUID(), "RUNNING", 1, null);
         return new ExecutionService.RunDetail(runView, null, null, List.of());
+    }
+
+    private ExecutionService.AttemptView attemptView() {
+        return new ExecutionService.AttemptView(attempt, run, 1, "PAUSED", null, 2, actor, null, null, List.of());
     }
 
     private static tools.jackson.databind.JsonNode json(String value) {
@@ -77,3 +103,4 @@ class ExecutionControllerTest {
         catch (Exception ex) { throw new IllegalStateException(ex); }
     }
 }
+

@@ -126,6 +126,7 @@ public class ExecutionController {
             @PathVariable UUID runId, @PathVariable UUID attemptId, @RequestBody JsonNode body,
             @RequestHeader(name="Idempotency-Key", required=false) String key,
             @RequestHeader(name="If-Match", required=false) String ifMatch) {
+        fields(body, Set.of("expectedVersion"));
         return executions.pause(actors.requirePrincipal(authentication), projectId, runId, attemptId, expectedVersion(body, ifMatch), key);
     }
 
@@ -134,6 +135,7 @@ public class ExecutionController {
             @PathVariable UUID runId, @PathVariable UUID attemptId, @RequestBody JsonNode body,
             @RequestHeader(name="Idempotency-Key", required=false) String key,
             @RequestHeader(name="If-Match", required=false) String ifMatch) {
+        fields(body, Set.of("expectedVersion"));
         return executions.resume(actors.requirePrincipal(authentication), projectId, runId, attemptId, expectedVersion(body, ifMatch), key);
     }
 
@@ -142,12 +144,15 @@ public class ExecutionController {
             @PathVariable UUID runId, @PathVariable UUID attemptId, @RequestBody JsonNode body,
             @RequestHeader(name="Idempotency-Key", required=false) String key,
             @RequestHeader(name="If-Match", required=false) String ifMatch) {
+        fields(body, Set.of("expectedVersion"));
         return executions.finish(actors.requirePrincipal(authentication), projectId, runId, attemptId, expectedVersion(body, ifMatch), key);
     }
 
     @PostMapping("/runs/{runId}/attempts")
     public ExecutionService.AttemptView rerun(Authentication authentication, @PathVariable UUID projectId,
-            @PathVariable UUID runId, @RequestHeader(name="Idempotency-Key", required=false) String key) {
+            @PathVariable UUID runId, @RequestBody(required=false) JsonNode body,
+            @RequestHeader(name="Idempotency-Key", required=false) String key) {
+        fields(body, Set.of());
         return executions.rerun(actors.requirePrincipal(authentication), projectId, runId, key);
     }
 
@@ -206,3 +211,4 @@ public class ExecutionController {
         }
     }
 }
+

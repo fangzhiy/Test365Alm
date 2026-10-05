@@ -31,42 +31,58 @@ export default function TestExecutionPanel({ projectId, access, resetSignal = 0 
   const [outcomes, setOutcomes] = useState<Record<string, StepOutcome>>({})
   const [pending, setPending] = useState<string | null>(null)
   const controllerRef = useRef<AbortController | null>(null)
+  const timeoutRef = useRef<number | null>(null)
   const roundRef = useRef(0)
   const activeProjectRef = useRef(projectId)
   const pendingIntentKeysRef = useRef(new Map<string, string>())
   const accessKey = access ? `${access.tenantId}:${access.principalId}:${access.roles.join('|')}:${access.permissions.join('|')}` : ''
 
-  const cancel = () => { controllerRef.current?.abort(); controllerRef.current = null }
-  const begin = () => { roundRef.current += 1; cancel(); setPending(null); const controller = new AbortController(); controllerRef.current = controller; return { round: roundRef.current, controller } }
+  const clearTimeoutRef = () => { if (timeoutRef.current !== null) { window.clearTimeout(timeoutRef.current); timeoutRef.current = null } }
+  const cancel = () => { controllerRef.current?.abort(); controllerRef.current = null; clearTimeoutRef() }
+  const begin = (timeoutMessage = '执行请求超时，请稍后重试', timeoutSetsError = false) => {
+    roundRef.current += 1; cancel(); setPending(null)
+    const controller = new AbortController(); const round = roundRef.current
+    controllerRef.current = controller
+    timeoutRef.current = window.setTimeout(() => {
+      if (!current(round, controller)) return
+      // Abort is advisory: invalidate this round before notifying so a transport
+      // that ignores AbortSignal cannot commit a late response.
+      roundRef.current += 1; controllerRef.current = null; clearTimeoutRef(); controller.abort()
+      if (timeoutSetsError) setState('error')
+      setPending(null); setNotice(timeoutMessage)
+    }, 5000)
+    return { round, controller }
+  }
+  const finish = (round: number, controller: AbortController) => { const active = current(round, controller); if (active) { controllerRef.current = null; clearTimeoutRef() } return active }
   const current = (round: number, controller: AbortController) => roundRef.current === round && controllerRef.current === controller && activeProjectRef.current === projectId
   const reset = () => { setSets([]); setSelectedSet(null); setInstances([]); setRuns([]); setSelectedRun(null); setAttempts([]); setSelectedAttempt(null); setActuals({}); setOutcomes({}); setAvailableCases([]); setAvailableRevisions([]); setTestCaseId(''); setTestRevisionId(''); setNotice(''); setPending(null); pendingIntentKeysRef.current.clear() }
   const operationKey = (scope: string) => { const existing = pendingIntentKeysRef.current.get(scope); if (existing) return existing; const key = newIdempotencyKey(); pendingIntentKeysRef.current.set(scope, key); return key }
   const completeOperation = (scope: string) => { pendingIntentKeysRef.current.delete(scope) }
 
   const loadSets = async () => {
-    const { round, controller } = begin(); setState('loading'); setNotice('')
+    const { round, controller } = begin('测试集请求超时，请稍后重试', true); setState('loading'); setNotice('')
     try { const result = await executionApi.listSets(projectId, { signal: controller.signal }); if (!current(round, controller)) return; setSets(result); setState('ready') }
     catch (error) { if (!current(round, controller)) return; setState('error'); setNotice(isAbort(error) ? '测试集请求超时，请稍后重试' : messageFor(error)) }
-    finally { if (current(round, controller)) controllerRef.current = null }
+    finally { finish(round, controller) }
   }
   const loadSet = async (set: TestSet) => {
-    const { round, controller } = begin(); setSelectedSet(set); setInstances([]); setRuns([]); setSelectedRun(null); setAttempts([]); setSelectedAttempt(null); setState('loading'); setNotice('')
+    const { round, controller } = begin('测试集详情请求超时，请稍后重试', true); setSelectedSet(set); setInstances([]); setRuns([]); setSelectedRun(null); setAttempts([]); setSelectedAttempt(null); setState('loading'); setNotice('')
     try { const [detail, listed, listedRuns] = await Promise.all([executionApi.getSet(projectId, set.id, { signal: controller.signal }), executionApi.listInstances(projectId, set.id, { signal: controller.signal }), executionApi.listRuns(projectId, { signal: controller.signal })]); if (!current(round, controller)) return; setSelectedSet(detail); setInstances(listed); setRuns((listedRuns ?? []).filter((run) => !run.instanceId || listed.some((item) => item.id === run.instanceId))); setState('ready') }
     catch (error) { if (!current(round, controller)) return; setState('error'); setNotice(isAbort(error) ? '测试集详情请求超时，请稍后重试' : messageFor(error)) }
-    finally { if (current(round, controller)) controllerRef.current = null }
+    finally { finish(round, controller) }
   }
   const loadRun = async (run: Run) => {
-    const { round, controller } = begin(); setSelectedRun(run); setAttempts([]); setSelectedAttempt(null); setActuals({}); setOutcomes({}); setState('loading')
+    const { round, controller } = begin('运行详情请求超时，请稍后重试', true); setSelectedRun(run); setAttempts([]); setSelectedAttempt(null); setActuals({}); setOutcomes({}); setState('loading')
     try { const [detail, history] = await Promise.all([executionApi.getRun(projectId, run.id, { signal: controller.signal }), executionApi.listAttempts(projectId, run.id, { signal: controller.signal })]); if (!current(round, controller)) return; setSelectedRun(detail); setAttempts(history); setSelectedAttempt(detail.attempt ?? history[history.length - 1] ?? null); setState('ready') }
     catch (error) { if (!current(round, controller)) return; setState('error'); setNotice(isAbort(error) ? '运行详情请求超时，请稍后重试' : messageFor(error)) }
-    finally { if (current(round, controller)) controllerRef.current = null }
+    finally { finish(round, controller) }
   }
   const startRun = async (instance: TestInstance) => {
     const { round, controller } = begin(); setPending('start'); setNotice('')
     const intent = `start:${projectId}:${instance.id}`
     try { const created = await executionApi.createRun(projectId, { instanceId: instance.id, mode: 'MANUAL' }, { signal: controller.signal, idempotencyKey: operationKey(intent) }); if (!current(round, controller)) return; completeOperation(intent); setRuns((value) => [created, ...value.filter((item) => item.id !== created.id)]); await loadRun(created); if (current(round, controller)) setNotice('手工运行已启动') }
     catch (error) { if (!current(round, controller)) return; setPending(null); setNotice(isAbort(error) ? '启动请求超时，请保留原意图后重试' : messageFor(error)) }
-    finally { if (current(round, controller)) setPending(null) }
+    finally { if (finish(round, controller)) setPending(null) }
   }
   const updateAttempt = (next: RunAttempt) => { setSelectedAttempt(next); setAttempts((value) => value.map((item) => item.id === next.id ? next : item)); setSelectedRun((value) => value ? { ...value, state: next.state, outcome: next.outcome } : value) }
   const saveStep = async (stepKey: string) => {
@@ -79,7 +95,7 @@ export default function TestExecutionPanel({ projectId, access, resetSignal = 0 
     const intent = `step:${projectId}:${selectedRun.id}:${selectedAttempt.id}:${stepKey}:${target.rowVersion}:${actual}:${outcome}`
     try { const next = await executionApi.saveStep(projectId, selectedRun.id, selectedAttempt.id, stepKey, { actual, outcome, rowVersion: target.rowVersion }, { signal: controller.signal, idempotencyKey: operationKey(intent) }); if (current(round, controller)) { completeOperation(intent); updateAttempt(next); setNotice('步骤结果已保存') } }
     catch (error) { if (current(round, controller)) { setPending(null); setNotice(isAbort(error) ? '步骤保存超时，请保留原意图后重试' : messageFor(error)) } }
-    finally { if (current(round, controller)) setPending(null) }
+    finally { if (finish(round, controller)) setPending(null) }
   }
   const attemptAction = async (action: 'pause' | 'resume' | 'finish') => {
     if (!selectedRun || !selectedAttempt || !canWrite(access)) return
@@ -89,13 +105,13 @@ export default function TestExecutionPanel({ projectId, access, resetSignal = 0 
     const intent = `${action}:${projectId}:${selectedRun.id}:${selectedAttempt.id}:${version}`
     try { const next = await executionApi[action](projectId, selectedRun.id, selectedAttempt.id, version, { signal: controller.signal, idempotencyKey: operationKey(intent) }); if (current(round, controller)) { completeOperation(intent); updateAttempt(next); setNotice(action === 'finish' ? '运行已完成' : action === 'pause' ? '运行已暂停' : '运行已继续') } }
     catch (error) { if (current(round, controller)) { setPending(null); setNotice(isAbort(error) ? '操作请求超时，请稍后重试' : messageFor(error)) } }
-    finally { if (current(round, controller)) setPending(null) }
+    finally { if (finish(round, controller)) setPending(null) }
   }
-  const rerun = async () => { if (!selectedRun || !canWrite(access)) return; const { round, controller } = begin(); setPending('rerun'); const intent = `rerun:${projectId}:${selectedRun.id}`; try { const next = await executionApi.rerun(projectId, selectedRun.id, { signal: controller.signal, idempotencyKey: operationKey(intent) }); if (current(round, controller)) { completeOperation(intent); setAttempts((value) => [...value, next]); setSelectedAttempt(next); setActuals({}); setOutcomes({}); setNotice('已创建新的运行尝试') } } catch (error) { if (current(round, controller)) { setPending(null); setNotice(isAbort(error) ? '重新运行请求超时，请保留原意图后重试' : messageFor(error)) } } finally { if (current(round, controller)) setPending(null) } }
-  const createSet = async (event: FormEvent) => { event.preventDefault(); if (!setName.trim() || !canWrite(access)) return; const { round, controller } = begin(); setPending('create-set'); const name = setName.trim(); const intent = `create-set:${projectId}:${name}:${setDescription}`; try { const created = await executionApi.createSet(projectId, { name, description: setDescription }, { signal: controller.signal, idempotencyKey: operationKey(intent) }); if (current(round, controller)) { completeOperation(intent); setSets((value) => [...value, created]); setSetName(''); setSetDescription(''); setNotice('测试集已创建') } } catch (error) { if (current(round, controller)) { setPending(null); setNotice(isAbort(error) ? '创建请求超时，请保留原意图后重试' : messageFor(error)) } } finally { if (current(round, controller)) setPending(null) } }
-  const addInstance = async (event: FormEvent) => { event.preventDefault(); if (!selectedSet || !testCaseId.trim() || !testRevisionId.trim() || !canWrite(access)) return; const { round, controller } = begin(); setPending('add-instance'); const caseId = testCaseId.trim(); const revisionId = testRevisionId.trim(); const intent = `add-instance:${projectId}:${selectedSet.id}:${caseId}:${revisionId}`; try { const created = await executionApi.addInstance(projectId, selectedSet.id, { testCaseId: caseId, testRevisionId: revisionId }, { signal: controller.signal, idempotencyKey: operationKey(intent) }); if (current(round, controller)) { completeOperation(intent); setInstances((value) => [...value, created]); setTestCaseId(''); setTestRevisionId(''); setNotice('测试实例已加入') } } catch (error) { if (current(round, controller)) { setPending(null); setNotice(isAbort(error) ? '加入请求超时，请保留原意图后重试' : messageFor(error)) } } finally { if (current(round, controller)) setPending(null) } }
-  const loadAvailableCases = async () => { const { round, controller } = begin(); setNotice(''); try { const page = await testsApi.list(projectId, '', undefined, { signal: controller.signal }); if (current(round, controller)) { setAvailableCases(page.items); setAvailableRevisions([]); setTestCaseId(''); setTestRevisionId(''); setNotice(page.items.length ? '请选择要加入的已保存用例' : '当前项目没有可加入的手工用例') } } catch (error) { if (current(round, controller)) setNotice(isAbort(error) ? '用例列表请求超时，请稍后重试' : messageFor(error)) } }
-  const selectAvailableCase = async (id: string) => { setTestCaseId(id); setTestRevisionId(''); setAvailableRevisions([]); if (!id) return; const { round, controller } = begin(); try { const revisions = await testsApi.revisions(projectId, id, { signal: controller.signal }); if (current(round, controller)) setAvailableRevisions(revisions) } catch (error) { if (current(round, controller)) setNotice(isAbort(error) ? '修订列表请求超时，请稍后重试' : messageFor(error)) } }
+  const rerun = async () => { if (!selectedRun || !canWrite(access)) return; const { round, controller } = begin(); setPending('rerun'); const intent = `rerun:${projectId}:${selectedRun.id}`; try { const next = await executionApi.rerun(projectId, selectedRun.id, { signal: controller.signal, idempotencyKey: operationKey(intent) }); if (current(round, controller)) { completeOperation(intent); setAttempts((value) => [...value, next]); setSelectedAttempt(next); setActuals({}); setOutcomes({}); setNotice('已创建新的运行尝试') } } catch (error) { if (current(round, controller)) { setPending(null); setNotice(isAbort(error) ? '重新运行请求超时，请稍后重试' : messageFor(error)) } } finally { if (finish(round, controller)) setPending(null) } }
+  const createSet = async (event: FormEvent) => { event.preventDefault(); if (!setName.trim() || !canWrite(access)) return; const { round, controller } = begin(); setPending('create-set'); const name = setName.trim(); const intent = `create-set:${projectId}:${name}:${setDescription}`; try { const created = await executionApi.createSet(projectId, { name, description: setDescription }, { signal: controller.signal, idempotencyKey: operationKey(intent) }); if (current(round, controller)) { completeOperation(intent); setSets((value) => [...value, created]); setSetName(''); setSetDescription(''); setNotice('测试集已创建') } } catch (error) { if (current(round, controller)) { setPending(null); setNotice(isAbort(error) ? '创建请求超时，请保留原意图后重试' : messageFor(error)) } } finally { if (finish(round, controller)) setPending(null) } }
+  const addInstance = async (event: FormEvent) => { event.preventDefault(); if (!selectedSet || !testCaseId.trim() || !testRevisionId.trim() || !canWrite(access)) return; const { round, controller } = begin(); setPending('add-instance'); const caseId = testCaseId.trim(); const revisionId = testRevisionId.trim(); const intent = `add-instance:${projectId}:${selectedSet.id}:${caseId}:${revisionId}`; try { const created = await executionApi.addInstance(projectId, selectedSet.id, { testCaseId: caseId, testRevisionId: revisionId }, { signal: controller.signal, idempotencyKey: operationKey(intent) }); if (current(round, controller)) { completeOperation(intent); setInstances((value) => [...value, created]); setTestCaseId(''); setTestRevisionId(''); setNotice('测试实例已加入') } } catch (error) { if (current(round, controller)) { setPending(null); setNotice(isAbort(error) ? '加入请求超时，请保留原意图后重试' : messageFor(error)) } } finally { if (finish(round, controller)) setPending(null) } }
+  const loadAvailableCases = async () => { const { round, controller } = begin(); setNotice(''); try { const page = await testsApi.list(projectId, '', undefined, { signal: controller.signal }); if (current(round, controller)) { setAvailableCases(page.items); setAvailableRevisions([]); setTestCaseId(''); setTestRevisionId(''); setNotice(page.items.length ? '请选择要加入的已保存用例' : '当前项目没有可加入的手工用例') } } catch (error) { if (current(round, controller)) setNotice(isAbort(error) ? '用例列表请求超时，请稍后重试' : messageFor(error)) } finally { finish(round, controller) } }
+  const selectAvailableCase = async (id: string) => { setTestCaseId(id); setTestRevisionId(''); setAvailableRevisions([]); if (!id) return; const { round, controller } = begin(); try { const revisions = await testsApi.revisions(projectId, id, { signal: controller.signal }); if (current(round, controller)) setAvailableRevisions(revisions) } catch (error) { if (current(round, controller)) setNotice(isAbort(error) ? '修订列表请求超时，请稍后重试' : messageFor(error)) } finally { finish(round, controller) } }
 
   useEffect(() => { activeProjectRef.current = projectId; roundRef.current += 1; cancel(); reset(); if (!projectId || !can(access, 'test:read')) { setState('idle'); return } void loadSets(); return () => { roundRef.current += 1; cancel() } }, [projectId, accessKey, resetSignal])
 
@@ -120,7 +136,8 @@ export default function TestExecutionPanel({ projectId, access, resetSignal = 0 
           {attempts.length > 0 && <div className="execution-history" aria-label="尝试历史"><h4>尝试历史</h4>{attempts.map((item) => <button type="button" className="execution-attempt-row" key={item.id} onClick={() => { setSelectedAttempt(item); setActuals({}); setOutcomes({}); setNotice('') }} disabled={pending !== null}>尝试 {item.attemptNo} · {item.outcome ?? item.state}</button>)}</div>}
         </div>}
       </div>}
-      {selectedSet && canWrite(access) && <div className="execution-selector"><button className="secondary-button" type="button" onClick={() => void loadAvailableCases()}>加载已保存用例</button>{availableCases.length > 0 && <><label>用例<select aria-label="已保存用例" value={testCaseId} onChange={(event) => void selectAvailableCase(event.target.value)}><option value="">请选择用例</option>{availableCases.map((item) => <option key={item.id} value={item.id}>{item.displayNumber} · {item.title}</option>)}</select></label><label>修订<select aria-label="已保存修订" value={testRevisionId} onChange={(event) => setTestRevisionId(event.target.value)} disabled={!availableRevisions.length}><option value="">请选择修订</option>{availableRevisions.map((revision) => <option key={revision.id} value={revision.id}>修订 {revision.revisionNumber} · {revision.title}</option>)}</select></label></>}</div>}
+      {selectedSet && canWrite(access) && <div className="execution-selector"><button className="secondary-button" type="button" onClick={() => void loadAvailableCases()} disabled={pending !== null}>加载已保存用例</button>{availableCases.length > 0 && <><label>用例<select aria-label="已保存用例" value={testCaseId} onChange={(event) => void selectAvailableCase(event.target.value)} disabled={pending !== null}><option value="">请选择用例</option>{availableCases.map((item) => <option key={item.id} value={item.id}>{item.displayNumber} · {item.title}</option>)}</select></label><label>修订<select aria-label="已保存修订" value={testRevisionId} onChange={(event) => setTestRevisionId(event.target.value)} disabled={pending !== null || !availableRevisions.length}><option value="">请选择修订</option>{availableRevisions.map((revision) => <option key={revision.id} value={revision.id}>修订 {revision.revisionNumber} · {revision.title}</option>)}</select></label></>}</div>}
     </div>
   </section>
 }
+

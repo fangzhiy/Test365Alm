@@ -281,11 +281,18 @@ npm run build
 
 R06-M09-001-FIX01 在 V14 中以追加迁移补齐执行数据完整性：运行清单及步骤建立时受事务构建标记保护，保存后的 manifest/manifest step、终态 attempt 和运行步骤受数据库约束保护；步骤结果使用 `run_step.row_version`，暂停/继续/完成使用 `run_attempt.row_version`，接口同时要求一致的强 `If-Match` 和 JSON `expectedVersion`。事件、审计意图、Outbox 与业务写入同事务；幂等成功响应保存为冻结 JSON 快照，历史记录没有响应快照时返回 `IDEMPOTENCY_RESPONSE_UNAVAILABLE`，不会重新读取可变当前状态。
 
-FIX01 的前端测试还覆盖待处理写操作、显示值与提交值一致、乱序运行响应和未知结果重试的同一幂等键。V14 正常迁移后的专用迁移失败探针使用故意失败的 V15，不修改正式迁移文件。报告门禁命令为：
+FIX01 的前端测试还覆盖待处理写操作、显示值与提交值一致、乱序运行响应和未知结果重试的同一幂等键。FIX02 增加真实数据库并发步骤/完成/重跑、同键冻结重放、sealed runtime 完整性、审计和 Outbox 故障回滚，以及真实 OIDC HTTP 的一条 M09 运行路径；`ManualExecutionDatabaseIT` 报告门禁要求 17 个确切用例，不能用总测试数替代。V14 正常迁移后的专用迁移失败探针使用故意失败的 V15，不修改正式迁移文件。报告门禁命令为：
 
 ```powershell
 Set-Location apps/server
 python ..\..\tools\verify_r06_manual_execution_report.py target\failsafe-reports
+```
+
+真实 OIDC HTTP 门禁还要求 `OidcCallbackSecurityIT.realOidcManualExecutionHttpRunsAndRejectsViewerWrites`；浏览器门禁要求新增的三用户 M09 页面流程。隔离 CI 中复跑浏览器时保持单 worker、零重试：
+
+```powershell
+Set-Location apps/web
+npx playwright test e2e/manual-execution.spec.ts --workers=1 --retries=0
 ```
 
 本机没有可用 Docker/Testcontainers 时，`mvn -B -ntp -Pintegration verify` 只能记录为 BLOCKED/NOT_RUN；单元测试、前端测试和规划工具通过不能替代真实 PostgreSQL 的 K01/K08/K09/K10 证据。`V14` 的构建标记由应用受控写入；直接数据库管理员可设置事务 GUC 的更高等级安全封装仍是后续运行时加固事项，不把它表述为生产级发布审批机制。
@@ -305,3 +312,4 @@ python tools/publish_github.py --owner fangzhiy --repo Test365Alm --execute
 ## 实施纪律
 
 按主方案前6周启动，再按迭代目标拆细Issue；使用真实样本测试迁移、版本和兼容；完成定义以证据为准。不要把全量目标缩水为几个管理页面，也不要把旧 ALM 服务端共存算成独立替代。
+
