@@ -119,6 +119,20 @@ class ExecutionControllerTest {
         verify(service).summary(actor, project);
     }
 
+    @Test
+    void pagedRunsAndSummaryForwardAnOptionalTestSetFilter() {
+        when(actors.requirePrincipal(authentication)).thenReturn(actor);
+        UUID set = UUID.randomUUID();
+        ExecutionService.RunPage runs = new ExecutionService.RunPage(List.of(), null);
+        ExecutionService.RunSummary summary = new ExecutionService.RunSummary(1, 0, 0, 1, 0, 0);
+        when(service.pageRuns(actor, project, set, "cursor", 1)).thenReturn(runs);
+        when(service.summary(actor, project, set)).thenReturn(summary);
+        assertEquals(runs, controller.pageRuns(authentication, project, set, "cursor", 1));
+        assertEquals(summary, controller.summary(authentication, project, set));
+        verify(service).pageRuns(actor, project, set, "cursor", 1);
+        verify(service).summary(actor, project, set);
+    }
+
     private ExecutionService.RunDetail detail(UUID instance) {
         ExecutionService.RunView runView = new ExecutionService.RunView(run, project, instance, UUID.randomUUID(), "RUNNING", 1, null);
         return new ExecutionService.RunDetail(runView, null, null, List.of());
