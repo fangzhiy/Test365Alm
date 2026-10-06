@@ -25,6 +25,7 @@ REQUIRED_CASES = [
     "pauseReplayReturnsTheOriginalFrozenResponseAfterResume",
     "sourceRevisionChangesDoNotRewriteAnExistingRunManifest",
     "executionBuildingStillRejectsHistoricalManifestAndTerminalAttemptWrites",
+    "finishedAttemptRejectsLateStepEventsButFinishEventIsPersisted",
     "pagedExecutionReadsAndSummaryUseStableProjectScopedCounts",
 ]
 
