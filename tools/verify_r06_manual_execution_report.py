@@ -33,6 +33,7 @@ REQUIRED = {
     "pauseReplayReturnsTheOriginalFrozenResponseAfterResume",
     "sourceRevisionChangesDoNotRewriteAnExistingRunManifest",
     "executionBuildingStillRejectsHistoricalManifestAndTerminalAttemptWrites",
+    "finishedAttemptRejectsLateStepEventsButFinishEventIsPersisted",
     "pagedExecutionReadsAndSummaryUseStableProjectScopedCounts",
 }
 
