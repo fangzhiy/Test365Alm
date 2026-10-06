@@ -273,6 +273,12 @@ public class ExecutionService {
 
     @Transactional(readOnly = true)
     public RunPage pageRuns(UUID actor, UUID projectId, String cursor, Integer requestedLimit) {
+        return pageRuns(actor, projectId, null, cursor, requestedLimit);
+    }
+
+    /** Keyset page optionally narrowed to one test set before LIMIT is applied. */
+    @Transactional(readOnly = true)
+    public RunPage pageRuns(UUID actor, UUID projectId, UUID testSetId, String cursor, Integer requestedLimit) {
         ProjectService.ProjectView project = readProject(actor, projectId);
         setContext(project, actor);
         int limit = boundedLimit(requestedLimit);
@@ -281,14 +287,21 @@ public class ExecutionService {
                 SELECT id, project_id, test_instance_id, manifest_id, status, row_version, created_at
                 FROM execution_run WHERE tenant_id=? AND project_id=?
                 """;
+        List<Object> args = new ArrayList<>(List.of(project.tenantId(), projectId));
+        if (testSetId != null) {
+            sql += " AND EXISTS (SELECT 1 FROM test_instance i WHERE i.tenant_id=execution_run.tenant_id AND i.project_id=execution_run.project_id AND i.id=execution_run.test_instance_id AND i.test_set_id=?)";
+            args.add(testSetId);
+        }
         List<RunView> fetched;
         if (before == null) {
-            fetched = jdbc.query(sql + " ORDER BY created_at DESC, id DESC LIMIT ?", ExecutionService::mapRun,
-                    project.tenantId(), projectId, limit + 1);
+            args.add(limit + 1);
+            fetched = jdbc.query(sql + " ORDER BY created_at DESC, id DESC LIMIT ?", ExecutionService::mapRun, args.toArray());
         } else {
-            fetched = jdbc.query(sql + " AND (created_at, id) < (?, ?) ORDER BY created_at DESC, id DESC LIMIT ?",
-                    ExecutionService::mapRun, project.tenantId(), projectId,
-                    before.time(), before.id(), limit + 1);
+            sql += " AND (created_at, id) < (?, ?) ORDER BY created_at DESC, id DESC LIMIT ?";
+            args.add(before.time());
+            args.add(before.id());
+            args.add(limit + 1);
+            fetched = jdbc.query(sql, ExecutionService::mapRun, args.toArray());
         }
         boolean more = fetched.size() > limit;
         List<RunView> items = more ? fetched.subList(0, limit) : fetched;
@@ -306,14 +319,17 @@ public class ExecutionService {
                 """, ExecutionService::mapRun, project.tenantId(), projectId, runId);
         if (values.isEmpty()) throw ProjectAccessException.notFound();
         ManifestView manifest = manifest(project, projectId, values.get(0).manifestId());
+        // The run detail is intentionally a bounded preview.  The complete
+        // history is served by the cursor-based attempts page, and a selected
+        // attempt is loaded through the dedicated detail endpoint.
         List<AttemptSummary> summaries = jdbc.query("""
                 SELECT id, attempt_no, status, conclusion, row_version
-                FROM run_attempt WHERE tenant_id=? AND project_id=? AND run_id=? ORDER BY attempt_no
+                FROM run_attempt WHERE tenant_id=? AND project_id=? AND run_id=? ORDER BY attempt_no DESC
+                LIMIT 1
                 """, (rs, row) -> new AttemptSummary(rs.getObject("id", UUID.class), rs.getInt("attempt_no"),
                         rs.getString("status"), rs.getString("conclusion"), rs.getLong("row_version")),
                 project.tenantId(), projectId, runId);
-        AttemptView current = summaries.isEmpty() ? null : attempt(actor, projectId, runId,
-                summaries.get(summaries.size() - 1).id());
+        AttemptView current = summaries.isEmpty() ? null : attempt(actor, projectId, runId, summaries.get(0).id());
         return new RunDetail(values.get(0), manifest, current, summaries);
     }
 
@@ -324,7 +340,9 @@ public class ExecutionService {
 
     @Transactional(readOnly = true)
     public List<AttemptView> attempts(UUID actor, UUID projectId, UUID runId, Integer requestedLimit) {
-        return pageAttempts(actor, projectId, runId, null, requestedLimit).items();
+        return pageAttempts(actor, projectId, runId, null, requestedLimit).items().stream()
+                .map(summary -> attempt(actor, projectId, runId, summary.id()))
+                .toList();
     }
 
     @Transactional(readOnly = true)
@@ -337,40 +355,64 @@ public class ExecutionService {
                 SELECT id, run_id, attempt_no, status, conclusion, row_version, started_by, started_at, finished_at
                 FROM run_attempt WHERE tenant_id=? AND project_id=? AND run_id=?
                 """;
-        List<AttemptView> fetched;
+        List<AttemptSummary> fetched;
         if (after == null) {
-            fetched = jdbc.query(sql + " ORDER BY attempt_no LIMIT ?", (rs, row) -> mapAttempt(rs, steps(project, projectId, rs.getObject("id", UUID.class))),
+            fetched = jdbc.query(sql + " ORDER BY attempt_no LIMIT ?", (rs, row) -> new AttemptSummary(
+                    rs.getObject("id", UUID.class), rs.getInt("attempt_no"), rs.getString("status"),
+                    rs.getString("conclusion"), rs.getLong("row_version")),
                     project.tenantId(), projectId, runId, limit + 1);
         } else {
             fetched = jdbc.query(sql + " AND attempt_no > ? ORDER BY attempt_no LIMIT ?",
-                    (rs, row) -> mapAttempt(rs, steps(project, projectId, rs.getObject("id", UUID.class))),
+                    (rs, row) -> new AttemptSummary(
+                            rs.getObject("id", UUID.class), rs.getInt("attempt_no"), rs.getString("status"),
+                            rs.getString("conclusion"), rs.getLong("row_version")),
                     project.tenantId(), projectId, runId, after, limit + 1);
         }
         boolean more = fetched.size() > limit;
-        List<AttemptView> items = more ? fetched.subList(0, limit) : fetched;
+        List<AttemptSummary> items = more ? fetched.subList(0, limit) : fetched;
         String next = more ? cursorFor(items.get(items.size() - 1).attemptNo()) : null;
         return new AttemptPage(items, next);
     }
 
     @Transactional(readOnly = true)
     public RunSummary summary(UUID actor, UUID projectId) {
+        return summary(actor, projectId, null);
+    }
+
+    /** Summary over all authorized rows, optionally restricted to one set. */
+    @Transactional(readOnly = true)
+    public RunSummary summary(UUID actor, UUID projectId, UUID testSetId) {
         ProjectService.ProjectView project = readProject(actor, projectId);
         setContext(project, actor);
-        long total = countLong("SELECT COUNT(*) FROM test_instance WHERE tenant_id=? AND project_id=?", project.tenantId(), projectId);
-        long unrun = countLong("""
-                SELECT COUNT(*) FROM test_instance i WHERE i.tenant_id=? AND i.project_id=?
+        String instanceFilter = "i.tenant_id=? AND i.project_id=?";
+        List<Object> instanceArgs = new ArrayList<>(List.of(project.tenantId(), projectId));
+        if (testSetId != null) {
+            instanceFilter += " AND i.test_set_id=?";
+            instanceArgs.add(testSetId);
+        }
+        long total = countLong("SELECT COUNT(*) FROM test_instance i WHERE " + instanceFilter, instanceArgs.toArray());
+        String unrunSql = """
+                SELECT COUNT(*) FROM test_instance i WHERE %s
                   AND NOT EXISTS (SELECT 1 FROM execution_run r WHERE r.tenant_id=i.tenant_id AND r.project_id=i.project_id AND r.test_instance_id=i.id)
-                """, project.tenantId(), projectId);
-        long active = countLong("SELECT COUNT(*) FROM run_attempt WHERE tenant_id=? AND project_id=? AND status <> 'FINISHED'", project.tenantId(), projectId);
-        Map<String, Object> latest = jdbc.queryForMap("""
+                """.formatted(instanceFilter);
+        long unrun = countLong(unrunSql, instanceArgs.toArray());
+        String activeSql = "SELECT COUNT(*) FROM run_attempt a JOIN execution_run r ON r.tenant_id=a.tenant_id AND r.project_id=a.project_id AND r.id=a.run_id JOIN test_instance i ON i.tenant_id=r.tenant_id AND i.project_id=r.project_id AND i.id=r.test_instance_id WHERE a.tenant_id=? AND a.project_id=? AND a.status <> 'FINISHED'";
+        List<Object> activeArgs = new ArrayList<>(List.of(project.tenantId(), projectId));
+        if (testSetId != null) { activeSql += " AND i.test_set_id=?"; activeArgs.add(testSetId); }
+        long active = countLong(activeSql, activeArgs.toArray());
+        String latestSql = """
                 SELECT COUNT(*) FILTER (WHERE conclusion='PASS') AS pass,
                        COUNT(*) FILTER (WHERE conclusion='FAIL') AS fail,
                        COUNT(*) FILTER (WHERE conclusion='BLOCKED') AS blocked
                 FROM (SELECT DISTINCT ON (r.test_instance_id) a.conclusion
                       FROM execution_run r JOIN run_attempt a ON a.tenant_id=r.tenant_id AND a.project_id=r.project_id AND a.run_id=r.id
+                      JOIN test_instance i ON i.tenant_id=r.tenant_id AND i.project_id=r.project_id AND i.id=r.test_instance_id
                       WHERE r.tenant_id=? AND r.project_id=? AND a.status='FINISHED'
-                      ORDER BY r.test_instance_id, a.finished_at DESC NULLS LAST, a.attempt_no DESC) latest
-                """, project.tenantId(), projectId);
+                      ORDER BY r.test_instance_id, a.finished_at DESC NULLS LAST, a.attempt_no DESC, r.id DESC, a.id DESC) latest
+                """;
+        List<Object> latestArgs = new ArrayList<>(List.of(project.tenantId(), projectId));
+        if (testSetId != null) { latestSql = latestSql.replace("a.status='FINISHED'", "a.status='FINISHED' AND i.test_set_id=?"); latestArgs.add(testSetId); }
+        Map<String, Object> latest = jdbc.queryForMap(latestSql, latestArgs.toArray());
         return new RunSummary(total, unrun, active, ((Number) latest.get("pass")).longValue(),
                 ((Number) latest.get("fail")).longValue(), ((Number) latest.get("blocked")).longValue());
     }
@@ -841,7 +883,8 @@ public class ExecutionService {
             OffsetDateTime startedAt, OffsetDateTime finishedAt, List<RunStepView> steps) {
         AttemptSummary summary() { return new AttemptSummary(id, attemptNo, status, conclusion, rowVersion); }
     }
-    public record AttemptPage(List<AttemptView> items, String nextCursor) { }
+    /** Cursor page of attempt summaries; steps are only returned by getAttempt. */
+    public record AttemptPage(List<AttemptSummary> items, String nextCursor) { }
     public record RunSummary(long totalInstances, long unrunInstances, long activeAttempts,
             long latestCompletedPass, long latestCompletedFail, long latestCompletedBlocked) { }
     public record RunStepView(UUID stepKey, int ordinal, String action, String expected, String actualResult, String conclusion,
