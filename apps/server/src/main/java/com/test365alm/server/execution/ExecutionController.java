@@ -107,13 +107,31 @@ public class ExecutionController {
 
     @GetMapping("/runs/page")
     public ExecutionService.RunPage pageRuns(Authentication authentication, @PathVariable UUID projectId,
+            @RequestParam(name="testSetId", required=false) UUID testSetId,
             @RequestParam(name="cursor", required=false) String cursor,
             @RequestParam(name="limit", required=false) Integer limit) {
+        UUID actor = actors.requirePrincipal(authentication);
+        return testSetId == null
+                ? executions.pageRuns(actor, projectId, cursor, limit)
+                : executions.pageRuns(actor, projectId, testSetId, cursor, limit);
+    }
+
+    /** Source-compatible overload for callers that do not filter by set. */
+    public ExecutionService.RunPage pageRuns(Authentication authentication, UUID projectId, String cursor, Integer limit) {
         return executions.pageRuns(actors.requirePrincipal(authentication), projectId, cursor, limit);
     }
 
     @GetMapping("/runs/summary")
-    public ExecutionService.RunSummary summary(Authentication authentication, @PathVariable UUID projectId) {
+    public ExecutionService.RunSummary summary(Authentication authentication, @PathVariable UUID projectId,
+            @RequestParam(name="testSetId", required=false) UUID testSetId) {
+        UUID actor = actors.requirePrincipal(authentication);
+        return testSetId == null
+                ? executions.summary(actor, projectId)
+                : executions.summary(actor, projectId, testSetId);
+    }
+
+    /** Source-compatible overload for project-wide summaries. */
+    public ExecutionService.RunSummary summary(Authentication authentication, UUID projectId) {
         return executions.summary(actors.requirePrincipal(authentication), projectId);
     }
 
