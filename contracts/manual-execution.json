@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Test365Alm M09 manual execution slice",
   "description": "The first persisted test-set, manifest, run and attempt contract. It is intentionally limited to MANUAL execution.",
-  "version": "m09-manual-execution-2",
+  "version": "m09-manual-execution-3",
   "paths": {
     "testSets": "/api/v1/projects/{projectId}/test-sets",
     "testSetsPage": "/api/v1/projects/{projectId}/test-sets/page",
@@ -18,11 +18,21 @@
   "pagination": {
     "query": { "limit": "positive integer from 1 to 200", "cursor": "opaque continuation token" },
     "response": { "items": "bounded page of the resource", "nextCursor": "opaque token or null" },
-    "ordering": "stable resource-specific keyset order; callers must follow nextCursor rather than increasing an offset"
+    "ordering": "stable resource-specific keyset order; callers must follow nextCursor rather than increasing an offset",
+    "filters": {
+      "runsPage.testSetId": "optional UUID; the test-set join is applied before the database keyset limit",
+      "runSummary.testSetId": "optional UUID; when supplied all counts are restricted to instances in that test set"
+    }
+  },
+  "history": {
+    "attemptsPage": "items are bounded AttemptSummary records without steps; follow the attempt path for the selected attempt's full step detail",
+    "runDetail": "contains at most the current-attempt preview; complete attempt history is cursor-paged"
   },
   "summary": {
     "path": "/api/v1/projects/{projectId}/runs/summary",
-    "fields": ["totalInstances", "unrunInstances", "activeAttempts", "latestPass", "latestFail", "latestBlocked"],
+    "query": { "testSetId": "optional UUID; absent means the complete authorized project" },
+    "fields": ["totalInstances", "unrunInstances", "activeAttempts", "latestCompletedPass", "latestCompletedFail", "latestCompletedBlocked"],
+    "scopeRule": "The response is project scoped when testSetId is absent and test-set scoped when it is present; the UI must label the selected scope.",
     "latestRule": "latest finished attempt per test instance by finished_at, then attempt_no"
   },
   "executionStatus": ["RUNNING", "PAUSED", "FINISHED"],
