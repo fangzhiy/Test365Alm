@@ -281,7 +281,7 @@ npm run build
 
 R06-M09-001-FIX01 在 V14 中以追加迁移补齐执行数据完整性：运行清单及步骤建立时受事务构建标记保护，保存后的 manifest/manifest step、终态 attempt 和运行步骤受数据库约束保护；步骤结果使用 `run_step.row_version`，暂停/继续/完成使用 `run_attempt.row_version`，接口同时要求一致的强 `If-Match` 和 JSON `expectedVersion`。事件、审计意图、Outbox 与业务写入同事务；幂等成功响应保存为冻结 JSON 快照，历史记录没有响应快照时返回 `IDEMPOTENCY_RESPONSE_UNAVAILABLE`，不会重新读取可变当前状态。
 
-FIX01 的前端测试还覆盖待处理写操作、显示值与提交值一致、乱序运行响应和未知结果重试的同一幂等键。FIX02 增加真实数据库并发步骤/完成/重跑、同键冻结重放、sealed runtime 完整性、审计和 Outbox 故障回滚，以及真实 OIDC HTTP 的一条 M09 运行路径；FIX03 增加构建初始状态约束、可继续分页、运行汇总、页面重开和 VIEWER 直接写拒绝；`ManualExecutionDatabaseIT` 报告门禁要求至少包含历史记录中列出的确切用例，不能用总测试数替代。V15 为正式的构建状态约束迁移；正常迁移后的专用迁移失败探针使用故意失败的 V16，不修改正式迁移文件。报告门禁命令为：
+FIX01 的前端测试还覆盖待处理写操作、显示值与提交值一致、乱序运行响应和未知结果重试的同一幂等键。FIX02 增加真实数据库并发步骤/完成/重跑、同键冻结重放、sealed runtime 完整性、审计和 Outbox 故障回滚，以及真实 OIDC HTTP 的一条 M09 运行路径；FIX03 增加构建初始状态约束、可继续分页、运行汇总、页面重开和 VIEWER 直接写拒绝；`ManualExecutionDatabaseIT` 报告门禁要求至少包含历史记录中列出的确切用例，不能用总测试数替代。FIX04 将分页和汇总接入工作台：页面按 `nextCursor` 继续读取有限页，运行列表可用 `testSetId` 在数据库分页前过滤，汇总请求带同一范围并显示项目/测试集作用域；历史列表与选中尝试详情分开读取。V15 为正式的构建状态约束迁移；FIX04 新增正式 V16 终态事件保护，正常迁移后的专用迁移失败探针顺延使用故意失败的 V17，不修改正式迁移文件。报告门禁命令为：
 
 ```powershell
 Set-Location apps/server
@@ -295,7 +295,7 @@ Set-Location apps/web
 npx playwright test e2e/manual-execution.spec.ts --workers=1 --retries=0
 ```
 
-本机没有可用 Docker/Testcontainers 时，`mvn -B -ntp -Pintegration verify` 只能记录为 BLOCKED/NOT_RUN；单元测试、前端测试和规划工具通过不能替代真实 PostgreSQL 的 K01/K08/K09/K10 证据。`V14` 的构建标记由应用受控写入；直接数据库管理员可设置事务 GUC 的更高等级安全封装仍是后续运行时加固事项，不把它表述为生产级发布审批机制。
+本机没有可用 Docker/Testcontainers 时，`mvn -B -ntp -Pintegration verify` 只能记录为 BLOCKED/NOT_RUN；单元测试、前端测试和规划工具通过不能替代真实 PostgreSQL 的 K01/K08/K09/K10 证据。`V15` 的构建标记由应用受控写入，V16 仅补充终态事件保护；直接数据库管理员可设置事务 GUC 的更高等级安全封装仍是后续运行时加固事项，不把它表述为生产级发布审批机制。
 
 M09 尚未包含测试树、批量/参数/配置/环境、调度、Agent、附件、截图、缺陷关联、离线、导出或复杂报表。
 
