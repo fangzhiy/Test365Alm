@@ -515,30 +515,83 @@ class ManualExecutionDatabaseIT {
         UUID attempt = prepared.run().currentAttempt().id();
         UUID manifest = prepared.run().manifest().id();
         UUID step = prepared.run().currentAttempt().steps().get(0).stepKey();
+        // Verify the legal builder path's initial state before exercising
+        // terminal protections; do not infer it from a later SQLSTATE.
+        assertEquals(1, ownerCount("SELECT COUNT(*) FROM execution_manifest WHERE id=? AND build_complete=TRUE", manifest));
+        assertEquals(1, ownerCount("SELECT COUNT(*) FROM run_attempt WHERE id=? AND status='RUNNING' AND row_version=1 AND conclusion IS NULL AND finished_at IS NULL", attempt));
+        assertEquals(1, ownerCount("SELECT COUNT(*) FROM run_step WHERE attempt_id=? AND manifest_id=? AND row_version=1 AND actual_result='' AND conclusion='NOT_RUN' AND updated_by IS NULL", attempt, manifest));
         ExecutionService.AttemptView saved = executions.saveStep(prepared.fixture().member(), project, run, attempt, step,
                 "done", "PASS", 1, "m09-k05-building-step");
         executions.finish(prepared.fixture().member(), project, run, attempt, saved.rowVersion(), "m09-k05-building-finish");
 
+        // Use a fresh connection for every rejected statement.  A failed
+        // PostgreSQL transaction is not reusable for the next proof, and the
+        // builder flag must be asserted in the same transaction as the SQL.
         try (Connection runtime = runtimeConnection(prepared.fixture())) {
             setConfig(runtime, "test365alm.execution_building", "true");
+            assertRuntimeContext(runtime, prepared.fixture(), true, manifest, attempt);
             UUID illegalStep = UUID.randomUUID();
             SQLException sealed = assertThrows(SQLException.class, () -> execute(runtime,
                     "INSERT INTO execution_manifest_step (tenant_id, project_id, manifest_id, step_key, ordinal, action, expected) VALUES (?, ?, ?, ?, ?, ?, ?)",
                     tenant, project, manifest, illegalStep, 2, "illegal", "illegal"));
             assertEquals("55006", sealed.getSQLState());
-            runtime.rollback();
-
+            assertTrue(sealed.getMessage().contains("sealed"), sealed.getMessage());
+        }
+        try (Connection runtime = runtimeConnection(prepared.fixture())) {
+            setConfig(runtime, "test365alm.execution_building", "true");
+            assertRuntimeContext(runtime, prepared.fixture(), true, manifest, attempt);
             UUID illegalAttempt = UUID.randomUUID();
             SQLException terminalAttempt = assertThrows(SQLException.class, () -> execute(runtime,
                     "INSERT INTO run_attempt (tenant_id, project_id, id, run_id, manifest_id, attempt_no, status, conclusion, finished_at, started_by) VALUES (?, ?, ?, ?, ?, ?, 'FINISHED', 'PASS', CURRENT_TIMESTAMP, ?)",
                     tenant, project, illegalAttempt, run, manifest, 2, prepared.fixture().member()));
             assertEquals("55006", terminalAttempt.getSQLState());
-            runtime.rollback();
-
+            assertTrue(terminalAttempt.getMessage().contains("new attempts must start"), terminalAttempt.getMessage());
         }
         assertEquals(1, ownerCount("SELECT COUNT(*) FROM execution_manifest_step WHERE manifest_id=?", manifest));
         assertEquals(1, ownerCount("SELECT COUNT(*) FROM run_attempt WHERE run_id=?", run));
         assertEquals(1, ownerCount("SELECT COUNT(*) FROM run_step WHERE attempt_id=?", attempt));
+    }
+
+    /** K05: a terminal attempt cannot receive a late step-result event. */
+    @Test
+    void finishedAttemptRejectsLateStepEventsButFinishEventIsPersisted() throws Exception {
+        PreparedRun prepared = preparedRun("m09-k05-events", "m09-k05-events-source");
+        UUID actor = prepared.fixture().member();
+        UUID project = prepared.fixture().project();
+        UUID tenant = prepared.fixture().tenant();
+        UUID run = prepared.run().run().id();
+        UUID attempt = prepared.run().currentAttempt().id();
+        UUID step = prepared.run().currentAttempt().steps().get(0).stepKey();
+        ExecutionService.AttemptView saved = executions.saveStep(actor, project, run, attempt, step,
+                "done", "PASS", 1, "m09-k05-events-step");
+        ExecutionService.AttemptView finished = executions.finish(actor, project, run, attempt,
+                saved.rowVersion(), "m09-k05-events-finish");
+        assertEquals("FINISHED", finished.status());
+        assertEquals(1, ownerCount("SELECT COUNT(*) FROM execution_event WHERE run_id=? AND attempt_id=? AND event_type='RUN_FINISHED'", run, attempt));
+
+        int before = ownerCount("SELECT COUNT(*) FROM execution_event WHERE run_id=? AND attempt_id=?", run, attempt);
+        try (Connection runtime = runtimeConnection(prepared.fixture())) {
+            assertRuntimeContext(runtime, prepared.fixture(), false, prepared.run().manifest().id(), attempt);
+            SQLException late = assertThrows(SQLException.class, () -> execute(runtime,
+                    "INSERT INTO execution_event (tenant_id, project_id, run_id, attempt_id, event_type, actor_principal_id, payload) VALUES (?, ?, ?, ?, 'STEP_RECORDED', ?, '{}'::jsonb)",
+                    tenant, project, run, attempt, actor));
+            assertEquals("55006", late.getSQLState());
+            assertTrue(late.getMessage().contains("finished attempt"), late.getMessage());
+        }
+        assertEquals(before, ownerCount("SELECT COUNT(*) FROM execution_event WHERE run_id=? AND attempt_id=?", run, attempt));
+        assertEquals(1, ownerCount("SELECT COUNT(*) FROM execution_event WHERE run_id=? AND attempt_id=? AND event_type='RUN_FINISHED'", run, attempt));
+        assertEquals(1, ownerCount("SELECT COUNT(*) FROM run_attempt WHERE id=? AND status='FINISHED'", attempt));
+
+        int outboxBefore = ownerCount("SELECT COUNT(*) FROM execution_outbox_event WHERE run_id=? AND attempt_id=?", run, attempt);
+        try (Connection runtime = runtimeConnection(prepared.fixture())) {
+            assertRuntimeContext(runtime, prepared.fixture(), false, prepared.run().manifest().id(), attempt);
+            SQLException lateOutbox = assertThrows(SQLException.class, () -> execute(runtime,
+                    "INSERT INTO execution_outbox_event (tenant_id, project_id, run_id, attempt_id, event_type, payload) VALUES (?, ?, ?, ?, 'STEP_RECORDED', '{}'::jsonb)",
+                    tenant, project, run, attempt));
+            assertEquals("55006", lateOutbox.getSQLState());
+            assertTrue(lateOutbox.getMessage().contains("finished attempt"), lateOutbox.getMessage());
+        }
+        assertEquals(outboxBefore, ownerCount("SELECT COUNT(*) FROM execution_outbox_event WHERE run_id=? AND attempt_id=?", run, attempt));
     }
 
     /** K06: bounded keyset pages continue without loading the full history, and summary uses all rows. */
@@ -576,20 +629,48 @@ class ManualExecutionDatabaseIT {
                 run.currentAttempt().steps().get(0).stepKey(), "done", "PASS", 1, "m09-page-step-001");
         executions.finish(f.member(), f.project(), run.run().id(), run.currentAttempt().id(), saved.rowVersion(), "m09-page-finish-001");
         executions.rerun(f.member(), f.project(), run.run().id(), "m09-page-rerun-001");
+        // Create a newer project run in a different set.  The set-scoped page
+        // must apply its join before LIMIT, otherwise this newer row hides the
+        // older run belonging to firstSet.
+        ExecutionService.InstanceView otherInstance = executions.addInstance(f.member(), f.project(), secondSet.id(),
+                second.id(), second.currentRevision().id(), "m09-page-instance-003");
+        ExecutionService.RunDetail otherRun = executions.createRun(f.member(), f.project(), otherInstance.id(), "m09-page-run-002");
 
         ExecutionService.AttemptPage attempts = executions.pageAttempts(f.member(), f.project(), run.run().id(), null, 1);
         assertEquals(1, attempts.items().size());
         assertTrue(attempts.nextCursor() != null);
+        assertEquals(1, attempts.items().get(0).attemptNo());
+        assertTrue(executions.attempt(f.member(), f.project(), run.run().id(), attempts.items().get(0).id()).steps().size() > 0);
         assertEquals(1, executions.pageAttempts(f.member(), f.project(), run.run().id(), attempts.nextCursor(), 1).items().size());
+        ExecutionService.RunDetail boundedDetail = executions.run(f.member(), f.project(), run.run().id());
+        assertEquals(1, boundedDetail.attempts().size());
+        assertEquals(2, boundedDetail.attempts().get(0).attemptNo());
         ExecutionService.RunPage runs = executions.pageRuns(f.member(), f.project(), null, 1);
         assertEquals(1, runs.items().size());
-        assertEquals(run.run().id(), runs.items().get(0).id());
+        assertEquals(otherRun.run().id(), runs.items().get(0).id());
+
+        // Filtering is applied in SQL before the keyset LIMIT.  A page for
+        // the populated set must contain its run even when another project's
+        // (or another set's) recent rows would otherwise consume the page.
+        ExecutionService.RunPage setRuns = executions.pageRuns(f.member(), f.project(), firstSet.id(), null, 1);
+        assertEquals(1, setRuns.items().size());
+        assertEquals(run.run().id(), setRuns.items().get(0).id());
 
         ExecutionService.RunSummary summary = executions.summary(f.member(), f.project());
-        assertEquals(2, summary.totalInstances());
+        assertEquals(3, summary.totalInstances());
         assertEquals(1, summary.unrunInstances());
-        assertEquals(1, summary.activeAttempts());
+        assertEquals(2, summary.activeAttempts());
         assertEquals(1, summary.latestCompletedPass());
+        ExecutionService.RunSummary setSummary = executions.summary(f.member(), f.project(), firstSet.id());
+        assertEquals(2, setSummary.totalInstances());
+        assertEquals(0, setSummary.unrunInstances());
+        assertEquals(1, setSummary.activeAttempts());
+        assertEquals(1, setSummary.latestCompletedPass());
+        ExecutionService.RunSummary secondSetSummary = executions.summary(f.member(), f.project(), secondSet.id());
+        assertEquals(1, secondSetSummary.totalInstances());
+        assertEquals(0, secondSetSummary.unrunInstances());
+        assertEquals(1, secondSetSummary.activeAttempts());
+        assertEquals(0, secondSetSummary.latestCompletedPass());
     }
 
     private PreparedRun preparedSource(String setKey, String sourceKey) throws Exception {
@@ -657,6 +738,37 @@ class ManualExecutionDatabaseIT {
             statement.setString(1, key);
             statement.setString(2, value);
             statement.executeQuery().close();
+        }
+    }
+
+    private static void assertRuntimeContext(Connection connection, Fixture fixture, boolean building,
+            UUID manifest, UUID attempt) throws Exception {
+        try (var statement = connection.prepareStatement("""
+                SELECT current_user,
+                       current_setting('test365alm.tenant_id', true),
+                       current_setting('test365alm.project_id', true),
+                       current_setting('test365alm.principal_id', true),
+                       current_setting('test365alm.execution_building', true)
+                """)) {
+            try (var rows = statement.executeQuery()) {
+                assertTrue(rows.next(), "runtime context query must return one row");
+                assertEquals(RUNTIME_USER, rows.getString(1));
+                assertEquals(fixture.tenant().toString(), rows.getString(2));
+                assertEquals(fixture.project().toString(), rows.getString(3));
+                assertEquals(fixture.member().toString(), rows.getString(4));
+                assertEquals(Boolean.toString(building), rows.getString(5));
+            }
+        }
+        try (var statement = connection.prepareStatement(
+                "SELECT m.build_complete, a.status, a.row_version FROM execution_manifest m JOIN run_attempt a ON a.manifest_id=m.id WHERE m.id=? AND a.id=?")) {
+            statement.setObject(1, manifest);
+            statement.setObject(2, attempt);
+            try (var rows = statement.executeQuery()) {
+                assertTrue(rows.next(), "target manifest/attempt must be visible to runtime");
+                assertTrue(rows.getBoolean(1), "target manifest must already be sealed");
+                assertEquals("FINISHED", rows.getString(2));
+                assertTrue(rows.getLong(3) > 1, "finished attempt must have advanced its version");
+            }
         }
     }
 
