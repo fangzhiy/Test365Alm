@@ -13,6 +13,15 @@ export type TestInstance = { id: string; projectId?: string; setId: string; test
 export type RunStep = { stepKey: string; ordinal: number; action: string; expected: string; actual: string; outcome: StepOutcome; rowVersion?: number }
 export type RunAttempt = { id: string; attemptNo: number; state: ExecutionState; outcome: AttemptOutcome; rowVersion?: number; steps: RunStep[]; updatedAt?: string }
 export type Run = { id: string; projectId: string; instanceId: string; manifestId: string; attemptId: string; state: ExecutionState; outcome: AttemptOutcome; rowVersion: number; attempt?: RunAttempt; manifest?: { title: string; description: string; preconditions: string; steps: RunStep[]; formatVersion?: string; rulesVersion?: string } }
+export type Page<T> = { items: T[]; nextCursor: string | null }
+export type RunSummary = {
+  totalInstances: number
+  unrunInstances: number
+  activeAttempts: number
+  latestCompletedPass: number
+  latestCompletedFail: number
+  latestCompletedBlocked: number
+}
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 const isString = (value: unknown): value is string => typeof value === 'string'
@@ -76,7 +85,27 @@ const parseRun = (value: unknown): Run | null => {
 }
 const parse = <T>(body: unknown, parser: (value: unknown) => T | null, message: string): T => { const value = parser(body); if (!value) throw invalid(message); return value }
 const parseList = <T>(body: unknown, parser: (value: unknown) => T | null, message: string): T[] => { const result = listBody(body).map(parser); if (result.some((value) => value === null)) throw invalid(message); return result as T[] }
+const parsePage = <T>(body: unknown, parser: (value: unknown) => T | null, message: string): Page<T> => {
+  if (!isRecord(body) || !Array.isArray(body.items) || (body.nextCursor !== null && body.nextCursor !== undefined && !isString(body.nextCursor))) throw invalid(message)
+  const items = body.items.map(parser)
+  if (items.some((value) => value === null)) throw invalid(message)
+  return { items: items as T[], nextCursor: body.nextCursor === undefined ? null : body.nextCursor as string | null }
+}
+const parseCount = (value: unknown): number | null => typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null
+const parseSummary = (body: unknown): RunSummary => {
+  if (!isRecord(body)) throw invalid('服务返回了无效运行汇总')
+  const totalInstances = parseCount(body.totalInstances); const unrunInstances = parseCount(body.unrunInstances); const activeAttempts = parseCount(body.activeAttempts)
+  const latestCompletedPass = parseCount(body.latestCompletedPass ?? body.latestPass); const latestCompletedFail = parseCount(body.latestCompletedFail ?? body.latestFail); const latestCompletedBlocked = parseCount(body.latestCompletedBlocked ?? body.latestBlocked)
+  if (totalInstances === null || unrunInstances === null || activeAttempts === null || latestCompletedPass === null || latestCompletedFail === null || latestCompletedBlocked === null) throw invalid('服务返回了无效运行汇总')
+  return { totalInstances, unrunInstances, activeAttempts, latestCompletedPass, latestCompletedFail, latestCompletedBlocked }
+}
 const path = (projectId: string, suffix: string) => `/api/v1/projects/${encodeURIComponent(projectId)}${suffix}`
+const query = (params: Record<string, string | number | undefined>) => {
+  const value = new URLSearchParams()
+  Object.entries(params).forEach(([key, entry]) => { if (entry !== undefined && entry !== '') value.set(key, String(entry)) })
+  const encoded = value.toString()
+  return encoded ? `?${encoded}` : ''
+}
 const write = (input: RequestInfo | URL, body: unknown, options?: AccessRequestOptions) => requestJson(input, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }, { ...options, idempotencyKey: options?.idempotencyKey ?? newIdempotencyKey() })
 const requireVersion = (version: number) => { if (!isPositiveInteger(version)) throw invalid('尝试版本是必填的正整数'); return version }
 const versionedWrite = (input: RequestInfo | URL, version: number, options?: AccessRequestOptions) => {
@@ -86,14 +115,36 @@ const versionedWrite = (input: RequestInfo | URL, version: number, options?: Acc
 
 export const executionApi = {
   async listSets(projectId: string, options?: AccessRequestOptions) { return parseList(await requestJson(path(projectId, '/test-sets'), undefined, options), parseSet, '服务返回了无效测试集列表') },
+  async pageSets(projectId: string, cursor?: string | null, limit?: number, options?: AccessRequestOptions) {
+    const body = await requestJson(path(projectId, `/test-sets/page${query({ cursor: cursor ?? undefined, limit })}`), undefined, options)
+    return parsePage(body, parseSet, '服务返回了无效测试集分页')
+  },
   async createSet(projectId: string, input: { name: string; description: string }, options?: AccessRequestOptions) { return parse(await write(path(projectId, '/test-sets'), input, options), parseSet, '服务返回了无效测试集') },
   async getSet(projectId: string, setId: string, options?: AccessRequestOptions) { const body = await requestJson(path(projectId, `/test-sets/${encodeURIComponent(setId)}`), undefined, options); return parse(isRecord(body) && isRecord(body.testSet) ? body.testSet : body, parseSet, '服务返回了无效测试集') },
   async listInstances(projectId: string, setId: string, options?: AccessRequestOptions) { return parseList(await requestJson(path(projectId, `/test-sets/${encodeURIComponent(setId)}/instances`), undefined, options), parseInstance, '服务返回了无效测试实例列表') },
+  async pageInstances(projectId: string, setId: string, cursor?: string | null, limit?: number, options?: AccessRequestOptions) {
+    const body = await requestJson(path(projectId, `/test-sets/${encodeURIComponent(setId)}/instances/page${query({ cursor: cursor ?? undefined, limit })}`), undefined, options)
+    return parsePage(body, parseInstance, '服务返回了无效测试实例分页')
+  },
   async addInstance(projectId: string, setId: string, input: { testCaseId: string; testRevisionId: string }, options?: AccessRequestOptions) { return parse(await write(path(projectId, `/test-sets/${encodeURIComponent(setId)}/instances`), input, options), parseInstance, '服务返回了无效测试实例') },
   async createRun(projectId: string, input: { instanceId: string; mode: 'MANUAL'; reason?: string }, options?: AccessRequestOptions) { return parse(await write(path(projectId, '/runs'), { testInstanceId: input.instanceId, instanceId: input.instanceId, mode: input.mode, ...(input.reason ? { reason: input.reason } : {}) }, options), parseRun, '服务返回了无效运行') },
   async listRuns(projectId: string, options?: AccessRequestOptions) { return parseList(await requestJson(path(projectId, '/runs'), undefined, options), parseRun, '服务返回了无效运行列表') },
+  async pageRuns(projectId: string, filters?: { setId?: string } | string, cursor?: string | null, limit?: number, options?: AccessRequestOptions) {
+    const setId = typeof filters === 'string' ? filters : filters?.setId
+    const body = await requestJson(path(projectId, `/runs/page${query({ testSetId: setId, cursor: cursor ?? undefined, limit })}`), undefined, options)
+    return parsePage(body, parseRun, '服务返回了无效运行分页')
+  },
+  async summary(projectId: string, filters?: { setId?: string } | string, options?: AccessRequestOptions) {
+    const setId = typeof filters === 'string' ? filters : filters?.setId
+    const body = await requestJson(path(projectId, `/runs/summary${query({ testSetId: setId })}`), undefined, options)
+    return parseSummary(body)
+  },
   async getRun(projectId: string, runId: string, options?: AccessRequestOptions) { return parse(await requestJson(path(projectId, `/runs/${encodeURIComponent(runId)}`), undefined, options), parseRun, '服务返回了无效运行') },
   async listAttempts(projectId: string, runId: string, options?: AccessRequestOptions) { return parseList(await requestJson(path(projectId, `/runs/${encodeURIComponent(runId)}/attempts`), undefined, options), parseAttempt, '服务返回了无效尝试列表') },
+  async pageAttempts(projectId: string, runId: string, cursor?: string | null, limit?: number, options?: AccessRequestOptions) {
+    const body = await requestJson(path(projectId, `/runs/${encodeURIComponent(runId)}/attempts/page${query({ cursor: cursor ?? undefined, limit })}`), undefined, options)
+    return parsePage(body, parseAttempt, '服务返回了无效尝试分页')
+  },
   async getAttempt(projectId: string, runId: string, attemptId: string, options?: AccessRequestOptions) { return parse(await requestJson(path(projectId, `/runs/${encodeURIComponent(runId)}/attempts/${encodeURIComponent(attemptId)}`), undefined, options), parseAttempt, '服务返回了无效尝试') },
   async saveStep(projectId: string, runId: string, attemptId: string, stepKey: string, input: { outcome: StepOutcome; actual: string; rowVersion: number }, options?: AccessRequestOptions) {
     if (!isPositiveInteger(input.rowVersion)) throw invalid('步骤版本是必填的正整数')
