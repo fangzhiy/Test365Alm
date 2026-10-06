@@ -1,5 +1,18 @@
 # Test365Alm 开发状态
 
+## R06-M09-001-FIX04 当前状态（远端代码已发布，CI 待完成）
+
+- 本轮继续 `feat/r06-m09-001` / [PR #6](https://github.com/fangzhiy/Test365Alm/pull/6)，base `feat/r05-m08-001`。审核基准为代码 `457b962a3127fe4b89cbf190eea98982af65ff37`、交付 `413c1648d7950adfb10a177132d0e146f560e310`、PR checkout `6b9c93664e12a7effb8a06170c40920a86f9fc5a`；本地起点为 `6534e54`，本地代码验证提交为 `df21c6b`，远端逐文件发布后的代码头为 `3395f913f8686d6f7f3043ef6cecfbd3c00f7f69`。本地 Git SHA 与 Git Data API 产生的远端提交链不同，按内容和父链对应记录，不能把二者写成同一提交。
+- 本轮原始输入全文实际归档于 [`R06-M09-001-FIX04.md`](progress/inputs/R06-M09-001-FIX04.md)，执行记录见 [`R06-M09-001-FIX04.md`](progress/runs/R06-M09-001-FIX04.md)。不回退、强推、合并、部署或修改分支保护；PR #6 仍未合并。
+- 后端分页/汇总已在数据库层按项目和可选测试集先过滤再 keyset LIMIT；运行详情只返回当前尝试的有界摘要预览，尝试历史页返回不含步骤的 `AttemptSummary`，具体步骤通过 `/attempts/{attemptId}` 读取。前端工作台已接通测试集、实例、运行、尝试分页游标和测试集汇总，历史选择使用准确详情接口。
+- 前端草稿绑定 project/run/attempt/step 基础版本与基础内容；412 保留草稿和冲突状态，只有明确采用最新版本后才建立新基础版本。刷新历史尝试直接按原 attempt id 读取，GET-only 恢复不重发未知写入。
+- V16 终态事件保护和 FIX03 的 V15 构建约束保留；构建/终态数据库测试改为独立事务并在每个负向语句前检查 runtime 上下文、构建标记和目标状态。汇总最新完成排序增加 run/attempt ID 稳定 tie-breaker。
+- 本机最新验证：系统 Maven 单元 38/38、前端 Vitest 18 files/268 tests、TypeScript、Vite build、lint 均通过；Python 工具和规划校验沿用本轮修改前实际 64/64 与通过结果。真实 Testcontainers/Failsafe 仍受 Windows Docker/JNA 限制，未写成本机业务通过。远端 Push run [`37397465387`](https://github.com/fangzhiy/Test365Alm/actions/runs/37397465387) 已排队，PR merge CI 尚待产生。
+
+最后更新：2026-10-06
+当前轮次：`R06-M09-001-FIX04`
+状态：`IMPLEMENTED / LOCAL_DOCKER_BLOCKED / PUSH_CI_QUEUED / PR_CI_PENDING`
+
 ## R06-M09-001-FIX03 当前状态（代码与最终 Push/PR CI 已完成）
 
 - 本轮继续 `feat/r06-m09-001` / [PR #6](https://github.com/fangzhiy/Test365Alm/pull/6)，base `feat/r05-m08-001`。审核基线为代码 `9845d7a0b31b481f6eac8947e295f6ed6cce1e0e`、交付 `fe366798275410bd5ba99d04a9057bb0c6990326`；本轮远端代码提交为 `457b962a3127fe4b89cbf190eea98982af65ff37`，父提交为 `86c52fd005fcc327571fa78780f765437606c25a`。输入全文见 [`R06-M09-001-FIX03.md`](progress/inputs/R06-M09-001-FIX03.md)，执行记录见 [`R06-M09-001-FIX03.md`](progress/runs/R06-M09-001-FIX03.md)。
