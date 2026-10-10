@@ -6,6 +6,14 @@
 
 当前开发状态以 [development-status.md](docs/development-status.md) 和最新轮次记录为准；R03/R02 历史记录保留供追溯。
 
+## R06 M09 手工执行切片
+
+已登录并选择项目的普通 MEMBER 可创建测试集、选择已保存手工用例修订加入实例、启动运行、保存步骤、暂停/继续、完成及重跑。重跑创建新尝试；历史步骤读取固定 manifest，不跟随当前用例变化。VIEWER 可读不能写。列表按游标继续加载；测试集汇总的分母是该范围全部实例，未运行指从未创建 run 的实例；活动尝试与每个实例最新已完成结果分开展示。
+
+演示：创建含两步的用例 → 创建测试集并加入该修订 → 启动运行并逐步保存 → 暂停/继续 → 完成 FAIL → 重跑 PASS → 重载页面重新选择范围 → 读取第一次 FAIL 历史。412 保留草稿和基础版本，必须明确采用最新状态后才能继续编辑；未知写入复用原键，读取恢复不重发写入。尝试历史页只有摘要，步骤来自当前运行详情或所选尝试的准确详情接口。
+
+验证：`cd apps/server` 后运行 `mvn -B -ntp -Pintegration verify`（Linux CI 使用 `./mvnw`）；根目录运行 `python tools/verify_r06_manual_execution_report.py apps/server/target/failsafe-reports`。前端命令沿用下文，CI 的十个浏览器用例固定单 worker、零重试，并保存脱敏 M09 步骤时间线。完整 M09 的附件、缺陷联动、更正审批、导出等仍未实现，不能以本切片通过替代模块全量验收。
+
 ## R05-M08-001 手工测试用例第一切片
 
 当前切片在已选项目中提供 MANUAL 测试用例列表、创建、详情、纯文本标题/说明/前置条件、步骤新增/移除/调序、不可变修订历史和项目角色边界。`PROJECT_ADMIN`/`PROJECT_MEMBER` 可读写，`PROJECT_VIEWER` 只读；服务端生成稳定步骤键和项目内显示编号，追加修订使用强 ETag 与持久化幂等键。V11 在完整步骤快照写入后封存修订；V10 既有数据升级时以创建时间作为封存证据，运行时继续使用受限 PostgreSQL 账户，历史修订/步骤不允许更新、删除或清空，也不能向已保存修订追加步骤。
@@ -251,6 +259,53 @@ python -m unittest discover -s tools/tests -v
 ```
 
 这些只验证文档包结构、预算算术和辅助工具，不会启动 ALM 服务，也不代表业务测试通过。
+
+## R06-M09-001 手工执行切片
+
+在选择项目并登录后，工作台的“测试集与手工运行”区域从真实后端读取测试集、已保存 MANUAL 用例修订和运行记录。成员可以创建根测试集、加入某个已保存修订、启动运行、记录每步 `PASS`/`FAIL`/`BLOCKED`、暂停/继续/完成并重新运行；查看者只读。运行会固定不可变清单，重跑会产生新的尝试，不会修改原测试用例修订。
+
+后端单元/边界测试：
+
+```powershell
+Set-Location apps/server
+mvn -B -ntp test
+```
+
+真实 PostgreSQL 集成测试使用 Testcontainers 的一次性数据库和受限 runtime（不读取日常 `.env`）：
+
+```powershell
+mvn -B -ntp -Pintegration verify '-Dbuild.commit=local-r06-m09-001'
+```
+
+本机无 Docker 时该命令会在 Testcontainers 启动阶段失败；这属于未运行的真实数据库证据，不能用单元测试替代。CI 的 `server` Job 在 Ubuntu 上执行同一集成 profile。前端回归仍使用：
+
+```powershell
+Set-Location apps/web
+npm ci
+npm run lint
+npm run test:run -- --reporter=dot
+npm run build
+```
+
+R06-M09-001-FIX01 在 V14 中以追加迁移补齐执行数据完整性：运行清单及步骤建立时受事务构建标记保护，保存后的 manifest/manifest step、终态 attempt 和运行步骤受数据库约束保护；步骤结果使用 `run_step.row_version`，暂停/继续/完成使用 `run_attempt.row_version`，接口同时要求一致的强 `If-Match` 和 JSON `expectedVersion`。事件、审计意图、Outbox 与业务写入同事务；幂等成功响应保存为冻结 JSON 快照，历史记录没有响应快照时返回 `IDEMPOTENCY_RESPONSE_UNAVAILABLE`，不会重新读取可变当前状态。
+
+FIX01 的前端测试还覆盖待处理写操作、显示值与提交值一致、乱序运行响应和未知结果重试的同一幂等键。FIX02 增加真实数据库并发步骤/完成/重跑、同键冻结重放、sealed runtime 完整性、审计和 Outbox 故障回滚，以及真实 OIDC HTTP 的一条 M09 运行路径；FIX03 增加构建初始状态约束、可继续分页、运行汇总、页面重开和 VIEWER 直接写拒绝；`ManualExecutionDatabaseIT` 报告门禁要求至少包含历史记录中列出的确切用例，不能用总测试数替代。FIX04 将分页和汇总接入工作台：页面按 `nextCursor` 继续读取有限页，运行列表可用 `testSetId` 在数据库分页前过滤，汇总请求带同一范围并显示项目/测试集作用域；历史列表与选中尝试详情分开读取。V15 为正式的构建状态约束迁移；FIX04 新增正式 V16 终态事件保护，正常迁移后的专用迁移失败探针顺延使用故意失败的 V17，不修改正式迁移文件。报告门禁命令为：
+
+```powershell
+Set-Location apps/server
+python ..\..\tools\verify_r06_manual_execution_report.py target\failsafe-reports
+```
+
+真实 OIDC HTTP 门禁还要求 `OidcCallbackSecurityIT.realOidcManualExecutionHttpRunsAndRejectsViewerWrites`；浏览器门禁要求新增的三用户 M09 页面流程。隔离 CI 中复跑浏览器时保持单 worker、零重试：
+
+```powershell
+Set-Location apps/web
+npx playwright test e2e/manual-execution.spec.ts --workers=1 --retries=0
+```
+
+本机没有可用 Docker/Testcontainers 时，`mvn -B -ntp -Pintegration verify` 只能记录为 BLOCKED/NOT_RUN；单元测试、前端测试和规划工具通过不能替代真实 PostgreSQL 的 K01/K08/K09/K10 证据。`V15` 的构建标记由应用受控写入，V16 仅补充终态事件保护；直接数据库管理员可设置事务 GUC 的更高等级安全封装仍是后续运行时加固事项，不把它表述为生产级发布审批机制。
+
+M09 尚未包含测试树、批量/参数/配置/环境、调度、Agent、附件、截图、缺陷关联、离线、导出或复杂报表。
 
 ## GitHub 发布
 

@@ -26,10 +26,10 @@ class CiWorkflowTests(unittest.TestCase):
         self.assertIn("github_sha=", workflow)
         self.assertIn("checkout_sha=", workflow)
 
-    def test_migration_job_records_formal_v11_before_intentional_v12_failure(self):
+    def test_migration_job_records_formal_v16_before_intentional_v17_failure(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("Verify formal V11 then intentional V12 migration startup failure", workflow)
-        self.assertIn("Formal V11 migration and intentional V12 failure were detected", workflow)
+        self.assertIn("Verify formal V16 then intentional V17 migration startup failure", workflow)
+        self.assertIn("Formal V16 migration and intentional V17 failure were detected", workflow)
         self.assertIn("verify_r02_migration_failure.py", workflow)
 
     def test_server_job_requires_project_access_rls_evidence(self):
@@ -53,6 +53,12 @@ class CiWorkflowTests(unittest.TestCase):
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("verify_r05_test_case_report.py", workflow)
         self.assertIn("apps/server/test-case-report.txt", workflow)
+
+    def test_server_job_requires_manual_execution_integration_evidence(self):
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("Require real PostgreSQL manual execution integration report", workflow)
+        self.assertIn("verify_r06_manual_execution_report.py", workflow)
+        self.assertIn("apps/server/manual-execution-report.txt", workflow)
 
     def test_browser_job_requires_dual_user_project_access_evidence(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")

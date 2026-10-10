@@ -175,6 +175,11 @@ jobs:
         run: |
           set -o pipefail
           python ../../tools/verify_r05_test_case_report.py target/failsafe-reports 2>&1 | tee test-case-report.txt
+      - name: Require real PostgreSQL manual execution integration report
+        if: always()
+        run: |
+          set -o pipefail
+          python ../../tools/verify_r06_manual_execution_report.py target/failsafe-reports 2>&1 | tee manual-execution-report.txt
       - name: Upload backend evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -190,6 +195,7 @@ jobs:
             apps/server/project-access-report.txt
             apps/server/requirement-report.txt
             apps/server/test-case-report.txt
+            apps/server/manual-execution-report.txt
             apps/server/target/surefire-reports/**
             apps/server/target/failsafe-reports/**
           if-no-files-found: error
@@ -289,7 +295,7 @@ jobs:
         run: |
           set -o pipefail
           ./mvnw -B -ntp package -DskipTests "-Dbuild.commit=${GITHUB_SHA}" 2>&1 | tee migration-build.txt
-      - name: Verify formal V11 then intentional V12 migration startup failure
+      - name: Verify formal V16 then intentional V17 migration startup failure
         run: |
           set +e
           python -u tools/verify_r02_migration_failure.py --env-file .env.r02-test --compose-project "test365alm-r02-migration-${GITHUB_RUN_ID}" --server-port 18082 --wait-seconds 90 2>&1 | tee migration-failure.txt
@@ -302,7 +308,7 @@ jobs:
             summary=$(tr '\n' ' ' < migration-failure.txt | cut -c1-4000)
             echo "::error title=migration-failure::${summary:-no output captured}"
           else
-            echo "Formal V11 migration and intentional V12 failure were detected for ${GITHUB_SHA}"
+            echo "Formal V16 migration and intentional V17 failure were detected for ${GITHUB_SHA}"
           fi
           exit "$status"
       - name: Upload migration evidence
@@ -484,6 +490,7 @@ jobs:
             local-evidence/r03/project-requirement-context-isolated.json
             local-evidence/r03/project-requirement-context-full.json
             local-evidence/r03/manual-test-case-context-full.json
+            local-evidence/r03/manual-execution-context-full.json
             local-evidence/r03/playwright-results.xml
             local-evidence/r03/project-browser-report.txt
             local-evidence/r03/import-permissions.txt

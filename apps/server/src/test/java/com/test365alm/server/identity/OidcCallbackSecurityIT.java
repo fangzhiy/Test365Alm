@@ -46,6 +46,8 @@ import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -76,6 +78,7 @@ class OidcCallbackSecurityIT {
     private static final OffsetDateTime BASELINE_TIMESTAMP = OffsetDateTime.ofInstant(
             Instant.parse("2026-01-01T00:00:00Z"), ZoneOffset.UTC);
     private static final LocalOidcProvider IDP = LocalOidcProvider.start();
+    private static final JsonMapper JSON = JsonMapper.builder().findAndAddModules().build();
 
     @Container
     static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>(
@@ -225,6 +228,136 @@ class OidcCallbackSecurityIT {
         HttpResponse<String> project = get(flow.client, "/api/v1/projects/" + projectId);
         assertEquals(200, project.statusCode());
         assertTrue(project.body().contains("HTTP Project"));
+    }
+
+    /**
+     * M09 K06/K09: the real OIDC session and restricted application pool must
+     * drive the complete execution HTTP slice.  Owner SQL is limited to
+     * disposable tenant membership fixtures and post-command assertions.
+     */
+    @Test
+    void realOidcManualExecutionHttpRunsAndRejectsViewerWrites() throws Exception {
+        String adminSubject = uniqueSubject("m09-http-admin");
+        String memberSubject = uniqueSubject("m09-http-member");
+        String viewerSubject = uniqueSubject("m09-http-viewer");
+        Flow admin = runAuthorization(Variant.VALID, adminSubject);
+        Flow member = runAuthorization(Variant.VALID, memberSubject);
+        Flow viewer = runAuthorization(Variant.VALID, viewerSubject);
+        UUID adminId = principalId(adminSubject);
+        UUID memberId = principalId(memberSubject);
+        UUID viewerId = principalId(viewerSubject);
+        UUID tenant = UUID.randomUUID();
+        UUID domain = UUID.randomUUID();
+        try (var connection = ownerConnection()) {
+            insertTenantFixture(connection, tenant, "m09-http-tenant-" + tenant, "M09 HTTP tenant");
+            insertDomainFixture(connection, domain, tenant, "M09 HTTP domain");
+            insertTenantMemberFixture(connection, tenant, adminId, "TENANT_ADMIN");
+            insertTenantMemberFixture(connection, tenant, memberId, "MEMBER");
+            insertTenantMemberFixture(connection, tenant, viewerId, "MEMBER");
+        }
+
+        String adminCsrfBody = get(admin.client, "/api/v1/csrf").body();
+        String adminCsrfHeader = jsonField(adminCsrfBody, "headerName");
+        String adminCsrf = jsonField(adminCsrfBody, "token");
+        HttpResponse<String> projectResponse = postJson(admin.client, "/api/v1/projects",
+                adminCsrfHeader, adminCsrf, "{\"tenantId\":\"" + tenant + "\",\"domainId\":\""
+                        + domain + "\",\"code\":\"m09-http-project-" + tenant
+                        + "\",\"name\":\"M09 HTTP project\"}");
+        assertEquals(201, projectResponse.statusCode(), projectResponse.body());
+        UUID project = UUID.fromString(jsonField(projectResponse.body(), "id"));
+        try (var connection = ownerConnection()) {
+            insertProjectMemberFixture(connection, tenant, project, memberId, "PROJECT_MEMBER");
+            insertProjectMemberFixture(connection, tenant, project, viewerId, "PROJECT_VIEWER");
+        }
+
+        String memberCsrfBody = get(member.client, "/api/v1/csrf").body();
+        String memberCsrfHeader = jsonField(memberCsrfBody, "headerName");
+        String memberCsrf = jsonField(memberCsrfBody, "token");
+        String testPath = "/api/v1/projects/" + project + "/tests";
+        HttpResponse<String> createdCase = postExecution(member.client, testPath, memberCsrfHeader, memberCsrf,
+                "m09-http-case-" + UUID.randomUUID(), "{\"testType\":\"MANUAL\",\"title\":\"M09 HTTP case\","
+                        + "\"description\":\"HTTP execution\",\"preconditions\":\"ready\","
+                        + "\"steps\":[{\"ordinal\":1,\"action\":\"Open\",\"expected\":\"Visible\"}]}" );
+        assertEquals(201, createdCase.statusCode(), createdCase.body());
+        UUID testCase = UUID.fromString(jsonField(createdCase.body(), "id"));
+        HttpResponse<String> revisions = get(member.client, testPath + "/" + testCase + "/revisions");
+        assertEquals(200, revisions.statusCode(), revisions.body());
+        UUID revision = UUID.fromString(jsonText(revisions.body(), "0", "id"));
+
+        String setPath = "/api/v1/projects/" + project + "/test-sets";
+        HttpResponse<String> createdSet = postExecution(member.client, setPath, memberCsrfHeader, memberCsrf,
+                "m09-http-set-" + UUID.randomUUID(), "{\"name\":\"M09 HTTP set\",\"description\":\"run\"}");
+        assertEquals(201, createdSet.statusCode(), createdSet.body());
+        UUID set = UUID.fromString(jsonField(createdSet.body(), "id"));
+        HttpResponse<String> added = postExecution(member.client, setPath + "/" + set + "/instances",
+                memberCsrfHeader, memberCsrf, "m09-http-instance-" + UUID.randomUUID(),
+                "{\"testCaseId\":\"" + testCase + "\",\"testRevisionId\":\"" + revision + "\"}");
+        assertEquals(201, added.statusCode(), added.body());
+        UUID instance = UUID.fromString(jsonField(added.body(), "id"));
+
+        HttpResponse<String> createdRun = postExecution(member.client, "/api/v1/projects/" + project + "/runs",
+                memberCsrfHeader, memberCsrf, "m09-http-run-" + UUID.randomUUID(),
+                "{\"testInstanceId\":\"" + instance + "\",\"mode\":\"MANUAL\"}");
+        assertEquals(201, createdRun.statusCode(), createdRun.body());
+        UUID run = UUID.fromString(jsonText(createdRun.body(), "run", "id"));
+        UUID attempt = UUID.fromString(jsonText(createdRun.body(), "currentAttempt", "id"));
+        long attemptVersion = jsonLong(createdRun.body(), "currentAttempt", "rowVersion");
+        UUID step = UUID.fromString(jsonText(createdRun.body(), "currentAttempt", "steps", "0", "stepKey"));
+        long stepVersion = jsonLong(createdRun.body(), "currentAttempt", "steps", "0", "rowVersion");
+        HttpResponse<String> missingCsrf = putExecutionStep(member.client,
+                "/api/v1/projects/" + project + "/runs/" + run + "/attempts/" + attempt + "/steps/" + step,
+                null, null, stepVersion, "m09-http-missing-csrf-" + UUID.randomUUID(),
+                "{\"actualResult\":\"Visible\",\"conclusion\":\"PASS\",\"expectedVersion\":" + stepVersion + "}");
+        assertEquals(403, missingCsrf.statusCode(), missingCsrf.body());
+        HttpResponse<String> conflictingVersion = putExecutionStep(member.client,
+                "/api/v1/projects/" + project + "/runs/" + run + "/attempts/" + attempt + "/steps/" + step,
+                memberCsrfHeader, memberCsrf, stepVersion, "m09-http-conflicting-version-" + UUID.randomUUID(),
+                "{\"actualResult\":\"Visible\",\"conclusion\":\"PASS\",\"expectedVersion\":" + (stepVersion + 1) + "}");
+        assertEquals(400, conflictingVersion.statusCode(), conflictingVersion.body());
+        HttpResponse<String> saved = putExecutionStep(member.client,
+                "/api/v1/projects/" + project + "/runs/" + run + "/attempts/" + attempt + "/steps/" + step,
+                memberCsrfHeader, memberCsrf, stepVersion, "m09-http-step-" + UUID.randomUUID(),
+                "{\"actualResult\":\"Visible\",\"conclusion\":\"PASS\",\"expectedVersion\":" + stepVersion + "}");
+        assertEquals(200, saved.statusCode(), saved.body());
+        HttpResponse<String> finished = postExecutionVersion(member.client,
+                "/api/v1/projects/" + project + "/runs/" + run + "/attempts/" + attempt + "/finish",
+                memberCsrfHeader, memberCsrf, attemptVersion + 1, "m09-http-finish-" + UUID.randomUUID());
+        assertEquals(200, finished.statusCode(), finished.body());
+        assertEquals("FINISHED", jsonText(finished.body(), "status"));
+        assertEquals(404, get(member.client, "/api/v1/projects/" + project + "/runs/" + UUID.randomUUID()).statusCode());
+        HttpResponse<String> unknownStep = putExecutionStep(member.client,
+                "/api/v1/projects/" + project + "/runs/" + run + "/attempts/" + attempt + "/steps/" + UUID.randomUUID(),
+                memberCsrfHeader, memberCsrf, stepVersion, "m09-http-unknown-step-" + UUID.randomUUID(),
+                "{\"actualResult\":\"unknown\",\"conclusion\":\"PASS\",\"expectedVersion\":" + stepVersion + "}");
+        assertEquals(404, unknownStep.statusCode(), unknownStep.body());
+        HttpResponse<String> unknownTransitionField = postExecution(member.client,
+                "/api/v1/projects/" + project + "/runs/" + run + "/attempts/" + attempt + "/pause",
+                memberCsrfHeader, memberCsrf, "m09-http-unknown-field-" + UUID.randomUUID(),
+                "{\"expectedVersion\":1,\"unexpected\":true}");
+        assertEquals(400, unknownTransitionField.statusCode(), unknownTransitionField.body());
+
+        String viewerCsrfBody = get(viewer.client, "/api/v1/csrf").body();
+        String viewerCsrfHeader = jsonField(viewerCsrfBody, "headerName");
+        String viewerCsrf = jsonField(viewerCsrfBody, "token");
+        assertEquals(200, get(viewer.client, "/api/v1/projects/" + project + "/test-sets").statusCode());
+        assertEquals(200, get(viewer.client, "/api/v1/projects/" + project + "/runs/" + run).statusCode());
+        HttpResponse<String> denied = postExecution(viewer.client, setPath, viewerCsrfHeader, viewerCsrf,
+                "m09-http-viewer-denied-" + UUID.randomUUID(), "{\"name\":\"denied\",\"description\":\"\"}");
+        assertEquals(403, denied.statusCode(), denied.body());
+        assertEquals("FORBIDDEN", jsonField(denied.body(), "code"));
+        HttpResponse<String> deniedStep = putExecutionStep(viewer.client,
+                "/api/v1/projects/" + project + "/runs/" + run + "/attempts/" + attempt + "/steps/" + step,
+                viewerCsrfHeader, viewerCsrf, stepVersion, "m09-http-viewer-step-" + UUID.randomUUID(),
+                "{\"actualResult\":\"viewer\",\"conclusion\":\"PASS\",\"expectedVersion\":" + stepVersion + "}");
+        assertEquals(403, deniedStep.statusCode(), deniedStep.body());
+        HttpResponse<String> deniedFinish = postExecutionVersion(viewer.client,
+                "/api/v1/projects/" + project + "/runs/" + run + "/attempts/" + attempt + "/finish",
+                viewerCsrfHeader, viewerCsrf, attemptVersion, "m09-http-viewer-finish-" + UUID.randomUUID());
+        assertEquals(403, deniedFinish.statusCode(), deniedFinish.body());
+        HttpResponse<String> deniedRerun = postExecution(viewer.client,
+                "/api/v1/projects/" + project + "/runs/" + run + "/attempts",
+                viewerCsrfHeader, viewerCsrf, "m09-http-viewer-rerun-" + UUID.randomUUID(), "{}");
+        assertEquals(403, deniedRerun.statusCode(), deniedRerun.body());
     }
 
     @Test
@@ -1219,6 +1352,38 @@ class OidcCallbackSecurityIT {
                 HttpResponse.BodyHandlers.ofString());
     }
 
+    private HttpResponse<String> postExecution(HttpClient client, String path, String csrfHeader, String csrfToken,
+            String idempotencyKey, String body) throws Exception {
+        var builder = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + appPort + path))
+                .timeout(REQUEST_TIMEOUT).header("Content-Type", "application/json")
+                .header("Idempotency-Key", idempotencyKey);
+        if (csrfHeader != null && csrfToken != null) builder.header(csrfHeader, csrfToken);
+        return client.send(builder.POST(HttpRequest.BodyPublishers.ofString(body)).build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> postExecutionVersion(HttpClient client, String path, String csrfHeader,
+            String csrfToken, long version, String idempotencyKey) throws Exception {
+        var builder = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + appPort + path))
+                .timeout(REQUEST_TIMEOUT).header("Content-Type", "application/json")
+                .header("Idempotency-Key", idempotencyKey)
+                .header("If-Match", "\"" + version + "\"");
+        if (csrfHeader != null && csrfToken != null) builder.header(csrfHeader, csrfToken);
+        return client.send(builder.POST(HttpRequest.BodyPublishers.ofString("{\"expectedVersion\":" + version + "}"))
+                .build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> putExecutionStep(HttpClient client, String path, String csrfHeader,
+            String csrfToken, long version, String idempotencyKey, String body) throws Exception {
+        var builder = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + appPort + path))
+                .timeout(REQUEST_TIMEOUT).header("Content-Type", "application/json")
+                .header("Idempotency-Key", idempotencyKey)
+                .header("If-Match", "\"" + version + "\"");
+        if (csrfHeader != null && csrfToken != null) builder.header(csrfHeader, csrfToken);
+        return client.send(builder.PUT(HttpRequest.BodyPublishers.ofString(body)).build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
     private HttpResponse<String> putJson(HttpClient client, String path, String csrfHeader, String csrfToken,
             String body) throws Exception {
         return client.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + appPort + path))
@@ -1253,6 +1418,35 @@ class OidcCallbackSecurityIT {
         Matcher matcher = Pattern.compile("\\\"" + Pattern.quote(field) + "\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"").matcher(body);
         assertTrue(matcher.find(), "missing JSON field " + field);
         return matcher.group(1);
+    }
+
+    private static String jsonText(String body, String... path) throws Exception {
+        JsonNode node = jsonNode(body, path);
+        assertTrue(node != null && node.isTextual(), "missing JSON text path " + String.join(".", path));
+        return node.textValue();
+    }
+
+    private static long jsonLong(String body, String... path) throws Exception {
+        JsonNode node = jsonNode(body, path);
+        assertTrue(node != null && node.isIntegralNumber(), "missing JSON number path " + String.join(".", path));
+        return node.longValue();
+    }
+
+    private static JsonNode jsonNode(String body, String... path) throws Exception {
+        JsonNode node = JSON.readTree(body);
+        for (String part : path) {
+            if (node == null) return null;
+            if (node.isArray()) {
+                try {
+                    node = node.get(Integer.parseInt(part));
+                } catch (NumberFormatException ex) {
+                    return null;
+                }
+            } else {
+                node = node.get(part);
+            }
+        }
+        return node;
     }
 
     private static long jsonNumber(String body, String field) {

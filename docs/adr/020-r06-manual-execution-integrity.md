@@ -1,0 +1,27 @@
+# ADR-020：R06 手工执行完整性、版本与幂等响应
+
+## 状态
+
+已采用（R06-M09-001-FIX01）。
+
+## 背景
+
+手工执行把已保存用例修订复制为不可变运行清单，并允许成员记录步骤结果、暂停/继续、完成和重跑。此前数据库约束不足以区分构建中的清单与已封存清单，客户端也可能把 attempt 的版本误用于某个步骤。幂等记录只有对象引用时，重放会重新读取可变当前状态，不能证明响应稳定。
+
+## 决策
+
+- 以追加迁移 V14 增加 manifest/manifest step 的构建完成边界、来源与项目复合归属、run/attempt/step 归属约束，以及运行步骤和 attempt 终态/版本单调性约束；V1–V13 不改写。
+- 应用在同一事务内以 `test365alm.execution_building` 标记执行清单的受控构建，构建完成后只允许封存，不允许再增加、修改或删除清单步骤。正式迁移后的故意失败探针编号为 V15，避免与正式 V14 混用。
+
+FIX03 修订：新增正式 V15 迁移，明确 manifest 必须以未封存状态开始、attempt 必须以 RUNNING/版本 1 开始、run step 必须以 NOT_RUN/版本 1 且绑定运行中的 manifest 开始。既有 V1—V14 不改写；故意失败探针顺延为 V16。历史记录中的 V15 探针描述保留为当时的执行记录，不代表当前版本号。
+
+FIX04 修订：工作台使用 `/test-sets/page`、`/test-sets/{setId}/instances/page`、`/runs/page` 和 `/runs/{runId}/attempts/page` 的不透明 `nextCursor` 继续读取有限页；`/runs/page` 与 `/runs/summary` 接受可选 `testSetId`，测试集范围必须在数据库 keyset 分页前应用。没有该参数时，汇总明确为授权项目范围；带参数时，汇总只统计该测试集的实例、活动尝试和每个实例按 `finished_at`、`attempt_no` 稳定选出的最新完成结果。历史摘要列表和具体 attempt 详情分开读取，前端不得因当前页缓存不完整而伪造历史。
+FIX04 还新增正式 V16 终态事件保护：已完成 attempt 不得再写入 `STEP_RECORDED` 事件或对应 Outbox，合法 finish 事务中的 `RUN_FINISHED` 仍可原子提交；V1—V15 不改写，故意失败迁移探针顺延到 V17。
+- `run_step.row_version` 只用于步骤写入，`run_attempt.row_version` 只用于状态转换；HTTP 写请求要求强 `If-Match` 与 JSON `expectedVersion` 一致且为正整数。
+- 事件、审计意图和 Outbox 与业务写入在同一事务中提交，事件 payload 包含对象、前后状态/版本和操作者；无 run 对象的 set/instance 事件通过显式 object_type/object_id 表达。
+- 成功幂等操作保存完整响应 JSON 并按相同键重放；旧记录缺少快照时安全拒绝为 `IDEMPOTENCY_RESPONSE_UNAVAILABLE`，不拼装当前可变响应、不伪造历史。
+- 前端严格拒绝缺少或错误版本字段，写入期间锁定相关控件，按操作轮次和项目/权限上下文丢弃迟到响应，未知结果重试复用同一幂等键。
+
+## 后果与限制
+
+这些约束使数据库和服务共同维护运行历史的不可变边界，并让重放响应可审计。V14 的构建标记是应用事务内的受控约定；拥有数据库管理员权限的主体仍可直接设置事务 GUC，因此这不是生产级发布审批或防 DBA 绕过机制。真实 PostgreSQL、迁移失败和完整浏览器证据须由隔离 Ubuntu CI/Testcontainers 提供；本机缺少 Docker 时不得把单元测试结果写成集成通过。

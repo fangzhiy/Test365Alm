@@ -1,5 +1,66 @@
 # Test365Alm 开发状态
 
+## R06-M09-001-FIX05 当前状态（代码 CI 已通过，最终交付待核对）
+
+- 继续 `feat/r06-m09-001` / [PR #6](https://github.com/fangzhiy/Test365Alm/pull/6)，base `feat/r05-m08-001`。输入全文见 [FIX05](progress/inputs/R06-M09-001-FIX05.md)，完整命令、父链、数量与限制见 [执行记录](progress/runs/R06-M09-001-FIX05.md)。本地代码 `9e0a96219228bd38e8dd5f9fdd819c8f3fdc03cb` 对应远端 `47ef842878e3b39b10a5fbc8c274e473048603ee`，父链不同，未强推或覆盖其余远端文件。
+- 修正汇总测试错误预期（两个实例中一个尚未运行，应为 1），未改变生产 SQL；新增独立统计生命周期/范围隔离和 53 个同时间戳集合分页证明。修复运行详情误用无步骤历史摘要，新增旧实现失败的组件回归；增加脱敏命名步骤诊断，业务异常不再被清理异常掩盖。
+- FIX04 最终 Push 37397670339 / PR 37397674584 已结束且 failure（server/browser），下面历史 pending 仅是当时快照，不代表最终结果。FIX05 代码 Push [38036252565](https://github.com/fangzhiy/Test365Alm/actions/runs/38036252565) 与 PR [38036255172](https://github.com/fangzhiy/Test365Alm/actions/runs/38036255172) 六 Job 均 success；PR checkout `c22ea8f9fd92c19b97bae80aa0a2eff948e0d931`。报告为 Surefire 38、Failsafe 83（M09 23）、Vitest 135、Python 65、浏览器 10（M09 1），零失败/错误/跳过。FIX04 临时目录 268 前端数量含重复发现，本轮使用干净 CI 的 135。
+- G01/G02/G03 代码证据通过；G04 最终文档交付 CI 在回复报告，不循环追写自身 SHA。完整 M09-AC01—05 的附件、缺陷、更正审批等未实现部分保持 NOT_RUN；不把切片通过写成完整模块完成。本机 Docker/JNA/npipe、Wrapper 和原目录 npm EPERM 限制保留，真实 PostgreSQL/Keycloak 以 Ubuntu CI 为准。
+
+最后更新：2026-10-10；停止点：审核，不进入后续模块。
+
+## R06-M09-001-FIX04 当前状态（远端代码已发布，CI 待完成）
+
+- 本轮继续 `feat/r06-m09-001` / [PR #6](https://github.com/fangzhiy/Test365Alm/pull/6)，base `feat/r05-m08-001`。审核基准为代码 `457b962a3127fe4b89cbf190eea98982af65ff37`、交付 `413c1648d7950adfb10a177132d0e146f560e310`、PR checkout `6b9c93664e12a7effb8a06170c40920a86f9fc5a`；本地起点为 `6534e54`，本地代码验证提交为 `df21c6b`，远端逐文件发布后的代码头为 `3395f913f8686d6f7f3043ef6cecfbd3c00f7f69`。本地 Git SHA 与 Git Data API 产生的远端提交链不同，按内容和父链对应记录，不能把二者写成同一提交。
+- 本轮原始输入全文实际归档于 [`R06-M09-001-FIX04.md`](progress/inputs/R06-M09-001-FIX04.md)，执行记录见 [`R06-M09-001-FIX04.md`](progress/runs/R06-M09-001-FIX04.md)。不回退、强推、合并、部署或修改分支保护；PR #6 仍未合并。
+- 后端分页/汇总已在数据库层按项目和可选测试集先过滤再 keyset LIMIT；运行详情只返回当前尝试的有界摘要预览，尝试历史页返回不含步骤的 `AttemptSummary`，具体步骤通过 `/attempts/{attemptId}` 读取。前端工作台已接通测试集、实例、运行、尝试分页游标和测试集汇总，历史选择使用准确详情接口。
+- 前端草稿绑定 project/run/attempt/step 基础版本与基础内容；412 保留草稿和冲突状态，只有明确采用最新版本后才建立新基础版本。刷新历史尝试直接按原 attempt id 读取，GET-only 恢复不重发未知写入。
+- V16 终态事件保护和 FIX03 的 V15 构建约束保留；构建/终态数据库测试改为独立事务并在每个负向语句前检查 runtime 上下文、构建标记和目标状态。汇总最新完成排序增加 run/attempt ID 稳定 tie-breaker。
+- 本机最新验证：系统 Maven 单元 38/38、前端 Vitest 18 files/268 tests、TypeScript、Vite build、lint 均通过；Python 工具和规划校验沿用本轮修改前实际 64/64 与通过结果。真实 Testcontainers/Failsafe 仍受 Windows Docker/JNA 限制，未写成本机业务通过。远端 Push run [`37397465387`](https://github.com/fangzhiy/Test365Alm/actions/runs/37397465387) 已排队，PR merge CI 尚待产生。
+
+最后更新：2026-10-06
+当前轮次：`R06-M09-001-FIX04`
+状态：`IMPLEMENTED / LOCAL_DOCKER_BLOCKED / PUSH_CI_QUEUED / PR_CI_PENDING`
+
+## R06-M09-001-FIX03 当前状态（代码与最终 Push/PR CI 已完成）
+
+- 本轮继续 `feat/r06-m09-001` / [PR #6](https://github.com/fangzhiy/Test365Alm/pull/6)，base `feat/r05-m08-001`。审核基线为代码 `9845d7a0b31b481f6eac8947e295f6ed6cce1e0e`、交付 `fe366798275410bd5ba99d04a9057bb0c6990326`；本轮远端代码提交为 `457b962a3127fe4b89cbf190eea98982af65ff37`，父提交为 `86c52fd005fcc327571fa78780f765437606c25a`。输入全文见 [`R06-M09-001-FIX03.md`](progress/inputs/R06-M09-001-FIX03.md)，执行记录见 [`R06-M09-001-FIX03.md`](progress/runs/R06-M09-001-FIX03.md)。
+- 补齐 `verify_r03_project_browser_report.py` 的 M09 精确用例、缺失/重复/失败/跳过拒绝回归；`TestExecutionPanel` 保留草稿与结果、提供运行详情 GET-only 刷新、绑定 project/run/attempt/step/version，并在失权和迟到响应时使读写轮次失效。M09 浏览器场景增加真实 reload、服务器恢复、首次 FAIL 历史、VIEWER 读取和直接写拒绝。
+- 新增 V15 执行构建/终态/manifest 目标保护、真实源快照、稳定分页与运行汇总；M09 HTTP 回归覆盖 CSRF、版本冲突、未知引用/字段和 VIEWER 写拒绝。正式 V15 后的迁移升级断言已更新；故意失败探针为 V16，不改写 V1—V14。
+- Push [37319446796](https://github.com/fangzhiy/Test365Alm/actions/runs/37319446796) 与 PR merge [37319452595](https://github.com/fangzhiy/Test365Alm/actions/runs/37319452595) 均已完成且 success，六个 Job 全部通过。Push server checkout 为 `457b962a3127fe4b89cbf190eea98982af65ff37`；PR merge checkout 为 `93661dcc609c00a60fb9af46723e30bb2cf712c6`（`refs/pull/6/merge`）。远端报告为 Surefire 37、Failsafe 80，`ManualExecutionDatabaseIT` 20、`OidcCallbackSecurityIT` 15，失败/错误/跳过均为 0；浏览器 10/0/0/0，workers=1、retries=0，并包含 M09 两步执行用例。此前代码提交 `86c52fd` 的 server 失败及三项升级数量偏差已保留，修正提交 `457b962` 后重新验证通过。
+- 本机系统 Maven 单元测试 37/37、Python 工具 64/64、规划校验、前端隔离 Vitest 129/129、TypeScript、build、lint 均通过；本机 Wrapper PowerShell 仍以退出码 1 失败，仓库 `npm ci` 仍受 Windows rolldown 文件 EPERM，Docker/Testcontainers/JNA 集成未在本机通过。真实 PostgreSQL、OIDC 和 Keycloak 页面以 Ubuntu CI 结果为准。当前仅收口 M09 手工执行切片，不代表完整 M09 或后续模块完成。
+
+最后更新：2026-10-05
+当前轮次：`R06-M09-001-FIX03`
+状态：`IMPLEMENTED / LOCAL_DOCKER_BLOCKED / PUSH_AND_PR_CI_PASS`
+
+## R06-M09-001-FIX02 当前状态（远端 Push/PR CI 已完成）
+
+- 本轮继续 feat/r06-m09-001 / PR #6，基线为 FIX01 代码 fceef8b076daf665fad7c0680caea6f7194de7f5、交付 1b31f3d941e01583b18866a2595923c69157645b。原始输入全文归档于 progress/inputs/R06-M09-001-FIX02.md，执行记录见 progress/runs/R06-M09-001-FIX02.md。
+- FIX01 远端报告实际只有 2 个 ManualExecutionDatabaseIT 测试；记录中的“5”已在 FIX02 记录中更正，不能作为 K07/K08 证据。FIX02 的数据库门禁按 17 个确切方法名校验（原 2 个 + 15 个并发/完整性/回滚/冻结重放/同键异内容拒绝场景），浏览器门禁额外要求 M09 两步执行→暂停/继续→完成→重跑页面用例。
+- 本轮最终代码验证提交为本地 `2a03ac9`，已发布远端代码提交 `9845d7a0b31b481f6eac8947e295f6ed6cce1e0e`。系统 Maven 单元测试 35/35、测试编译通过；隔离临时前端安装后 Vitest 9 files/125 tests、TypeScript、build、lint 通过；Python 工具 63/63 与规划校验通过。仓库原 `npm ci` 因 Windows EPERM 锁定 rolldown native 文件失败，隔离临时目录 `npm ci` 127 packages 成功。真实 ManualExecutionDatabaseIT/Testcontainers 在本机实际启动后因 JNA `jnidispatch.dll` Access denied 阻塞（退出码 1），未把它写成业务通过；真实 PostgreSQL、OIDC HTTP 和 Keycloak 页面由隔离 Ubuntu CI 验证。
+- 修正后最终 Push [37268247181](https://github.com/fangzhiy/Test365Alm/actions/runs/37268247181) 与 PR [37268250673](https://github.com/fangzhiy/Test365Alm/actions/runs/37268250673) 均 success，六个 Job 全部完成。Push checkout 为 `9845d7a0b31b481f6eac8947e295f6ed6cce1e0e`，PR merge checkout 为 `263fae7daf8d10c6f26eccec0a2376d035a8d192`；server 为 Surefire 35、Failsafe 77，`ManualExecutionDatabaseIT` 17、`OidcCallbackSecurityIT` 15，failures/errors/skipped 均 0；browser 10/0/0/0，workers=1、retries=0。此前文档收口运行的 PR server 失败及修复过程保留在本轮执行记录；K01—K10 的逐项结果和本机限制见该记录。
+
+## R06-M09-001-FIX01 当前状态（修复代码与远端 CI 已完成，等待审核）
+
+- 本轮继续 `feat/r06-m09-001` / PR [#6](https://github.com/fangzhiy/Test365Alm/pull/6)，base `feat/r05-m08-001`。起始远端 head 为 `4ca04dacf604edb16767feafa1cf84eadf3c75f2`，本地工作树起点为 `b811378`；未 reset、回退、强推或合并。
+- 首个代码修正本地 `ba14640`/远端 `cc561e15b9d5da7cf6225a4e12eb7381745bef09` 的 CI 失败原因已保留在执行记录；补丁本地 `94d714b`、`a30ef04` 对应最终远端代码 SHA `fceef8b076daf665fad7c0680caea6f7194de7f5`。原始输入全文归档为 [`R06-M09-001-FIX01.md`](progress/inputs/R06-M09-001-FIX01.md)，执行记录见 [`R06-M09-001-FIX01.md`](progress/runs/R06-M09-001-FIX01.md)。
+- V14 追加执行清单构建/封存、manifest/attempt/step 归属与终态约束、事件/审计/Outbox 目标约束和幂等冻结响应；服务使用独立步骤/attempt 版本，HTTP 要求一致的强 `If-Match` 与 `expectedVersion`。前端补齐严格版本解析、pending/乱序响应/未知重试状态。
+- 本机 Java 17.0.2、Maven 3.9.14、Node 26.0.0、npm 11.12.1、Python 3.12.8；后端单元 33、前端 118、Python 工具 63 均通过，前端类型/构建/lint 通过，规划校验通过。真实 Testcontainers 集成命令实际发现 11 个 IT，但在 Windows JNA/Docker 初始化阶段失败，不能写成 PostgreSQL 业务通过。
+- 修复代码对应 Push [`37260947636`](https://github.com/fangzhiy/Test365Alm/actions/runs/37260947636) 与 PR [`37260950245`](https://github.com/fangzhiy/Test365Alm/actions/runs/37260950245) 六个 Job 全部成功；Push checkout 为 `fceef8b076daf665fad7c0680caea6f7194de7f5`，PR `refs/pull/6/merge` checkout 为 `dead8c7600222fb7fb7685c588e13a914f86f45a`。K01–K06、K10 已有真实 CI 证据；本轮核对确认该 CI 中 ManualExecutionDatabaseIT 实际只有 2 个测试，历史状态中曾写成 5 个，已在 FIX02 记录中更正；K07/K08 独立并发/故障回滚、K09 M09 专用浏览器流程仍未运行。
+- M09 仍不代表完整 M09/M08 或 ALM 产品完成；测试树、批量、参数/配置、调度、Agent、附件、缺陷关联、离线、导出和复杂报表继续未实现。V14 的事务 GUC 构建标记可被 DBA 直接设置的限制已在 ADR-020 记录。
+
+## R06-M09-001 当前状态（首个手工执行切片，等待审核）
+
+- 已从实际 `feat/r05-m08-001` 基线建立 `feat/r06-m09-001`；本地起点为 `f8e8d89df15a8fe62b726cc478d90416e4679567`，对应 Git Data API 审核基线 `845acde47e5f9cd2c330878b383aa2ce0611b992`。本轮原始输入已归档到 [`docs/progress/inputs/R06-M09-001.md`](progress/inputs/R06-M09-001.md)。
+- 新增 V12 迁移、受限 runtime/RLS 表结构和执行服务：测试集、固定用例修订实例、不可变 manifest、运行/尝试/步骤、暂停/继续/完成、重跑、幂等、execution event、audit_event 和 Outbox 同事务。接口契约见 [`contracts/manual-execution.json`](../contracts/manual-execution.json)，决策见 [`ADR-019`](adr/019-r06-manual-execution-slice.md)。
+- 前端新增真实 API 驱动的“测试集与手工运行”工作台；用例修订选择器从 `/tests` 和 `/revisions` 读取，展示步骤结果、尝试历史和读写权限状态。无静态假数据接通。
+- 本机系统 Maven 单元/边界测试 `mvn -B -ntp test`：30 tests，0 failures/errors/skipped；前端 9 files/113 tests、`tsc --noEmit`、build 通过。`npm run lint` 退出 0，仅既有 React effect/ref warnings。Testcontainers 集成 `mvn -B -ntp -Pintegration verify` 已实际运行但因本机没有可用 Docker 环境在 11 个 IT 的容器启动阶段失败；不能把真实 PostgreSQL 结果写成通过，等待 Ubuntu CI。
+- 首个远端 PR CI `37181708139`（checkout `dc3e7cda54d92d276652b344c787573e27c696af`）暴露三项接入问题：旧升级断言未计入正式 V12、迁移失败探针与正式 V12 同号、M09 集成类使用无 Web 上下文导致缺少 `HttpSecurity`。随后 Push `37182544571` 已验证前两项修复和其他回归通过，但 `ManualExecutionDatabaseIT` 暴露 runtime 清理过期幂等记录缺少 DELETE 权限。第三轮 [37183266578](https://github.com/fangzhiy/Test365Alm/actions/runs/37183266578) 确认 V13 无条件授权会在探针数据库缺少 runtime 角色时先失败；第四轮 [37183927762](https://github.com/fangzhiy/Test365Alm/actions/runs/37183927762) 已验证迁移和既有门禁通过，但暴露 `ExecutionService.rerun` 的 ResultSet 游标误用。`417ee6ba99223b064c66aa39e22eb0fd2b0adc94` 已改为条件授权，`4c3636d38df2ced094e663a659e8d6106e0eadc4` 已修复重跑查询；最终 [Push 37185008838](https://github.com/fangzhiy/Test365Alm/actions/runs/37185008838) 与 [PR 37185011943](https://github.com/fangzhiy/Test365Alm/actions/runs/37185011943) 六个 Job 均成功，checkout 分别为 `5a8088bf46cf44da41267463f18b6c33b541ce1f` 与 `037c408dd06718086fe6694851d52c7f069fab20`。
+- M09 只实现本轮最小闭环；测试树、批量、参数/配置/环境、调度、Agent、附件、截图、缺陷关联、离线、导出和复杂报表仍未实现。M08、M09 不标记整体完成。
+
+详细记录见 [`R06-M09-001.md`](progress/runs/R06-M09-001.md)。
+
 ## R05-M08-001-FIX02 当前状态（等待最终审核）
 
 - 本轮继续 `feat/r05-m08-001` / PR #5（base `feat/r04-m07-001`）。开始时 GitHub API 核对远端 head 为 `7722dcfa9533ba19a90a08e847f8ec2c2aa54d4f`，PR Open、未合并；普通 Windows Git fetch 仍因 Schannel `SEC_E_NO_CREDENTIALS (0x8009030E)` 失败，未 reset、回退或强推。
