@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { ExecutionDiagnostics } from './executionDiagnostics'
 import { randomUUID } from 'node:crypto'
 import { isOwnedCiRun, seedProjectAccessScope } from './ownedR03'
 
@@ -49,11 +50,16 @@ test('real Keycloak UI manual execution creates, resumes, finishes and reruns a 
     throw new Error('Isolated R03 admin, member and viewer credentials are required')
   }
 
-  const adminId = await login(page, adminUser, adminPassword, 'R03 Tester')
+  const diagnostics = new ExecutionDiagnostics()
+  const adminId = await diagnostics.step(page, '管理员登录', () => login(page, adminUser, adminPassword, 'R03 Tester'))
   const memberContext = await browser.newContext()
   const memberPage = await memberContext.newPage()
   const viewerContext = await browser.newContext()
   const viewerPage = await viewerContext.newPage()
+  let businessFailed = false
+  let businessError: unknown
+  let cleanupFailed = false
+  let evidenceError: unknown
   try {
     const memberId = await login(memberPage, memberUser, memberPassword, 'R03 Member')
     const viewerId = await login(viewerPage, viewerUser, viewerPassword, 'R03 Viewer')
@@ -97,6 +103,7 @@ test('real Keycloak UI manual execution creates, resumes, finishes and reruns a 
 
     const execution = memberPage.locator('section.execution-panel')
     const setName = `M09 set ${Date.now()}`
+    await diagnostics.step(memberPage, '创建测试集、加入实例并启动运行', async () => {
     await execution.getByLabel('测试集名称').fill(setName)
     await execution.getByLabel('测试集说明').fill('Two-step execution')
     await execution.getByRole('button', { name: '创建测试集' }).click()
@@ -110,6 +117,9 @@ test('real Keycloak UI manual execution creates, resumes, finishes and reruns a 
     await execution.getByRole('button', { name: '启动手工运行' }).click()
     await expect(execution).toContainText('运行中')
 
+    await expect(execution.getByLabel('步骤 1 实际结果')).toBeVisible()
+    })
+    await diagnostics.step(memberPage, '保存两个步骤、暂停和继续', async () => {
     await execution.getByLabel('步骤 1 实际结果').fill('Login form is visible')
     await execution.getByLabel('步骤 1 结论').selectOption('PASS')
     await execution.getByRole('button', { name: '保存步骤结果' }).first().click()
@@ -122,6 +132,8 @@ test('real Keycloak UI manual execution creates, resumes, finishes and reruns a 
     await expect(execution).toContainText('已暂停')
     await execution.getByRole('button', { name: '继续' }).click()
     await expect(execution).toContainText('运行中')
+    })
+    await diagnostics.step(memberPage, '完成 FAIL 并重跑 PASS', async () => {
     await execution.getByRole('button', { name: '刷新测试集' }).click()
     await expect(execution.getByRole('button', { name: '完成运行' })).toBeVisible()
     await execution.getByRole('button', { name: '完成运行' }).click()
@@ -139,6 +151,8 @@ test('real Keycloak UI manual execution creates, resumes, finishes and reruns a 
     await expect(execution.getByRole('button', { name: '尝试 1 · FAIL' })).toBeVisible()
     await expect(execution.getByRole('button', { name: '尝试 2 · PASS' })).toBeVisible()
 
+    })
+    await diagnostics.step(memberPage, '真实重开、恢复详情与首次 FAIL 历史', async () => {
     // Re-open the page and select every scope again.  This proves the values
     // and attempt history are read from the server, rather than retained in
     // the previous React tree.
@@ -157,6 +171,8 @@ test('real Keycloak UI manual execution creates, resumes, finishes and reruns a 
     await expect(reopenedExecution.getByLabel('步骤 1 结论')).toHaveValue('PASS')
     await expect(reopenedExecution.getByLabel('步骤 2 结论')).toHaveValue('FAIL')
 
+    })
+    await diagnostics.step(viewerPage, 'VIEWER 读取历史并拒绝直接写入', async () => {
     await selectProject(viewerPage, tenantId, projectId)
     const viewerExecution = viewerPage.locator('section.execution-panel')
     await expect(viewerExecution).toContainText(setName)
@@ -196,8 +212,18 @@ test('real Keycloak UI manual execution creates, resumes, finishes and reruns a 
     const denied = await write(viewerPage, 'POST', `/api/v1/projects/${projectId}/test-sets`, { name: 'viewer forbidden', description: '' })
     expect(denied.status()).toBe(403)
     await expect(denied.json()).resolves.toMatchObject({ code: 'FORBIDDEN' })
+    })
+  } catch (error) {
+    businessFailed = true
+    businessError = error
   } finally {
-    await memberContext.close()
-    await viewerContext.close()
+    const results = await Promise.allSettled([memberContext.close(), viewerContext.close()])
+    results.forEach((result, index) => diagnostics.cleanup(index === 0 ? 'member' : 'viewer', result.status === 'rejected'))
+    cleanupFailed = results.some((result) => result.status === 'rejected')
+    try { await diagnostics.save() }
+    catch (error) { evidenceError = error }
   }
+  if (businessFailed) throw businessError
+  if (evidenceError) throw evidenceError
+  if (cleanupFailed) throw new Error('M09 browser context cleanup failed; see sanitized timeline')
 })

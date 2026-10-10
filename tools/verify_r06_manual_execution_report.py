@@ -35,6 +35,8 @@ REQUIRED = {
     "executionBuildingStillRejectsHistoricalManifestAndTerminalAttemptWrites",
     "finishedAttemptRejectsLateStepEventsButFinishEventIsPersisted",
     "pagedExecutionReadsAndSummaryUseStableProjectScopedCounts",
+    "summarySeparatesUnrunActiveAndLatestCompletedResultsAcrossAuthorizedScopes",
+    "setPaginationContinuesBeyondDefaultPageWithStableTimestampTiesAndNoScopeLeak",
 }
 
 

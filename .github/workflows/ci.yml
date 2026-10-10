@@ -490,6 +490,7 @@ jobs:
             local-evidence/r03/project-requirement-context-isolated.json
             local-evidence/r03/project-requirement-context-full.json
             local-evidence/r03/manual-test-case-context-full.json
+            local-evidence/r03/manual-execution-context-full.json
             local-evidence/r03/playwright-results.xml
             local-evidence/r03/project-browser-report.txt
             local-evidence/r03/import-permissions.txt

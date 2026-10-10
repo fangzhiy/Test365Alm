@@ -27,6 +27,21 @@ const run: Run = { id: 'run-1', projectId: 'project-1', instanceId: instance.id,
 afterEach(() => { cleanup(); vi.resetAllMocks() })
 
 describe('TestExecutionPanel', () => {
+  it('loads full current steps instead of using the bounded history summary as detail', async () => {
+    vi.mocked(executionApi.pageSets).mockResolvedValue({ items: [set], nextCursor: null })
+    vi.mocked(executionApi.getSet).mockResolvedValue(set)
+    vi.mocked(executionApi.pageInstances).mockResolvedValue({ items: [instance], nextCursor: null })
+    vi.mocked(executionApi.pageRuns).mockResolvedValue({ items: [run], nextCursor: null })
+    vi.mocked(executionApi.getRun).mockResolvedValue(run)
+    vi.mocked(executionApi.pageAttempts).mockResolvedValue({ items: [{ ...attempt, steps: [] }], nextCursor: null })
+    render(<TestExecutionPanel projectId="project-1" access={access} />)
+    fireEvent.click(await screen.findByRole('button', { name: /登录冒烟/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /运行 run-1/ }))
+    expect(await screen.findByLabelText('步骤 1 实际结果')).toBeEnabled()
+    expect(screen.getByText('打开登录页')).toBeVisible()
+    expect(screen.getByRole('button', { name: '保存步骤结果' })).toBeEnabled()
+  })
+
   it('loads test sets, instances and starts a manual run', async () => {
     vi.mocked(executionApi.listSets).mockResolvedValue([set]); vi.mocked(executionApi.getSet).mockResolvedValue(set); vi.mocked(executionApi.listInstances).mockResolvedValue([instance]); vi.mocked(executionApi.createRun).mockResolvedValue(run); vi.mocked(executionApi.getRun).mockResolvedValue(run); vi.mocked(executionApi.listAttempts).mockResolvedValue([attempt])
     render(<TestExecutionPanel projectId="project-1" access={access} />)

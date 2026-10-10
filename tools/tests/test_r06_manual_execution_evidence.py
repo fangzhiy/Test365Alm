@@ -27,6 +27,8 @@ REQUIRED_CASES = [
     "executionBuildingStillRejectsHistoricalManifestAndTerminalAttemptWrites",
     "finishedAttemptRejectsLateStepEventsButFinishEventIsPersisted",
     "pagedExecutionReadsAndSummaryUseStableProjectScopedCounts",
+    "summarySeparatesUnrunActiveAndLatestCompletedResultsAcrossAuthorizedScopes",
+    "setPaginationContinuesBeyondDefaultPageWithStableTimestampTiesAndNoScopeLeak",
 ]
 
 
@@ -51,6 +53,13 @@ class ManualExecutionEvidenceTests(unittest.TestCase):
     def test_accepts_complete_clean_report(self) -> None:
         valid, _ = verify_manual_execution_report(self.write(report(REQUIRED_CASES)))
         self.assertTrue(valid)
+
+    def test_rejects_missing_fix05_summary_or_pagination_evidence(self) -> None:
+        for name in REQUIRED_CASES[-2:]:
+            with self.subTest(name=name):
+                valid, summary = verify_manual_execution_report(self.write(report([case for case in REQUIRED_CASES if case != name])))
+                self.assertFalse(valid)
+                self.assertIn(name, summary)
 
     def test_rejects_failure_even_when_cases_are_present(self) -> None:
         valid, _ = verify_manual_execution_report(self.write(report(REQUIRED_CASES, failures=1)))

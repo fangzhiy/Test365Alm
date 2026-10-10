@@ -171,14 +171,17 @@ export default function TestExecutionPanel({ projectId, access, resetSignal = 0 
       if (!current(round, controller)) return
       const preferredAttemptId = preserveDraft && previousAttemptId ? previousAttemptId : detail.attempt?.id
       const listedAttempt = preferredAttemptId ? history.items.find((item) => item.id === preferredAttemptId) : undefined
-      const nextAttempt = listedAttempt ?? detail.attempt ?? history.items[history.items.length - 1] ?? null
+      // History pages contain summaries, not step snapshots. Prefer the full
+      // current detail; fetch an exact detail when selecting another attempt.
+      const nextAttempt = detail.attempt && detail.attempt.id === preferredAttemptId ? detail.attempt : listedAttempt ?? detail.attempt ?? history.items[history.items.length - 1] ?? null
       let selectedDetails = nextAttempt
-      if (preserveDraft && previousAttemptId && typeof executionApi.getAttempt === 'function') {
+      const detailAttemptId = preserveDraft && previousAttemptId ? previousAttemptId : nextAttempt?.id !== detail.attempt?.id ? nextAttempt?.id : undefined
+      if (detailAttemptId && typeof executionApi.getAttempt === 'function') {
         // A refresh must keep a historical attempt selected even when it is
         // outside the first bounded history page; never silently jump to the
         // run's current attempt.
         try {
-          const refreshed = await executionApi.getAttempt(projectId, run.id, previousAttemptId, { signal: controller.signal })
+          const refreshed = await executionApi.getAttempt(projectId, run.id, detailAttemptId, { signal: controller.signal })
           // A compatible test double/proxy may not return a body. Keep the
           // bounded history row rather than replacing the selected attempt
           // with undefined; the real API parser rejects such a response.

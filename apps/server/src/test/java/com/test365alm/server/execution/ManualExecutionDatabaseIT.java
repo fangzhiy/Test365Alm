@@ -663,7 +663,9 @@ class ManualExecutionDatabaseIT {
         assertEquals(1, summary.latestCompletedPass());
         ExecutionService.RunSummary setSummary = executions.summary(f.member(), f.project(), firstSet.id());
         assertEquals(2, setSummary.totalInstances());
-        assertEquals(0, setSummary.unrunInstances());
+        // The second instance in firstSet has never had a run. Rerunning the
+        // first instance does not consume or change that independent instance.
+        assertEquals(1, setSummary.unrunInstances());
         assertEquals(1, setSummary.activeAttempts());
         assertEquals(1, setSummary.latestCompletedPass());
         ExecutionService.RunSummary secondSetSummary = executions.summary(f.member(), f.project(), secondSet.id());
@@ -671,6 +673,110 @@ class ManualExecutionDatabaseIT {
         assertEquals(0, secondSetSummary.unrunInstances());
         assertEquals(1, secondSetSummary.activeAttempts());
         assertEquals(0, secondSetSummary.latestCompletedPass());
+    }
+
+    @Test
+    void summarySeparatesUnrunActiveAndLatestCompletedResultsAcrossAuthorizedScopes() throws Exception {
+        Fixture f = fixture();
+        ExecutionService.TestSetView set = executions.createSet(f.member(), f.project(), "Summary lifecycle", "", "m09-summary-set");
+        ExecutionService.TestSetView unrunSet = executions.createSet(f.member(), f.project(), "Never executed", "", "m09-summary-unrun-set");
+        ExecutionService.InstanceView pass = summaryInstance(f, set.id(), "pass");
+        ExecutionService.InstanceView fail = summaryInstance(f, set.id(), "fail");
+        ExecutionService.InstanceView blocked = summaryInstance(f, set.id(), "blocked");
+        summaryInstance(f, unrunSet.id(), "unrun");
+        assertEquals(new ExecutionService.RunSummary(4, 4, 0, 0, 0, 0), executions.summary(f.member(), f.project()));
+
+        ExecutionService.RunDetail passRun = executions.createRun(f.member(), f.project(), pass.id(), "m09-summary-pass-run");
+        ExecutionService.RunDetail failRun = executions.createRun(f.member(), f.project(), fail.id(), "m09-summary-fail-run");
+        ExecutionService.RunDetail blockedRun = executions.createRun(f.member(), f.project(), blocked.id(), "m09-summary-blocked-run");
+        assertEquals(new ExecutionService.RunSummary(4, 1, 3, 0, 0, 0), executions.summary(f.member(), f.project()));
+        completeSummaryAttempt(f, passRun.run().id(), passRun.currentAttempt(), "PASS", "pass");
+        completeSummaryAttempt(f, failRun.run().id(), failRun.currentAttempt(), "FAIL", "fail");
+        completeSummaryAttempt(f, blockedRun.run().id(), blockedRun.currentAttempt(), "BLOCKED", "blocked");
+        assertEquals(new ExecutionService.RunSummary(3, 0, 0, 1, 1, 1), executions.summary(f.member(), f.project(), set.id()));
+        assertEquals(new ExecutionService.RunSummary(1, 1, 0, 0, 0, 0), executions.summary(f.member(), f.project(), unrunSet.id()));
+
+        ExecutionService.AttemptView retry = executions.rerun(f.member(), f.project(), passRun.run().id(), "m09-summary-pass-rerun");
+        assertEquals("RUNNING", retry.status());
+        assertEquals(new ExecutionService.RunSummary(4, 1, 1, 1, 1, 1), executions.summary(f.member(), f.project()),
+                "an active rerun is not a completed PASS; the previous completed projection remains separately visible");
+        completeSummaryAttempt(f, passRun.run().id(), retry, "FAIL", "retry");
+        assertEquals(new ExecutionService.RunSummary(4, 1, 0, 0, 2, 1), executions.summary(f.member(), f.project()));
+        ExecutionService.AttemptView original = executions.attempt(f.member(), f.project(), passRun.run().id(), passRun.currentAttempt().id());
+        assertEquals("PASS", original.conclusion());
+        assertEquals("actual pass", original.steps().get(0).actualResult());
+
+        // The same MEMBER can access another project in this tenant. Its rows
+        // must still be excluded, independently of the project membership gate.
+        Fixture sameTenant = additionalProject(f);
+        ExecutionService.TestSetView otherSet = executions.createSet(sameTenant.member(), sameTenant.project(), "Other project", "", "m09-summary-other-set");
+        ExecutionService.InstanceView other = summaryInstance(sameTenant, otherSet.id(), "other");
+        executions.createRun(sameTenant.member(), sameTenant.project(), other.id(), "m09-summary-other-run");
+        Fixture foreign = fixture();
+        ExecutionService.TestSetView foreignSet = executions.createSet(foreign.member(), foreign.project(), "Other tenant", "", "m09-summary-foreign-set");
+        ExecutionService.InstanceView foreignInstance = summaryInstance(foreign, foreignSet.id(), "foreign");
+        executions.createRun(foreign.member(), foreign.project(), foreignInstance.id(), "m09-summary-foreign-run");
+        assertEquals(new ExecutionService.RunSummary(4, 1, 0, 0, 2, 1), executions.summary(f.member(), f.project()));
+        assertEquals(new ExecutionService.RunSummary(1, 0, 1, 0, 0, 0), executions.summary(f.member(), sameTenant.project()));
+        assertEquals(new ExecutionService.RunSummary(0, 0, 0, 0, 0, 0), executions.summary(f.member(), f.project(), otherSet.id()));
+        assertEquals(new ExecutionService.RunSummary(0, 0, 0, 0, 0, 0), executions.summary(f.member(), f.project(), foreignSet.id()));
+        assertThrows(ProjectAccessException.class, () -> executions.summary(f.member(), foreign.project()));
+    }
+
+    @Test
+    void setPaginationContinuesBeyondDefaultPageWithStableTimestampTiesAndNoScopeLeak() throws Exception {
+        Fixture f = fixture();
+        java.util.Set<UUID> expected = new java.util.HashSet<>();
+        for (int i = 0; i < 53; i++) {
+            expected.add(executions.createSet(f.member(), f.project(), "Tied set " + i, "", "m09-tied-set-" + i).id());
+        }
+        Fixture other = additionalProject(f);
+        executions.createSet(other.member(), other.project(), "Same tenant excluded", "", "m09-tied-other-set");
+        Fixture foreign = fixture();
+        executions.createSet(foreign.member(), foreign.project(), "Other tenant excluded", "", "m09-tied-foreign-set");
+        // Owner only establishes a deterministic timestamp fixture, never runs
+        // the scoped application query being proved here.
+        try (Connection owner = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())) {
+            execute(owner, "UPDATE test_set SET created_at=TIMESTAMPTZ '2026-01-01 00:00:00+00' WHERE project_id=?", f.project());
+        }
+        ExecutionService.TestSetPage first = executions.pageSets(f.member(), f.project(), null, null);
+        assertEquals(50, first.items().size());
+        assertTrue(first.nextCursor() != null);
+        ExecutionService.TestSetPage last = executions.pageSets(f.member(), f.project(), first.nextCursor(), null);
+        assertEquals(3, last.items().size());
+        assertEquals(null, last.nextCursor());
+        java.util.List<UUID> actual = new java.util.ArrayList<>();
+        first.items().forEach(item -> actual.add(item.id()));
+        last.items().forEach(item -> actual.add(item.id()));
+        assertEquals(53, new java.util.HashSet<>(actual).size(), "continuation must neither duplicate nor omit tied rows");
+        assertEquals(expected, new java.util.HashSet<>(actual));
+        assertEquals(actual.stream().map(UUID::toString).sorted().toList(), actual.stream().map(UUID::toString).toList(),
+                "equal timestamps must consistently use UUID keyset ordering");
+        assertEquals(first, executions.pageSets(f.member(), f.project(), null, null));
+    }
+
+    private ExecutionService.InstanceView summaryInstance(Fixture f, UUID set, String suffix) {
+        TestCaseService.TestCaseView source = tests.create(f.member(), f.project(),
+                new TestCaseService.CreateCommand("MANUAL", "Summary " + suffix, "", "",
+                        List.of(new TestCaseService.StepCommand(null, 1, "Action " + suffix, "Expected " + suffix))), "m09-summary-case-" + suffix);
+        return executions.addInstance(f.member(), f.project(), set, source.id(), source.currentRevision().id(), "m09-summary-instance-" + suffix);
+    }
+
+    private void completeSummaryAttempt(Fixture f, UUID run, ExecutionService.AttemptView attempt, String conclusion, String suffix) {
+        ExecutionService.AttemptView saved = executions.saveStep(f.member(), f.project(), run, attempt.id(),
+                attempt.steps().get(0).stepKey(), "actual " + suffix, conclusion, 1, "m09-summary-step-" + suffix);
+        assertEquals(conclusion, executions.finish(f.member(), f.project(), run, attempt.id(), saved.rowVersion(), "m09-summary-finish-" + suffix).conclusion());
+    }
+
+    private Fixture additionalProject(Fixture existing) throws Exception {
+        UUID project = UUID.randomUUID();
+        try (Connection owner = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())) {
+            execute(owner, "INSERT INTO project (id, tenant_id, domain_id, code, name, created_by) SELECT ?, tenant_id, domain_id, ?, 'Additional project', created_by FROM project WHERE id=?",
+                    project, "m09-" + project.toString().substring(0, 8), existing.project());
+            execute(owner, "INSERT INTO project_member (tenant_id, project_id, principal_id, roles) VALUES (?, ?, ?, ARRAY['PROJECT_MEMBER']::text[])",
+                    existing.tenant(), project, existing.member());
+        }
+        return new Fixture(existing.tenant(), project, existing.member());
     }
 
     private PreparedRun preparedSource(String setKey, String sourceKey) throws Exception {
