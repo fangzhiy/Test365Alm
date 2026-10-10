@@ -33,7 +33,9 @@
     "query": { "testSetId": "optional UUID; absent means the complete authorized project" },
     "fields": ["totalInstances", "unrunInstances", "activeAttempts", "latestCompletedPass", "latestCompletedFail", "latestCompletedBlocked"],
     "scopeRule": "The response is project scoped when testSetId is absent and test-set scoped when it is present; the UI must label the selected scope.",
-    "latestRule": "latest finished attempt per test instance by finished_at, then attempt_no"
+    "unrunRule": "instances that have never had an execution_run; rerunning another instance does not change this count",
+    "activeRule": "count of non-FINISHED attempts, separately from the historical latest completed projection",
+    "latestRule": "latest finished attempt per test instance by finished_at DESC NULLS LAST, attempt_no DESC, run id DESC, attempt id DESC"
   },
   "executionStatus": ["RUNNING", "PAUSED", "FINISHED"],
   "stepConclusion": ["NOT_RUN", "PASS", "FAIL", "BLOCKED"],

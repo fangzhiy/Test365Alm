@@ -1,5 +1,14 @@
 # Test365Alm 开发状态
 
+## R06-M09-001-FIX05 当前状态（代码 CI 已通过，最终交付待核对）
+
+- 继续 `feat/r06-m09-001` / [PR #6](https://github.com/fangzhiy/Test365Alm/pull/6)，base `feat/r05-m08-001`。输入全文见 [FIX05](progress/inputs/R06-M09-001-FIX05.md)，完整命令、父链、数量与限制见 [执行记录](progress/runs/R06-M09-001-FIX05.md)。本地代码 `9e0a96219228bd38e8dd5f9fdd819c8f3fdc03cb` 对应远端 `47ef842878e3b39b10a5fbc8c274e473048603ee`，父链不同，未强推或覆盖其余远端文件。
+- 修正汇总测试错误预期（两个实例中一个尚未运行，应为 1），未改变生产 SQL；新增独立统计生命周期/范围隔离和 53 个同时间戳集合分页证明。修复运行详情误用无步骤历史摘要，新增旧实现失败的组件回归；增加脱敏命名步骤诊断，业务异常不再被清理异常掩盖。
+- FIX04 最终 Push 37397670339 / PR 37397674584 已结束且 failure（server/browser），下面历史 pending 仅是当时快照，不代表最终结果。FIX05 代码 Push [38036252565](https://github.com/fangzhiy/Test365Alm/actions/runs/38036252565) 与 PR [38036255172](https://github.com/fangzhiy/Test365Alm/actions/runs/38036255172) 六 Job 均 success；PR checkout `c22ea8f9fd92c19b97bae80aa0a2eff948e0d931`。报告为 Surefire 38、Failsafe 83（M09 23）、Vitest 135、Python 65、浏览器 10（M09 1），零失败/错误/跳过。FIX04 临时目录 268 前端数量含重复发现，本轮使用干净 CI 的 135。
+- G01/G02/G03 代码证据通过；G04 最终文档交付 CI 在回复报告，不循环追写自身 SHA。完整 M09-AC01—05 的附件、缺陷、更正审批等未实现部分保持 NOT_RUN；不把切片通过写成完整模块完成。本机 Docker/JNA/npipe、Wrapper 和原目录 npm EPERM 限制保留，真实 PostgreSQL/Keycloak 以 Ubuntu CI 为准。
+
+最后更新：2026-10-10；停止点：审核，不进入后续模块。
+
 ## R06-M09-001-FIX04 当前状态（远端代码已发布，CI 待完成）
 
 - 本轮继续 `feat/r06-m09-001` / [PR #6](https://github.com/fangzhiy/Test365Alm/pull/6)，base `feat/r05-m08-001`。审核基准为代码 `457b962a3127fe4b89cbf190eea98982af65ff37`、交付 `413c1648d7950adfb10a177132d0e146f560e310`、PR checkout `6b9c93664e12a7effb8a06170c40920a86f9fc5a`；本地起点为 `6534e54`，本地代码验证提交为 `df21c6b`，远端逐文件发布后的代码头为 `3395f913f8686d6f7f3043ef6cecfbd3c00f7f69`。本地 Git SHA 与 Git Data API 产生的远端提交链不同，按内容和父链对应记录，不能把二者写成同一提交。
