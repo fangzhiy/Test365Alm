@@ -60,6 +60,14 @@ class CiWorkflowTests(unittest.TestCase):
         self.assertIn("verify_r06_manual_execution_report.py", workflow)
         self.assertIn("apps/server/manual-execution-report.txt", workflow)
 
+    def test_server_requires_nonempty_upgrade_before_full_regression(self):
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertLess(workflow.index('Run non-empty M09 upgrade tests first'),
+                        workflow.index('Run PostgreSQL integration tests and build'))
+        self.assertIn('-Dit.test=ManualExecutionMigrationUpgradeIT', workflow)
+        self.assertIn('verify_r07_execution_upgrade_report.py', workflow)
+        self.assertIn('apps/server/execution-upgrade-report.txt', workflow)
+
     def test_browser_job_requires_dual_user_project_access_evidence(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("Require real dual-user project access browser report", workflow)
