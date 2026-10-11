@@ -57,6 +57,8 @@ Python 工具只使用标准库，支持 Python 3.10 及以上。新增工具必
 
 ## 研发方向
 
+R07 非空执行库升级专项：先在 `apps/server` 运行 `.\mvnw.cmd -B -ntp -Pintegration verify '-Dit.test=ManualExecutionMigrationUpgradeIT'`，再运行完整 `-Pintegration verify`；Linux 用 `./mvnw`。根目录运行 `python tools/verify_r07_execution_upgrade_report.py apps/server/target/failsafe-reports`，要求 V13 与 V14 两个独立真实升级方法均存在且无失败/错误/跳过。Owner 仅迁移/合法旧夹具/独立核验，业务须经过受限 runtime 的事务代理服务，不读取开发 `.env`；不得为补证改写 V1—V16 或伪造旧幂等响应。
+
 当前工程方向保留 Spring Boot 4.1.1 + Java/Maven、React 19 + TypeScript + Vite 8、PostgreSQL 17。目标运行时为 Java 21、Node 24 LTS；本机实际版本和暂时偏差记录在 R02 轮次记录及 ADR 006，不得把目标环境写成已验证。计划中的对象存储、执行节点、兼容网关和业务模块仍按 P0/P1 顺序实现；不创建伪造的服务实现或客户适配器。
 
 本机开发服务默认绑定 `127.0.0.1`；Compose 仅把 PostgreSQL 发布到回环地址。容器内绑定和宿主机端口暴露必须分开记录。

@@ -1,5 +1,16 @@
 # Test365Alm 开发状态
 
+## R07-INT-001-FIX01 当前状态（专项及代码CI通过，文档交付CI待最终核对）
+
+- 输入全文：[本轮输入](progress/inputs/R07-INT-001-FIX01.md)；详见 [执行记录](progress/runs/R07-INT-001-FIX01.md)。继续 `feat/r06-m09-001` / [PR #6](https://github.com/fangzhiy/Test365Alm/pull/6)，base不变，不合并。远端起点 `2e0a95d1aae911e18759088c6b71b2b3e3232f43`；代码远端 `d0750a30da05f25e7659892d7a636d1e055d0631` 对应本地 `0a7ee6520e7b7b73850ce902eba9d958c12cbee6`，父链不同，按精确文件增量发布，未强推。
+- 新增独立 V13→V16、V14→V16 非空真实PostgreSQL测试，各含4运行/4尝试/8步骤、13事件/13Outbox/13审计/1旧键；完整原列快照与再次migrate一致。真实受限runtime事务服务读取历史、继续旧活动尝试、新键重放、授权/RLS和终态事件保护均通过。V13旧键缺冻结响应按409安全拒绝，不声称旧响应无损兼容。
+- 未发现生产迁移缺陷；不改业务源码/V1—V16、不新增正式迁移，失败探针仍V17。新增精确报告门禁及9个离线校验测试，CI先专项再原完整回归，六Job均保留。
+- 本机Wrapper3.9.16/Java17.0.2实际通过38单元、85集成（原83+2，原M09=23）；前端npm ci、135测试、lint/TypeScript/build通过；Python75/规划通过。历史Docker/JNA、Wrapper和npm EPERM记录不删除，但本轮授权环境已实际可用。目标Java21/Node24在本轮CI实测，未改全局配置。
+- 代码Push [38152317276](https://github.com/fangzhiy/Test365Alm/actions/runs/38152317276) 与PR [38152321338](https://github.com/fangzhiy/Test365Alm/actions/runs/38152321338) 六Job全部success，PR实际checkout `6685f2ca63f10b61827abdc037c0b691666ee3a8`。真实浏览器10、升级2、全量集成85均无失败/错误/跳过，故障恢复及迁移失败通过。G01—G04代码证据通过；G05最终文档交付/回读/CI在回复收口，不循环追写自身SHA。
+- FIX05最终交付 `2e0a95d…` 的Push38036772511/PR38036775173均success；下文“待核对”保留为当时记录，不是其最终状态。完整M09-AC01—05、原G0/G4及32模块规划状态不改。R07只补专项审计阻断，不等于已合并/全模块验收；顺序合并仍须负责人复核，不开始M10或恢复定时任务。
+
+最后更新：2026-10-11；停止点：独立审核。
+
 ## R06-M09-001-FIX05 当前状态（代码 CI 已通过，最终交付待核对）
 
 - 继续 `feat/r06-m09-001` / [PR #6](https://github.com/fangzhiy/Test365Alm/pull/6)，base `feat/r05-m08-001`。输入全文见 [FIX05](progress/inputs/R06-M09-001-FIX05.md)，完整命令、父链、数量与限制见 [执行记录](progress/runs/R06-M09-001-FIX05.md)。本地代码 `9e0a96219228bd38e8dd5f9fdd819c8f3fdc03cb` 对应远端 `47ef842878e3b39b10a5fbc8c274e473048603ee`，父链不同，未强推或覆盖其余远端文件。

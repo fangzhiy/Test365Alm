@@ -2,11 +2,23 @@
 
 企业级应用质量管理平台研发规划基线。对标原 ALM/Quality Center 产品体系；具体目标版本、Edition、扩展和旧生态兼容范围须在 P0 冻结。
 
-> **当前状态：R05-M08-001 手工测试用例第一切片实施中。** R02 工程底座、R03 OIDC/项目访问和 R04 需求切片保留；新增用例闭环不代表完整 M08、M07、M03 或完整 ALM 已完成。
+> **当前状态：R07-INT-001-FIX01 非空旧执行库升级补证。** 保留 R02～R06 最小切片；本轮只增加升级测试和证据门禁，不代表完整模块或 ALM 已完成，不执行主线合并。
 
 当前开发状态以 [development-status.md](docs/development-status.md) 和最新轮次记录为准；R03/R02 历史记录保留供追溯。
 
 ## R06 M09 手工执行切片
+
+R07 专项使用两个独立的 Testcontainers PostgreSQL 17.11，分别在真实 V13、V14 结构播种非空历史，再升级至 V16；不读取日常 `.env`。先运行专项，再完整回归（需要本机 Docker）：
+
+```powershell
+cd apps/server
+.\mvnw.cmd -B -ntp -Pintegration verify '-Dit.test=ManualExecutionMigrationUpgradeIT'
+.\mvnw.cmd -B -ntp -Pintegration verify
+cd ../..
+python tools/verify_r07_execution_upgrade_report.py apps/server/target/failsafe-reports
+```
+
+Linux 对应 `./mvnw`。两个必需方法为 `v13NonEmptyExecutionDatabaseUpgradesToV16` 和 `v14NonEmptyExecutionDatabaseUpgradesToV16`；缺失、重复、失败、错误、跳过或报告不一致均阻断。旧 V13 幂等记录没有冻结响应时返回 `409/IDEMPOTENCY_RESPONSE_UNAVAILABLE`，不是旧响应无损兼容。详细范围与实际证据见 [本轮记录](docs/progress/runs/R07-INT-001-FIX01.md)。
 
 已登录并选择项目的普通 MEMBER 可创建测试集、选择已保存手工用例修订加入实例、启动运行、保存步骤、暂停/继续、完成及重跑。重跑创建新尝试；历史步骤读取固定 manifest，不跟随当前用例变化。VIEWER 可读不能写。列表按游标继续加载；测试集汇总的分母是该范围全部实例，未运行指从未创建 run 的实例；活动尝试与每个实例最新已完成结果分开展示。
 
