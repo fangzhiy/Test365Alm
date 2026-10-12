@@ -4,7 +4,13 @@
 
 > **当前状态：R03 首个认证切片实施中。** R02 健康/版本、迁移和状态工作台保留；新增 OIDC 登录不代表项目授权、完整 M03、生产安全认证或完整 ALM 已完成。
 
-当前开发状态以 [development-status.md](docs/development-status.md) 和 [R03-M03-001-FIX01 验收补修记录](docs/progress/runs/R03-M03-001-FIX01.md) 为准；[R03-M03-001 原始记录](docs/progress/runs/R03-M03-001.md) 与 R02 历史记录保留供追溯。
+当前开发状态以 [development-status.md](docs/development-status.md) 和最新轮次记录为准；R03/R02 历史记录保留供追溯。
+
+## R03-M03-002 项目访问最小切片
+
+B 段在已认证的 BFF 会话下提供租户、项目、成员和固定角色的最小管理闭环。工作台的“租户、项目与成员”面板按需读取当前主体可见范围，可创建项目、保存 `PROJECT_ADMIN`、`PROJECT_MEMBER`、`PROJECT_VIEWER` 固定项目角色并撤销成员访问；租户、域和初始成员只允许通过隔离的开发/测试 bootstrap 准备，本轮不开放租户/域管理 HTTP 接口。前端不持有 OIDC token，也不以隐藏页面代替服务端授权。接口字段、错误体和撤权语义见 [project-access.json](contracts/project-access.json)，架构边界见 [ADR 012](docs/adr/012-r03-project-access-slice.md)。
+
+该切片已包含新租户/项目表的基础 RLS 和追加审计证据，但仍不代表完整 M03：跨节点会话、MFA、完整审计策略、批量目录和旧 ALM 兼容继续按开发状态记录验证。
 
 ## R03 本地 OIDC 登录切片
 
@@ -49,12 +55,14 @@ npm run dev
 curl.exe -i http://127.0.0.1:8080/health/ready
 curl.exe -i http://127.0.0.1:8080/api/v1/me
 docker compose --env-file .env.r03 -f compose.r03.yaml -p test365alm-r03-my-run ps
-docker compose --env-file .env.r03 -f compose.r03.yaml -p test365alm-r03-my-run down
+python tools/cleanup_r02_resources.py --root local-evidence/r03
 ```
 
-匿名 `/api/v1/me` 应返回 JSON 401；`/health/ready` 应返回 200。`down` 不删除数据卷；只有确认是本轮专用资源后才人工清理。改变 Keycloak、PostgreSQL 或前端端口时，必须同步更新 `.env.r03` 中的 JDBC/issuer、realm import 中的回调地址和前端代理；不要只改 Compose 发布端口。浏览器若显示登录失败，先检查 Keycloak discovery、固定回调、后端 OIDC profile 和本地角色迁移；不要关闭 issuer、签名、CSRF 校验。生产必须采用 HTTPS 与 Secure Cookie、正式 IdP、独立秘密管理和独立安全评审。
+匿名 `/api/v1/me` 应返回 JSON 401；`/health/ready` 应返回 200。清理只读取本轮 manifest，并在 Docker context、Engine、项目和 run 标签均匹配时删除记录资源；没有 manifest 或归属无法确认时返回非零，不能改用项目级 `down`。改变 Keycloak、PostgreSQL 或前端端口时，必须同步更新 `.env.r03` 中的 JDBC/issuer、realm import 中的回调地址和前端代理；不要只改 Compose 发布端口。浏览器若显示登录失败，先检查 Keycloak discovery、固定回调、后端 OIDC profile 和本地角色迁移；不要关闭 issuer、签名、CSRF 校验。生产必须采用 HTTPS 与 Secure Cookie、正式 IdP、独立秘密管理和独立安全评审。
 
-自动化回归：后端 `cd apps/server; .\mvnw.cmd -B -ntp -Pintegration verify` 使用 Testcontainers 的临时 PostgreSQL，并运行真实 HTTP OIDC 回调集成类 `OidcCallbackSecurityIT`（1 个合法对照、5 个非法令牌和 1 个失败后恢复场景）；可单独复跑 `.\mvnw.cmd -B -ntp -Pintegration verify '-Dit.test=OidcCallbackSecurityIT'`。前端 `cd apps/web; npm ci; npm run lint; npm run test:run; npm run build`。真实浏览器联调需先启动上述四个本地服务，再在 `apps/web` 执行 `. ..\..\tools\import_r03_env.ps1 -Path ..\..\.env.r03; npm run test:e2e`；本机可设置 `R03_E2E_BROWSER_CHANNEL=chrome` 使用已安装 Chrome，CI 安装隔离 Chromium。E2E 不用 mock 登录取代真实 Keycloak。
+自动化回归：后端 `cd apps/server; .\mvnw.cmd -B -ntp -Pintegration verify` 使用 Testcontainers 的临时 PostgreSQL，并运行真实 HTTP OIDC 回调集成类 `OidcCallbackSecurityIT`（10 个受门禁用例，含运行时账号、项目 HTTP 和未 bootstrap 拒绝场景）；可单独复跑 `.\mvnw.cmd -B -ntp -Pintegration verify '-Dit.test=OidcCallbackSecurityIT'`。前端 `cd apps/web; npm ci; npm run lint; npm run test:run; npm run build`。真实浏览器联调需先启动上述四个本地服务，再在 `apps/web` 执行 `. ..\..\tools\import_r03_env.ps1 -Path ..\..\.env.r03; npm run test:e2e`；本机可设置 `R03_E2E_BROWSER_CHANNEL=chrome` 使用已安装 Chrome，CI 安装隔离 Chromium。E2E 不用 mock 登录取代真实 Keycloak。
+
+FIX01 的双用户项目演示只在 CI 本轮拥有的隔离 Compose 项目中运行：测试用两个真实 Keycloak 用户建立本地 principal，由迁移账号在同一临时数据库播种 tenant/domain/tenant_member，然后通过真实浏览器会话完成“管理员创建项目 → 授权 `PROJECT_VIEWER` → 成员读取成功、直接更新返回 403 → 管理员撤权 → 成员原会话下一次权限请求返回 403/404”。`tools/verify_r03_project_browser_report.py` 要求该用例实际执行且无失败/错误/跳过；普通本机运行因资源归属门禁会跳过并返回非成功报告，不得把它当作真实项目验收通过。生成器不会覆盖已有 `.env.r03` 或 realm；若本地旧配置只有单用户，先确认归属后按隔离环境规则重新生成。
 
 会话到期、主体停用和 IdP 中断用例会改变测试资源状态，仅在带本轮 `R03_RUN_ID` 标签的唯一 CI Compose 项目中运行；普通本机开发只运行不破坏数据的浏览器用例。CI 将空闲超时配置为 1 分钟，测试关闭页面避免轮询续期，等待 75 秒后检查旧 Cookie。IdP 不可用时，新登录必须失败；已建立的本地会话在本地有效期内仍可访问、可 CSRF 退出。这里不承诺实时 IdP 撤权或全局单点退出。
 
@@ -129,7 +137,7 @@ python tools/verify_r02_readiness.py --env-file .env.r02-test --compose-project 
 
 脚本严格要求监听地址可验证且只能是 `127.0.0.1`、`::1` 或 `::ffff:127.0.0.1`；无法枚举监听、进程提前退出、版本提交不一致、端口被占用或数据源不是本机专用 PostgreSQL 时失败。首次 `up` 前会检查目标项目是否已有容器（包括停止的容器）、网络或卷；任何已有资源都会使脚本拒绝运行。默认使用当前本地 Docker context；若专用测试配置写入 `TEST365ALM_DOCKER_CONTEXT`，它必须与当前 context 一致。远端 Docker context 被拒绝。测试配置只接受脚本规定的键；父进程的 Spring、JVM 和 Compose 覆盖项不会传入子进程。
 
-启动迁移失败验证使用临时 V2 迁移目录，不修改正式 `db/migration`：
+启动迁移失败验证保留正式 V6，向临时目录注入独立的 V7 故障迁移，不修改正式 `db/migration`；脚本先确认正式 V6 已成功记录：
 
 ```powershell
 python tools/verify_r02_migration_failure.py --env-file .env.r02-test --compose-project test365alm-r02-migration-manual --server-port 18082

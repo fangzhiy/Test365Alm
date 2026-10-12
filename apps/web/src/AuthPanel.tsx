@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 
 type Me = { id: string; issuer: string; subject: string; displayName: string }
 type AuthState = 'loading' | 'anonymous' | 'authenticated' | 'disabled' | 'unavailable' | 'failed'
+type AuthPanelProps = { onLogout?: () => void }
 
 function isMe(value: unknown): value is Me {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false
@@ -9,7 +10,7 @@ function isMe(value: unknown): value is Me {
   return ['id', 'issuer', 'subject', 'displayName'].every((key) => typeof record[key] === 'string' && (record[key] as string).length > 0)
 }
 
-export default function AuthPanel() {
+export default function AuthPanel({ onLogout }: AuthPanelProps) {
   const [state, setState] = useState<AuthState>('loading')
   const [me, setMe] = useState<Me | null>(null)
   const [busy, setBusy] = useState(false)
@@ -17,21 +18,22 @@ export default function AuthPanel() {
   useEffect(() => {
     const controller = new AbortController()
     let alive = true
-    const timeout = window.setTimeout(() => { controller.abort(); if (alive) setState('unavailable') }, 3000)
+    let timedOut = false
+    const timeout = window.setTimeout(() => { timedOut = true; controller.abort(); if (alive) setState('unavailable') }, 3000)
     const failed = new URLSearchParams(window.location.search).get('login') === 'failed'
     void fetch('/api/v1/me', { signal: controller.signal, credentials: 'same-origin' })
       .then(async (response) => {
-        if (!alive) return
+        if (!alive || timedOut) return
         if (response.status === 401) { setState(failed ? 'failed' : 'anonymous'); return }
         if (response.status === 403) { setState('disabled'); return }
         if (!response.ok) throw new Error('Current user request failed')
         const body: unknown = await response.json()
         if (!isMe(body)) throw new Error('Invalid current user response')
-        if (!alive) return
+        if (!alive || timedOut) return
         setMe(body)
         setState('authenticated')
       })
-      .catch(() => { if (alive) setState('unavailable') })
+      .catch(() => { if (alive && !timedOut) setState('unavailable') })
       .finally(() => window.clearTimeout(timeout))
     return () => { alive = false; controller.abort(); window.clearTimeout(timeout) }
   }, [])
@@ -52,6 +54,7 @@ export default function AuthPanel() {
       if (!response.ok) throw new Error('Logout failed')
       setMe(null)
       setState('anonymous')
+      onLogout?.()
     } catch {
       setState('unavailable')
     } finally {

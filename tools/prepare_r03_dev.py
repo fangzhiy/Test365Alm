@@ -21,6 +21,7 @@ def main() -> int:
     runtime_password = secrets.token_urlsafe(32)
     admin_password = secrets.token_urlsafe(32)
     demo_password = secrets.token_urlsafe(24)
+    viewer_password = secrets.token_urlsafe(24)
     values = {
         "R03_RUN_ID": secrets.token_hex(16),
         "R03_DB_NAME": "test365alm_r03",
@@ -33,6 +34,8 @@ def main() -> int:
         "R03_KEYCLOAK_ADMIN_PASSWORD": admin_password,
         "R03_TEST_USER": "r03-user",
         "R03_TEST_USER_PASSWORD": demo_password,
+        "R03_VIEWER_USER": "r03-viewer",
+        "R03_VIEWER_PASSWORD": viewer_password,
         "TEST365ALM_DATASOURCE_URL": "jdbc:postgresql://127.0.0.1:54339/test365alm_r03",
         "TEST365ALM_DATASOURCE_USERNAME": "test365alm_runtime",
         "TEST365ALM_DATASOURCE_PASSWORD": runtime_password,
@@ -55,6 +58,10 @@ def main() -> int:
             "username": "r03-user", "enabled": True, "firstName": "R03", "lastName": "Tester",
             "email": "r03-user@example.invalid", "emailVerified": True,
             "credentials": [{"type": "password", "value": demo_password, "temporary": False}],
+        }, {
+            "username": "r03-viewer", "enabled": True, "firstName": "R03", "lastName": "Viewer",
+            "email": "r03-viewer@example.invalid", "emailVerified": True,
+            "credentials": [{"type": "password", "value": viewer_password, "temporary": False}],
         }],
     }
     REALM.write_text(json.dumps(realm, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

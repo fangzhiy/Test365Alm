@@ -18,6 +18,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -33,6 +34,8 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
@@ -48,6 +51,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -83,6 +88,16 @@ class OidcCallbackSecurityIT {
     @LocalServerPort
     private int appPort;
 
+    /**
+     * This is deliberately the application datasource, not the owner
+     * connection used by the fixture helpers below.  Keeping this assertion
+     * in the real HTTP callback suite prevents a test from accidentally
+     * passing while the application has silently fallen back to the migration
+     * owner.
+     */
+    @Autowired
+    private JdbcTemplate runtimeJdbc;
+
     @DynamicPropertySource
     static void registerProperties(DynamicPropertyRegistry registry) {
         registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
@@ -108,6 +123,280 @@ class OidcCallbackSecurityIT {
     @AfterAll
     static void stopProvider() {
         IDP.stop();
+    }
+
+    @Test
+    void realHttpApplicationUsesRestrictedRuntimeRole() {
+        Map<String, Object> role = runtimeJdbc.queryForMap(
+                "SELECT current_user AS username, r.rolsuper, r.rolbypassrls "
+                        + "FROM pg_roles r WHERE r.rolname = current_user");
+        assertEquals(RUNTIME_USER, role.get("username"));
+        assertEquals(Boolean.FALSE, role.get("rolsuper"));
+        assertEquals(Boolean.FALSE, role.get("rolbypassrls"));
+        assertTrue(runtimeJdbc.queryForObject("SELECT COUNT(*) FROM flyway_schema_history", Integer.class) >= 1);
+        org.springframework.dao.DataAccessException ddlFailure = null;
+        try {
+            runtimeJdbc.execute("CREATE TABLE r03_runtime_must_not_ddl (id integer)");
+        } catch (org.springframework.dao.DataAccessException expected) {
+            ddlFailure = expected;
+        }
+        assertNotNull(ddlFailure, "the HTTP application's runtime role must not be able to run DDL");
+    }
+
+    @Test
+    void realOidcSessionCanUseProjectHttpEndpointsThroughRuntimeDatasource() throws Exception {
+        String subject = uniqueSubject("project-http");
+        Flow flow = runAuthorization(Variant.VALID, subject);
+        UUID actor;
+        try (var connection = java.sql.DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+                var statement = connection.prepareStatement("SELECT id FROM principal WHERE issuer = ? AND subject = ?")) {
+            statement.setString(1, IDP.issuer());
+            statement.setString(2, subject);
+            try (var rows = statement.executeQuery()) {
+                assertTrue(rows.next(), "the real OIDC callback must persist the principal before project access");
+                actor = rows.getObject(1, UUID.class);
+            }
+        }
+        UUID tenant = UUID.randomUUID();
+        UUID domain = UUID.randomUUID();
+        try (var connection = java.sql.DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())) {
+            try (var statement = connection.prepareStatement("INSERT INTO tenant (id, code, name) VALUES (?, ?, ?)")) {
+                statement.setObject(1, tenant);
+                statement.setString(2, "http-tenant-" + tenant);
+                statement.setString(3, "HTTP Tenant");
+                statement.executeUpdate();
+            }
+            try (var statement = connection.prepareStatement("INSERT INTO domain (id, tenant_id, name) VALUES (?, ?, ?)")) {
+                statement.setObject(1, domain);
+                statement.setObject(2, tenant);
+                statement.setString(3, "HTTP Domain");
+                statement.executeUpdate();
+            }
+            try (var statement = connection.prepareStatement(
+                    "INSERT INTO tenant_member (tenant_id, principal_id, roles) VALUES (?, ?, ARRAY['TENANT_ADMIN']::text[])")) {
+                statement.setObject(1, tenant);
+                statement.setObject(2, actor);
+                statement.executeUpdate();
+            }
+        }
+        HttpResponse<String> tenants = get(flow.client, "/api/v1/tenants");
+        assertEquals(200, tenants.statusCode());
+        assertTrue(tenants.body().contains(tenant.toString()));
+        HttpResponse<String> domains = get(flow.client, "/api/v1/domains?tenantId=" + tenant);
+        assertEquals(200, domains.statusCode());
+        assertTrue(domains.body().contains(domain.toString()));
+
+        HttpResponse<String> csrf = get(flow.client, "/api/v1/csrf");
+        assertEquals(200, csrf.statusCode());
+        String csrfHeader = jsonField(csrf.body(), "headerName");
+        String csrfToken = jsonField(csrf.body(), "token");
+        HttpRequest create = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + appPort + "/api/v1/projects"))
+                .timeout(REQUEST_TIMEOUT)
+                .header("Content-Type", "application/json")
+                .header(csrfHeader, csrfToken)
+                .POST(HttpRequest.BodyPublishers.ofString("{\"tenantId\":\"" + tenant
+                        + "\",\"domainId\":\"" + domain + "\",\"code\":\"HTTP-PROJECT-"
+                        + tenant + "\",\"name\":\"HTTP Project\"}"))
+                .build();
+        HttpResponse<String> created = flow.client.send(create, HttpResponse.BodyHandlers.ofString());
+        assertEquals(201, created.statusCode(), created.body());
+        String projectId = jsonField(created.body(), "id");
+        HttpRequest missingVersion = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + appPort
+                + "/api/v1/projects/" + projectId + "/members/" + actor))
+                .timeout(REQUEST_TIMEOUT)
+                .header("Content-Type", "application/json")
+                .header(csrfHeader, csrfToken)
+                .PUT(HttpRequest.BodyPublishers.ofString("{\"roles\":[\"PROJECT_VIEWER\"]}"))
+                .build();
+        assertEquals(400, flow.client.send(missingVersion, HttpResponse.BodyHandlers.ofString()).statusCode());
+        HttpRequest staleVersion = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + appPort
+                + "/api/v1/projects/" + projectId + "/members/" + actor))
+                .timeout(REQUEST_TIMEOUT)
+                .header("Content-Type", "application/json")
+                .header(csrfHeader, csrfToken)
+                .PUT(HttpRequest.BodyPublishers.ofString("{\"roles\":[\"PROJECT_VIEWER\"],\"authorizationVersion\":99}"))
+                .build();
+        HttpResponse<String> visibleBeforeStale = get(flow.client, "/api/v1/projects/" + projectId);
+        assertEquals(200, visibleBeforeStale.statusCode(), visibleBeforeStale.body());
+        HttpResponse<String> stale = flow.client.send(staleVersion, HttpResponse.BodyHandlers.ofString());
+        assertEquals(409, stale.statusCode(), stale.body());
+        HttpResponse<String> project = get(flow.client, "/api/v1/projects/" + projectId);
+        assertEquals(200, project.statusCode());
+        assertTrue(project.body().contains("HTTP Project"));
+    }
+
+    @Test
+    void unbootstrappedOidcSubjectCannotCreateTenantOrProjectAccess() throws Exception {
+        String subject = uniqueSubject("unbootstrapped");
+        PrincipalSnapshot before = snapshot();
+        int tenantsBefore = ownerCount("tenant");
+        int projectsBefore = ownerCount("project");
+        Flow flow = runAuthorization(Variant.VALID, subject);
+        assertEquals(200, get(flow.client, "/api/v1/me").statusCode());
+        HttpResponse<String> tenants = get(flow.client, "/api/v1/tenants");
+        assertEquals(200, tenants.statusCode());
+        assertEquals("[]", tenants.body().trim());
+        HttpResponse<String> csrf = get(flow.client, "/api/v1/csrf");
+        String csrfHeader = jsonField(csrf.body(), "headerName");
+        String csrfToken = jsonField(csrf.body(), "token");
+        HttpRequest create = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + appPort + "/api/v1/projects"))
+                .timeout(REQUEST_TIMEOUT)
+                .header("Content-Type", "application/json")
+                .header(csrfHeader, csrfToken)
+                .POST(HttpRequest.BodyPublishers.ofString("{\"tenantId\":\"" + UUID.randomUUID()
+                        + "\",\"domainId\":\"" + UUID.randomUUID()
+                        + "\",\"code\":\"UNBOOTSTRAPPED\",\"name\":\"Denied\"}"))
+                .build();
+        HttpResponse<String> denied = flow.client.send(create, HttpResponse.BodyHandlers.ofString());
+        assertEquals(403, denied.statusCode());
+        assertEquals(tenantsBefore, ownerCount("tenant"));
+        assertEquals(projectsBefore, ownerCount("project"));
+        PrincipalSnapshot after = snapshot();
+        assertEquals(before.rows.size() + 1, after.rows.size());
+        assertTrue(after.has(IDP.issuer(), subject));
+    }
+
+    /**
+     * Exercises the project HTTP surface with the application datasource
+     * running as the restricted runtime role.  The owner connection below is
+     * deliberately used only to prepare and inspect disposable fixtures; all
+     * reads, authorization decisions, CSRF checks and membership mutations in
+     * the request path go through the real OIDC session and pooled runtime
+     * datasource.
+     */
+    @Test
+    void realOidcProjectHttpScopesTenantsAndRejectsViewerWrites() throws Exception {
+        String adminSubject = uniqueSubject("scope-admin");
+        String memberSubject = uniqueSubject("scope-member");
+        String viewerSubject = uniqueSubject("scope-viewer");
+        String otherAdminSubject = uniqueSubject("scope-other-admin");
+        Flow admin = runAuthorization(Variant.VALID, adminSubject);
+        Flow member = runAuthorization(Variant.VALID, memberSubject);
+        Flow viewer = runAuthorization(Variant.VALID, viewerSubject);
+        Flow otherAdmin = runAuthorization(Variant.VALID, otherAdminSubject);
+        UUID adminId = principalId(adminSubject);
+        UUID memberId = principalId(memberSubject);
+        UUID viewerId = principalId(viewerSubject);
+        UUID otherAdminId = principalId(otherAdminSubject);
+        UUID tenantA = UUID.randomUUID();
+        UUID tenantB = UUID.randomUUID();
+        UUID domainA = UUID.randomUUID();
+        UUID domainB = UUID.randomUUID();
+        UUID projectUnjoined = UUID.randomUUID();
+        UUID projectOtherTenant = UUID.randomUUID();
+        try (var connection = ownerConnection()) {
+            insertTenantFixture(connection, tenantA, "scope-a-" + tenantA, "Scope Tenant A");
+            insertTenantFixture(connection, tenantB, "scope-b-" + tenantB, "Scope Tenant B");
+            insertDomainFixture(connection, domainA, tenantA, "Scope Domain A");
+            insertDomainFixture(connection, domainB, tenantB, "Scope Domain B");
+            insertTenantMemberFixture(connection, tenantA, adminId, "TENANT_ADMIN");
+            insertTenantMemberFixture(connection, tenantA, memberId, "MEMBER");
+            insertTenantMemberFixture(connection, tenantA, viewerId, "MEMBER");
+            insertTenantMemberFixture(connection, tenantB, otherAdminId, "TENANT_ADMIN");
+            insertProjectFixture(connection, projectUnjoined, tenantA, domainA,
+                    "scope-unjoined-" + projectUnjoined, "Unjoined project", adminId);
+            insertProjectFixture(connection, projectOtherTenant, tenantB, domainB,
+                    "scope-other-" + projectOtherTenant, "Other tenant project", adminId);
+            insertProjectMemberFixture(connection, tenantB, projectOtherTenant, otherAdminId, "PROJECT_ADMIN");
+        }
+
+        String adminCsrfHeader = jsonField(get(admin.client, "/api/v1/csrf").body(), "headerName");
+        String adminCsrf = jsonField(get(admin.client, "/api/v1/csrf").body(), "token");
+        HttpResponse<String> created = postJson(admin.client, "/api/v1/projects", adminCsrfHeader, adminCsrf,
+                "{\"tenantId\":\"" + tenantA + "\",\"domainId\":\"" + domainA
+                        + "\",\"code\":\"scope-joined-" + tenantA + "\",\"name\":\"Joined project\"}");
+        assertEquals(201, created.statusCode(), created.body());
+        UUID projectJoined = UUID.fromString(jsonField(created.body(), "id"));
+
+        // Prepare the viewer membership through the owner-only fixture path,
+        // then verify the application itself can read it via the runtime pool.
+        try (var connection = ownerConnection();
+                var statement = connection.prepareStatement(
+                        "INSERT INTO project_member (tenant_id, project_id, principal_id, roles) "
+                                + "VALUES (?, ?, ?, ARRAY['PROJECT_VIEWER']::text[])")) {
+            statement.setObject(1, tenantA);
+            statement.setObject(2, projectJoined);
+            statement.setObject(3, viewerId);
+            statement.executeUpdate();
+        }
+        try (var connection = ownerConnection();
+                var statement = connection.prepareStatement(
+                        "INSERT INTO project_member (tenant_id, project_id, principal_id, roles) "
+                                + "VALUES (?, ?, ?, ARRAY['PROJECT_MEMBER']::text[])")) {
+            statement.setObject(1, tenantA);
+            statement.setObject(2, projectJoined);
+            statement.setObject(3, memberId);
+            statement.executeUpdate();
+        }
+
+        HttpResponse<String> viewerProjects = get(viewer.client, "/api/v1/projects?tenantId=" + tenantA);
+        assertEquals(200, viewerProjects.statusCode(), viewerProjects.body());
+        assertTrue(viewerProjects.body().contains(projectJoined.toString()));
+        assertFalse(viewerProjects.body().contains(projectUnjoined.toString()));
+        assertFalse(viewerProjects.body().contains(projectOtherTenant.toString()));
+        HttpResponse<String> memberProjects = get(member.client, "/api/v1/projects?tenantId=" + tenantA);
+        assertEquals(200, memberProjects.statusCode(), memberProjects.body());
+        assertTrue(memberProjects.body().contains(projectJoined.toString()));
+        assertFalse(memberProjects.body().contains(projectUnjoined.toString()));
+        HttpResponse<String> otherTenantProjects = get(otherAdmin.client, "/api/v1/projects?tenantId=" + tenantB);
+        assertEquals(200, otherTenantProjects.statusCode(), otherTenantProjects.body());
+        assertTrue(otherTenantProjects.body().contains(projectOtherTenant.toString()));
+        assertFalse(otherTenantProjects.body().contains(projectJoined.toString()));
+        assertEquals(404, get(viewer.client, "/api/v1/projects/" + projectUnjoined).statusCode());
+        assertEquals(404, get(viewer.client, "/api/v1/projects/" + projectOtherTenant).statusCode());
+
+        String viewerCsrfJson = get(viewer.client, "/api/v1/csrf").body();
+        String viewerCsrfHeader = jsonField(viewerCsrfJson, "headerName");
+        String viewerCsrf = jsonField(viewerCsrfJson, "token");
+        HttpResponse<String> viewerPatch = patchJson(viewer.client, "/api/v1/projects/" + projectJoined,
+                viewerCsrfHeader, viewerCsrf, "{\"name\":\"viewer must not write\",\"rowVersion\":0}");
+        assertEquals(403, viewerPatch.statusCode(), viewerPatch.body());
+        HttpResponse<String> viewerPut = putJson(viewer.client,
+                "/api/v1/projects/" + projectJoined + "/members/" + viewerId,
+                viewerCsrfHeader, viewerCsrf, "{\"roles\":[\"PROJECT_ADMIN\"],\"authorizationVersion\":1}");
+        assertEquals(403, viewerPut.statusCode(), viewerPut.body());
+        HttpResponse<String> viewerDelete = deleteJson(viewer.client,
+                "/api/v1/projects/" + projectJoined + "/members/" + viewerId,
+                viewerCsrfHeader, viewerCsrf, "{\"authorizationVersion\":1}");
+        assertEquals(403, viewerDelete.statusCode(), viewerDelete.body());
+
+        HttpResponse<String> members = get(admin.client, "/api/v1/projects/" + projectJoined + "/members");
+        assertEquals(200, members.statusCode(), members.body());
+        assertTrue(members.body().contains(viewerId.toString()));
+        long version = jsonNumber(members.body(), "authorizationVersion");
+        int auditBeforeIdempotent = ownerAuditCount(projectJoined);
+        HttpResponse<String> idempotent = putJson(admin.client,
+                "/api/v1/projects/" + projectJoined + "/members/" + viewerId,
+                adminCsrfHeader, adminCsrf,
+                "{\"roles\":[\"PROJECT_VIEWER\"],\"authorizationVersion\":" + version + "}");
+        assertEquals(200, idempotent.statusCode(), idempotent.body());
+        assertEquals(auditBeforeIdempotent, ownerAuditCount(projectJoined),
+                "an idempotent grant must not append an audit event");
+        HttpResponse<String> stale = putJson(admin.client,
+                "/api/v1/projects/" + projectJoined + "/members/" + viewerId,
+                adminCsrfHeader, adminCsrf,
+                "{\"roles\":[\"PROJECT_MEMBER\"],\"authorizationVersion\":0}");
+        assertEquals(409, stale.statusCode(), stale.body());
+
+        HttpResponse<String> revoked = deleteJson(admin.client,
+                "/api/v1/projects/" + projectJoined + "/members/" + viewerId,
+                adminCsrfHeader, adminCsrf, "{\"authorizationVersion\":" + version + "}");
+        assertEquals(200, revoked.statusCode(), revoked.body());
+        assertEquals(404, get(viewer.client, "/api/v1/projects/" + projectJoined).statusCode(),
+                "an existing OIDC session loses access on its next request");
+
+        try (var connection = ownerConnection();
+                var statement = connection.prepareStatement(
+                        "UPDATE tenant_member SET revoked_at = CURRENT_TIMESTAMP, valid_until = CURRENT_TIMESTAMP, "
+                                + "authorization_version = authorization_version + 1 WHERE tenant_id = ? AND principal_id = ?")) {
+            statement.setObject(1, tenantA);
+            statement.setObject(2, viewerId);
+            statement.executeUpdate();
+        }
+        assertEquals(403, get(viewer.client, "/api/v1/domains?tenantId=" + tenantA).statusCode(),
+                "tenant revocation invalidates an old session without requiring /me first");
     }
 
     @Test
@@ -322,10 +611,149 @@ class OidcCallbackSecurityIT {
         }
     }
 
+    private int ownerCount(String table) throws Exception {
+        if (!List.of("tenant", "project").contains(table)) throw new IllegalArgumentException("unexpected table");
+        try (var connection = java.sql.DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+                var statement = connection.createStatement();
+                var result = statement.executeQuery("SELECT COUNT(*) FROM " + table)) {
+            assertTrue(result.next());
+            return result.getInt(1);
+        }
+    }
+
+    private java.sql.Connection ownerConnection() throws SQLException {
+        return java.sql.DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+    }
+
+    private UUID principalId(String subject) throws Exception {
+        try (var connection = ownerConnection();
+                var statement = connection.prepareStatement("SELECT id FROM principal WHERE issuer = ? AND subject = ?")) {
+            statement.setString(1, IDP.issuer());
+            statement.setString(2, subject);
+            try (var rows = statement.executeQuery()) {
+                assertTrue(rows.next(), "OIDC callback must persist principal " + subject);
+                return rows.getObject(1, UUID.class);
+            }
+        }
+    }
+
+    private static void insertTenantFixture(java.sql.Connection connection, UUID id, String code, String name)
+            throws SQLException {
+        try (var statement = connection.prepareStatement("INSERT INTO tenant (id, code, name) VALUES (?, ?, ?)")) {
+            statement.setObject(1, id);
+            statement.setString(2, code);
+            statement.setString(3, name);
+            statement.executeUpdate();
+        }
+    }
+
+    private static void insertDomainFixture(java.sql.Connection connection, UUID id, UUID tenantId, String name)
+            throws SQLException {
+        try (var statement = connection.prepareStatement("INSERT INTO domain (id, tenant_id, name) VALUES (?, ?, ?)")) {
+            statement.setObject(1, id);
+            statement.setObject(2, tenantId);
+            statement.setString(3, name);
+            statement.executeUpdate();
+        }
+    }
+
+    private static void insertTenantMemberFixture(java.sql.Connection connection, UUID tenantId, UUID principalId,
+            String role) throws SQLException {
+        try (var statement = connection.prepareStatement(
+                "INSERT INTO tenant_member (tenant_id, principal_id, roles) VALUES (?, ?, ARRAY[?]::text[])")) {
+            statement.setObject(1, tenantId);
+            statement.setObject(2, principalId);
+            statement.setString(3, role);
+            statement.executeUpdate();
+        }
+    }
+
+    private static void insertProjectFixture(java.sql.Connection connection, UUID id, UUID tenantId, UUID domainId,
+            String code, String name, UUID createdBy) throws SQLException {
+        try (var statement = connection.prepareStatement(
+                "INSERT INTO project (id, tenant_id, domain_id, code, name, created_by) VALUES (?, ?, ?, ?, ?, ?)")) {
+            statement.setObject(1, id);
+            statement.setObject(2, tenantId);
+            statement.setObject(3, domainId);
+            statement.setString(4, code);
+            statement.setString(5, name);
+            statement.setObject(6, createdBy);
+            statement.executeUpdate();
+        }
+    }
+
+    private static void insertProjectMemberFixture(java.sql.Connection connection, UUID tenantId, UUID projectId,
+            UUID principalId, String role) throws SQLException {
+        try (var statement = connection.prepareStatement(
+                "INSERT INTO project_member (tenant_id, project_id, principal_id, roles) VALUES (?, ?, ?, ARRAY[?]::text[])")) {
+            statement.setObject(1, tenantId);
+            statement.setObject(2, projectId);
+            statement.setObject(3, principalId);
+            statement.setString(4, role);
+            statement.executeUpdate();
+        }
+    }
+
+    private int ownerAuditCount(UUID projectId) throws Exception {
+        try (var connection = ownerConnection();
+                var statement = connection.prepareStatement("SELECT COUNT(*) FROM audit_event WHERE project_id = ?")) {
+            statement.setObject(1, projectId);
+            try (var rows = statement.executeQuery()) {
+                assertTrue(rows.next());
+                return rows.getInt(1);
+            }
+        }
+    }
+
+    private HttpResponse<String> postJson(HttpClient client, String path, String csrfHeader, String csrfToken,
+            String body) throws Exception {
+        return client.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + appPort + path))
+                .timeout(REQUEST_TIMEOUT).header("Content-Type", "application/json")
+                .header(csrfHeader, csrfToken).POST(HttpRequest.BodyPublishers.ofString(body)).build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> putJson(HttpClient client, String path, String csrfHeader, String csrfToken,
+            String body) throws Exception {
+        return client.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + appPort + path))
+                .timeout(REQUEST_TIMEOUT).header("Content-Type", "application/json")
+                .header(csrfHeader, csrfToken).PUT(HttpRequest.BodyPublishers.ofString(body)).build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> patchJson(HttpClient client, String path, String csrfHeader, String csrfToken,
+            String body) throws Exception {
+        return client.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + appPort + path))
+                .timeout(REQUEST_TIMEOUT).header("Content-Type", "application/json")
+                .header(csrfHeader, csrfToken).method("PATCH", HttpRequest.BodyPublishers.ofString(body)).build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
+    private HttpResponse<String> deleteJson(HttpClient client, String path, String csrfHeader, String csrfToken,
+            String body) throws Exception {
+        return client.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + appPort + path))
+                .timeout(REQUEST_TIMEOUT).header("Content-Type", "application/json")
+                .header(csrfHeader, csrfToken).method("DELETE", HttpRequest.BodyPublishers.ofString(body)).build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
     private HttpResponse<String> get(HttpClient client, String path) throws Exception {
         return client.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + appPort + path))
                 .timeout(REQUEST_TIMEOUT).GET().build(),
                 HttpResponse.BodyHandlers.ofString());
+    }
+
+    private static String jsonField(String body, String field) {
+        Matcher matcher = Pattern.compile("\\\"" + Pattern.quote(field) + "\\\"\\s*:\\s*\\\"([^\\\"]+)\\\"").matcher(body);
+        assertTrue(matcher.find(), "missing JSON field " + field);
+        return matcher.group(1);
+    }
+
+    private static long jsonNumber(String body, String field) {
+        Matcher matcher = Pattern.compile("\\\"" + Pattern.quote(field) + "\\\"\\s*:\\s*(\\d+)").matcher(body);
+        assertTrue(matcher.find(), "missing JSON number field " + field);
+        return Long.parseLong(matcher.group(1));
     }
 
     private static String uniqueSubject(String prefix) {

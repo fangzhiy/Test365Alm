@@ -61,7 +61,8 @@ public class IdentitySecurity {
         http.authorizeHttpRequests(auth -> auth
                 .requestMatchers("/health/live", "/health/ready", "/api/v1/version", "/api/v1/csrf",
                         "/oauth2/authorization/test365alm", "/login/oauth2/code/test365alm").permitAll()
-                .requestMatchers("/api/v1/me", "/api/v1/auth/logout").authenticated()
+                .requestMatchers("/api/v1/me", "/api/v1/auth/logout", "/api/v1/tenants", "/api/v1/domains",
+                        "/api/v1/projects/**", "/api/v1/me/permissions").authenticated()
                 .anyRequest().denyAll());
         http.exceptionHandling(errors -> errors
                 .authenticationEntryPoint((request, response, exception) -> json(response, 401, "UNAUTHENTICATED"))

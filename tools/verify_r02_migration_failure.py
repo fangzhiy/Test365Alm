@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify a deliberate Flyway startup failure in owned temporary resources."""
+"""Verify formal Flyway V6, then a deliberate V7 startup failure in owned resources."""
 
 from __future__ import annotations
 
@@ -35,6 +35,10 @@ from tools.r02_resource_guard import (
     manifest_path,
     new_run_id,
 )
+
+FORMAL_MIGRATION_VERSION = "6"
+INTENTIONAL_FAILURE_VERSION = "7"
+INTENTIONAL_FAILURE_MARKER = "R03_INTENTIONAL_MIGRATION_FAILURE"
 
 
 def main() -> int:
@@ -85,9 +89,13 @@ def main() -> int:
 
     with tempfile.TemporaryDirectory(prefix="test365alm-flyway-failure-") as migration_root:
         migration_dir = Path(migration_root)
-        failure_migration = migration_dir / "V3__intentional_failure.sql"
+        # V6 is the current formal migration in the project-access slice.
+        # Inject the deliberate failure at the next version so Flyway executes
+        # all formal migrations before failing without colliding with a
+        # production migration filename.
+        failure_migration = migration_dir / f"V{INTENTIONAL_FAILURE_VERSION}__intentional_failure.sql"
         failure_migration.write_text(
-            "SELECT CAST('R03_INTENTIONAL_MIGRATION_FAILURE' AS integer);\n", encoding="utf-8"
+            f"SELECT CAST('{INTENTIONAL_FAILURE_MARKER}' AS integer);\n", encoding="utf-8"
         )
         try:
             run_compose(args.compose_project, "up", "-d", "--wait", "postgres",
@@ -117,13 +125,35 @@ def main() -> int:
             if exit_code is None:
                 raise VerificationError("application did not exit after intentional migration failure")
             log_text = log_path.read_text(encoding="utf-8", errors="replace")
+            intentional_name = f"V{INTENTIONAL_FAILURE_VERSION}__intentional_failure"
             if (exit_code == 0 or "Flyway" not in log_text
-                    or "V3__intentional_failure" not in log_text
-                    or "R03_INTENTIONAL_MIGRATION_FAILURE" not in log_text):
+                    or intentional_name not in log_text
+                    or INTENTIONAL_FAILURE_MARKER not in log_text):
                 raise VerificationError(
-                    f"startup failure was not attributable to deliberate Flyway V3 SQL (exit={exit_code})"
+                    f"startup failure was not attributable to deliberate Flyway {intentional_name} SQL "
+                    f"after formal V{FORMAL_MIGRATION_VERSION} (exit={exit_code})"
                 )
-            print(f"PASS: startup failed with deliberate Flyway V3 SQL; exit={exit_code}; log={log_path}")
+            history = run_compose(
+                args.compose_project,
+                "exec", "-T", "postgres", "psql", "-XAtq",
+                "-U", values["POSTGRES_USER"],
+                "-d", values["POSTGRES_DB"],
+                "-c", (
+                    "SELECT version FROM flyway_schema_history "
+                    f"WHERE version = '{FORMAL_MIGRATION_VERSION}' AND success = TRUE"
+                ),
+                env_file=args.env_file,
+                environment=environment,
+            )
+            if history.stdout.strip() != FORMAL_MIGRATION_VERSION:
+                raise VerificationError(
+                    f"formal Flyway V{FORMAL_MIGRATION_VERSION} was not recorded as successful "
+                    f"(history={history.stdout.strip()!r})"
+                )
+            print(
+                f"PASS: formal Flyway V{FORMAL_MIGRATION_VERSION} applied, then deliberate "
+                f"V{INTENTIONAL_FAILURE_VERSION} failed; exit={exit_code}; log={log_path}"
+            )
             result = 0
         except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired, VerificationError) as error:
             print(f"FAIL: {error}")
