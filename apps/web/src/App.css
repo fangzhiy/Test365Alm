@@ -70,6 +70,29 @@ h1 { margin: 0; color: #12263a; font-size: clamp(32px, 5vw, 56px); letter-spacin
 .test-cases-layout { display: grid; grid-template-columns: minmax(220px, .75fr) minmax(0, 1.5fr); gap: 16px; margin-top: 16px; }
 .test-case-list { border-top: 1px solid #e1e9ef; }
 .test-case-detail { min-width: 0; padding: 18px; border: 1px solid #e1e9ef; border-radius: 12px; background: #f8fbfc; }
+.execution-panel { margin-top: 16px; padding: 24px; border: 1px solid #dce5ed; border-radius: 18px; background: rgba(255,255,255,.9); box-shadow: 0 14px 40px rgba(29, 71, 94, .06); }
+.execution-create-form, .execution-add-form { display: grid; grid-template-columns: 1fr 1.5fr 1.5fr auto; align-items: end; gap: 12px; margin-top: 16px; padding: 14px; border: 1px solid #e1e9ef; border-radius: 12px; background: #f8fbfc; }
+.execution-create-form label, .execution-add-form label, .execution-step label { display: grid; gap: 5px; color: #526b80; font-size: 11px; font-weight: 700; }
+.execution-create-form input, .execution-add-form input, .execution-step textarea, .execution-step select { border: 1px solid #c8d7e1; border-radius: 8px; padding: 8px; color: #17324d; background: #fff; font: inherit; }
+.execution-layout { display: grid; grid-template-columns: minmax(180px, .7fr) minmax(0, 1.8fr); gap: 16px; margin-top: 20px; }
+.execution-set-list { display: grid; align-content: start; gap: 4px; border-top: 1px solid #e1e9ef; }
+.execution-set { display: grid; gap: 4px; border: 0; border-top: 1px solid #eef2f5; padding: 12px 8px; color: #17324d; background: transparent; text-align: left; cursor: pointer; font: inherit; }
+.execution-set small, .execution-instance small { color: #8496a8; }
+.execution-set.is-selected { border-radius: 8px; background: #eaf4f6; }
+.execution-detail { min-width: 0; padding: 18px; border: 1px solid #e1e9ef; border-radius: 12px; background: #f8fbfc; }
+.execution-detail h3 { margin: 0; color: #17324d; font-size: 22px; }
+.execution-detail h4 { margin: 22px 0 8px; color: #526b80; }
+.execution-instance { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid #eef2f5; padding: 12px 4px; }
+.execution-instance div { display: grid; gap: 4px; }
+.execution-run, .execution-attempt-row { display: block; width: 100%; border: 0; border-top: 1px solid #eef2f5; padding: 10px 4px; color: #1d7a8c; background: transparent; text-align: left; cursor: pointer; font: inherit; }
+.execution-attempt { margin-top: 18px; padding: 14px; border: 1px solid #dce5ed; border-radius: 10px; background: #fff; }
+.execution-attempt-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.execution-attempt-heading h4 { margin: 0; }
+.execution-step { display: grid; gap: 7px; margin-top: 12px; border-top: 1px solid #eef2f5; padding-top: 12px; }
+.execution-step p { margin: 0; color: #17324d; white-space: pre-wrap; }
+.execution-step small { color: #73879b; }
+.execution-step textarea { min-height: 54px; resize: vertical; }
+.execution-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
 .test-case-detail form { display: grid; gap: 12px; margin-top: 16px; }
 .test-case-detail form > .test-steps { margin-top: 2px; }
 .test-steps { display: grid; gap: 10px; }
@@ -112,4 +135,4 @@ h1 { margin: 0; color: #12263a; font-size: clamp(32px, 5vw, 56px); letter-spacin
 @media (max-width: 720px) { .project-detail, .project-edit-form { align-items: stretch; flex-direction: column; } }
 @media (max-width: 720px) { .management-forms { grid-template-columns: 1fr; } .compact-form { grid-template-columns: 1fr; } .compact-form strong { grid-column: auto; } }
 @media (max-width: 720px) { .requirements-layout, .test-cases-layout { grid-template-columns: 1fr; } .requirement-create-form, .test-search-form, .test-create-form, .test-step-fields { grid-template-columns: 1fr; } }
-
+.execution-add-form label:has(input[aria-label="用例 ID"]), .execution-add-form label:has(input[aria-label="修订 ID"]) { display: none; }

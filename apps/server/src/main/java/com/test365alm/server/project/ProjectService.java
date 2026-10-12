@@ -337,8 +337,15 @@ public class ProjectService {
         // create or append a revision; project administration is unrelated.
         permissions.add("test:read");
         permissions.add("test:history:read");
+        // M09 execution is a separate capability from editing the test
+        // definition.  Viewers retain read/history while project members and
+        // administrators may create sets and record manual run results.
+        permissions.add("test-set:read");
+        permissions.add("run:read");
+        permissions.add("run:history:read");
         if (isAdminRoles(roles, PROJECT_ADMINS) || roles.contains("PROJECT_MEMBER")) {
-            permissions.addAll(List.of("requirement:create", "requirement:update", "test:create", "test:update"));
+            permissions.addAll(List.of("requirement:create", "requirement:update", "test:create", "test:update",
+                    "test-set:create", "test-set:update", "run:write", "test:run"));
         }
         return new PermissionView(project.tenantId(), project.id(), actor, List.copyOf(roles), List.copyOf(permissions));
     }
@@ -689,4 +696,3 @@ public class ProjectService {
     public record PermissionView(UUID tenantId, UUID projectId, UUID principalId, List<String> roles,
             List<String> permissions) { }
 }
-

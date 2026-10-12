@@ -14,6 +14,14 @@ REQUIRED_TEST = (
 REQUIRED_UI_TEST = "real Keycloak UI project flow shows scoped viewer controls and clears revoked access"
 REQUIRED_REQUIREMENT_UI_TEST = "real Keycloak UI requirement flow creates edits and keeps viewer read-only"
 REQUIRED_MANUAL_TEST_CASE_UI_TEST = "real Keycloak UI manual test case flow creates steps, edits order, and keeps viewer read-only"
+REQUIRED_MANUAL_EXECUTION_UI_TEST = "real Keycloak UI manual execution creates, resumes, finishes and reruns a two-step run"
+REQUIRED_BROWSER_TESTS = (
+    REQUIRED_TEST,
+    REQUIRED_UI_TEST,
+    REQUIRED_REQUIREMENT_UI_TEST,
+    REQUIRED_MANUAL_TEST_CASE_UI_TEST,
+    REQUIRED_MANUAL_EXECUTION_UI_TEST,
+)
 
 
 def read_report(path: Path) -> tuple[int, int, int, int, set[str]]:
@@ -30,9 +38,11 @@ def read_report(path: Path) -> tuple[int, int, int, int, set[str]]:
 def verify(path: Path) -> tuple[bool, str]:
     tests, failures, errors, skipped, names = read_report(path)
     summary = f"project browser tests={tests} failures={failures} errors={errors} skipped={skipped}"
-    missing = [name for name in (REQUIRED_TEST, REQUIRED_UI_TEST, REQUIRED_REQUIREMENT_UI_TEST, REQUIRED_MANUAL_TEST_CASE_UI_TEST) if name not in names]
+    missing = [name for name in REQUIRED_BROWSER_TESTS if name not in names]
     if missing:
         return False, summary + f" missing={','.join(missing)}"
+    if tests != len(names):
+        return False, summary + " duplicate-or-count-mismatch"
     if failures or errors or skipped:
         return False, summary
     return True, summary
@@ -57,4 +67,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
