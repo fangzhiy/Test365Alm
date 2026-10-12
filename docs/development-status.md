@@ -1,5 +1,18 @@
 # Test365Alm 开发状态
 
+## R08-CORE-BATCH01 当前状态（主线集成通过，M04/M11 最小切片待独立审核）
+
+- 原文：[R08 输入](progress/inputs/R08-CORE-BATCH01.md)；完整身份、命令、失败历史及范围：[执行记录](progress/runs/R08-CORE-BATCH01.md)。下文各轮“未合并/pending”是历史快照，不代表本轮当前状态。
+- 阶段 A 已通过：正确 PR #6 merge-ref `583e056914f1edbe44f1b87f912eab269775a863` 的 [PR CI 38207737402](https://github.com/fangzhiy/Test365Alm/actions/runs/38207737402) 六 Job success 后，以 expected head 合并。默认分支 `chore/r01-status-001` 的实际 merge SHA `1e49617f283ffa54673d590a1aba3e72fcfbe14e`，[主线 Push 38208110087](https://github.com/fangzhiy/Test365Alm/actions/runs/38208110087) checkout 同 SHA，六 Job success。PR #1～#6 均 merged=true；没有删分支、强推或改默认分支。
+- 从该已验证主线建立 `feat/r08-m04-m11-001` / [PR #7](https://github.com/fangzhiy/Test365Alm/pull/7)，base 为实际默认分支，**新 PR 不合并**。本轮普通 Git 提交/推送，本地与远端 SHA 相同。代码 `f4eb5df1ec4cc9ad808934ee80c470c251d3941e`；最终文档交付 SHA/新 CI 在回复核对，避免文档自引用。
+- M04 已实现项目 SYSTEM 目录/CUSTOM TEXT、NUMBER、ENUM 定义、稳定身份/不可变修订、共享服务端值验证及管理页面；仅 ADMIN 写、MEMBER/VIEWER 读/验证。M11 已实现实际需求→用例 typed 关系、冻结端点修订、稳定身份/失效历史、分页/幂等/审计 Outbox 和需求详情操作入口。授权/RLS 使用受限 runtime；正式仅新增 V17，旧 V1—V16 不改；故意失败探针 V18。
+- 覆盖仅同步单需求数据库汇总：关联分母与执行 PASS 分开，当前绑定修订/最新完成 PASS/无活动重跑的有限规则有真实执行和 Keycloak 页面证据。没有伪造异步投影/watermark/suspect、缺陷关系或完整 M04/M11。
+- 本机实际完整回归已通过 41 单元、97 PostgreSQL 集成；前端 145、Python80及规划通过；本轮 Docker/Testcontainers 实际可用，不沿用历史 JNA 阻塞。Wrapper 单独41单元通过；Java17/Node26 与 CI Java21/Node24 差异如实保留，编译 target17 不变。
+- 最终代码 [Push38212925326](https://github.com/fangzhiy/Test365Alm/actions/runs/38212925326) / [PR38212928874](https://github.com/fangzhiy/Test365Alm/actions/runs/38212928874) 六 Job 全部 success（41/97/145/80/11，独立项目 UI 另1），PR checkout `57397f208f0f80fa45d1351888b4f032e44a1d66`，不是分支 head。已含同租户不同项目/同一 runtime 连接复用证明；最新最终文档交付运行见回复，不循环追写文档。首个 f0b8636 的报告门禁/旧浏览器匹配失败保留并修复，不用旧成功覆盖新提交结果。
+- 原研发 Word、32模块范围、WBS PLANNED、完整 AC NOT_RUN 不改；M01/G0 旧 ALM 授权/样本与 P0 输入仍缺失。动态表单/业务扩展值/导入同步脚本、完整实体注册/影响传播/异步覆盖与 M10 均未交付。本轮停止于审核，不部署、不恢复定时任务或开始下一模块。
+
+最后更新：2026-10-12。
+
 ## R07-INT-001-FIX01 当前状态（专项及代码CI通过，文档交付CI待最终核对）
 
 - 输入全文：[本轮输入](progress/inputs/R07-INT-001-FIX01.md)；详见 [执行记录](progress/runs/R07-INT-001-FIX01.md)。继续 `feat/r06-m09-001` / [PR #6](https://github.com/fangzhiy/Test365Alm/pull/6)，base不变，不合并。远端起点 `2e0a95d1aae911e18759088c6b71b2b3e3232f43`；代码远端 `d0750a30da05f25e7659892d7a636d1e055d0631` 对应本地 `0a7ee6520e7b7b73850ce902eba9d958c12cbee6`，父链不同，按精确文件增量发布，未强推。

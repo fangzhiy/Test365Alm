@@ -1,12 +1,14 @@
 # R08 M11 需求→用例追踪第一切片契约
 
-状态：实现中；仅有向 REQUIREMENT_TEST，不是完整实体注册/影响传播模块。
+状态：已实现最小切片；实际验证见 R08 执行记录。仅有向 REQUIREMENT_TEST，不是完整实体注册/影响传播模块。
 项目路径 `/api/v1/projects/{projectId}/trace-links`。
 
 - POST `{requirementId,testCaseId}`：创建 ACTIVE 关系，201；两个真实端点必须同租户/项目、未删除且可读；冻结当前需求修订/用例修订。
 - GET `?requirementId=<uuid>&cursor=<uuid>&limit=25`：需求详情下稳定 UUID keyset `{items,nextCursor}`，limit 1..100；所有状态均可读。
 - POST `/{id}/invalidate` `{}`：If-Match + Idempotency-Key，追加失效修订，返回新版本；不物理删除审计历史。
 - GET `/api/v1/projects/{projectId}/coverage?requirementId=<uuid>`：同步数据库快照的有限单需求汇总。
+
+覆盖响应为 `{requirementId,linkedTests,activeTests,passedTests,rule}`；rule 为 `CURRENT_BOUND_REVISIONS_LATEST_FINISHED_NO_ACTIVE`。页面明确区分关联分母、活动执行和已执行通过，刷新覆盖仅发 GET。
 
 关系返回 `{id,projectId,requirementId,testCaseId,requirementRevisionId,testRevisionId,rowVersion,state}`，state ACTIVE/INACTIVE；同范围同端点最多一条 ACTIVE。
 创建/失效仅有效 PROJECT_ADMIN/PROJECT_MEMBER；VIEWER 可读。CSRF、强 ETag、幂等和错误体沿用字段契约及现有业务规范。

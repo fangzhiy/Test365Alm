@@ -1,6 +1,6 @@
 # R08 M04 字段定义第一切片契约
 
-状态：实现中；不是完整 M04 验收。项目路径 `/api/v1/projects/{projectId}/field-definitions`。
+状态：已实现最小切片；实际验证见 R08 执行记录，不是完整 M04 验收。项目路径 `/api/v1/projects/{projectId}/field-definitions`。
 
 - GET：`{items,nextCursor}`；limit 默认 25，上限 100，cursor 为最后一条 UUID，按 UUID 升序 keyset；只列持久 CUSTOM 定义。
 - GET `/system`：只读 SYSTEM 保留字段目录（应用既有字段，不伪称自定义扩展值已接入需求/用例）。
@@ -11,6 +11,7 @@
 key 为小写 `[a-z][a-z0-9_]{0,63}`，不得使用目录保留名。type 为 TEXT/NUMBER/ENUM；required 必须为 boolean。
 TEXT 必需 maxLength 1..100000，长度按 Unicode code point；NUMBER 必需 precision 1..28、scale 0..precision，minimum/maximum 可选精确十进制字符串；ENUM 必需 1..100 个唯一非空字符串选项（每项至多 100 字符）。
 NUMBER 值使用无指数精确十进制字符串，不接受 JSON 浮点数，避免浏览器精度丢失；检查 precision、scale、闭区间上下界。缺值先取 defaultValue，再检查 required；默认值必须满足同一验证。
+可选字段的 defaultValue 可以显式为 null；required=true 时不能以 null 满足必填约束。页面留空表示未提供默认值。
 与类型不相关的约束字段拒绝。key/type 创建后不可变；其他变化产生新修订，不修改旧定义或重新解释已存历史。本轮不存储业务实体扩展值，不实现数据回填。
 返回 `{id,projectId,kind:"CUSTOM",rowVersion,definition}`，ETag 为带引号正整数。
 写定义仅实际有效 PROJECT_ADMIN；MEMBER/VIEWER 可读和验证。SYSTEM 不提供写路径。
