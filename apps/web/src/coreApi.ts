@@ -1,7 +1,7 @@
 import { requestJson } from './projectAccess'
 import type { AccessRequestOptions } from './projectAccess'
 
-export type FieldDefinition = { key: string; type: 'TEXT' | 'NUMBER' | 'ENUM'; required: boolean; maxLength?: number; precision?: number; scale?: number; minimum?: string; maximum?: string; options?: string[]; defaultValue?: string }
+export type FieldDefinition = { key: string; type: 'TEXT' | 'NUMBER' | 'ENUM'; required: boolean; maxLength?: number; precision?: number; scale?: number; minimum?: string; maximum?: string; options?: string[]; defaultValue?: string | null }
 export type Field = { id: string; projectId: string; kind: 'CUSTOM'; rowVersion: number; definition: FieldDefinition }
 export type Link = { id: string; projectId: string; requirementId: string; testCaseId: string; requirementRevisionId: string; testRevisionId: string; rowVersion: number; state: 'ACTIVE' | 'INACTIVE' }
 export type Coverage = { requirementId: string; linkedTests: number; activeTests: number; passedTests: number; rule: string }
@@ -17,7 +17,8 @@ function field(v: unknown): Field {
   if (d.type === 'TEXT' && !version(d.maxLength)) return invalid()
   if (d.type === 'NUMBER' && (!version(d.precision) || typeof d.scale !== 'number' || !Number.isInteger(d.scale) || d.scale < 0)) return invalid()
   if (d.type === 'ENUM' && (!Array.isArray(d.options) || !d.options.length || !d.options.every(string))) return invalid()
-  for (const k of ['minimum','maximum','defaultValue']) if (d[k] !== undefined && typeof d[k] !== 'string') return invalid()
+  for (const k of ['minimum','maximum']) if (d[k] !== undefined && typeof d[k] !== 'string') return invalid()
+  if (d.defaultValue !== undefined && d.defaultValue !== null && typeof d.defaultValue !== 'string') return invalid()
   return { id: v.id, projectId: v.projectId, kind: 'CUSTOM', rowVersion: v.rowVersion, definition: d as FieldDefinition }
 }
 function link(v: unknown): Link {

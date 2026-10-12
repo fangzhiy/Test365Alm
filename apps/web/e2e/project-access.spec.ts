@@ -304,8 +304,10 @@ test('real Keycloak UI project flow shows scoped viewer controls and clears revo
       }, diagnostics)
       expect(concurrentUpdate.status()).toBe(200)
       await page.getByLabel('项目名称').fill('R03 stale browser edit')
+      const rejected = page.waitForResponse(response => new URL(response.url()).pathname === `/api/v1/projects/${uiProjectId}` && response.request().method() === 'PATCH' && response.status() === 409)
       await page.getByRole('button', { name: '保存项目' }).click()
-      await expect(page.getByText(/项目已被其他请求更新|版本冲突|changed|stale|version|modified|concurrent/i)).toBeVisible()
+      expect(await (await rejected).json()).toMatchObject({ code: 'STALE_VERSION' })
+      await expect(page.getByRole('region', { name: '租户、项目与成员' }).locator('.access-notice')).toContainText(/项目已被其他请求更新|版本冲突|changed|stale|version|modified|concurrent/i)
       await expect(page.getByRole('region', { name: '项目详情' })).toContainText('R03 concurrent update')
     })
 

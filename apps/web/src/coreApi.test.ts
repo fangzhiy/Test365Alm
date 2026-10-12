@@ -11,3 +11,8 @@ it('coverage response cannot claim PASS exceeding association count or use a dif
   vi.stubGlobal('fetch',vi.fn().mockResolvedValue(new Response(JSON.stringify({requirementId:'r',linkedTests:0,activeTests:0,passedTests:1,rule:'CURRENT_BOUND_REVISIONS_LATEST_FINISHED_NO_ACTIVE'}),{status:200})))
   await expect(coreApi.coverage('p','r')).rejects.toMatchObject({code:'INVALID_RESPONSE'})
 })
+it('optional null default definitions remain readable rather than corrupting the whole page',async()=>{
+  const f={id:'f',projectId:'p',kind:'CUSTOM',rowVersion:1,definition:{key:'note',type:'TEXT',required:false,maxLength:10,defaultValue:null}}
+  vi.stubGlobal('fetch',vi.fn().mockResolvedValue(new Response(JSON.stringify({items:[f],nextCursor:null}),{status:200})))
+  await expect(coreApi.fields('p',null)).resolves.toEqual({items:[f],nextCursor:null})
+})
