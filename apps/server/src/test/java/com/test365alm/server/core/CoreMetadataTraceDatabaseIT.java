@@ -35,6 +35,23 @@ class CoreMetadataTraceDatabaseIT {
     @Autowired com.test365alm.server.requirement.RequirementService requirements;
     @Autowired com.test365alm.server.testcase.TestCaseService tests;
     @Autowired com.test365alm.server.execution.ExecutionService execution;
+    @Test void sameTenantDifferentProjectFieldAndTraceScopesStayIsolatedOnReusedConnection() throws Exception {
+        var f=fixture();UUID domain=owner().queryForObject("SELECT domain_id FROM project WHERE id=?",UUID.class,f.project);
+        var other=projects.createProject(f.admin,f.tenant,domain,"R08-other-"+UUID.randomUUID(),"Other same-tenant project");
+        projects.putMember(f.admin,other.id(),f.member,List.of("PROJECT_MEMBER"),0L,false);
+        var sibling=new Fixture(f.admin,f.member,f.viewer,f.tenant,other.id());
+        var req=requirement(f);var tc=test(sibling);var own=fields.create(f.admin,f.project,CoreCommands.JSON.readTree("{\"key\":\"note\",\"type\":\"TEXT\",\"required\":false,\"maxLength\":30}"),key());
+        var before=snapshot(f.project);
+        assertEquals("NOT_FOUND",assertThrows(ProjectAccessException.class,()->fields.get(f.member,other.id(),own.id(),null)).code());
+        assertEquals("NOT_FOUND",assertThrows(ProjectAccessException.class,()->links.create(f.member,f.project,req.id(),tc.id(),key())).code());
+        assertEquals("NOT_FOUND",assertThrows(ProjectAccessException.class,()->links.create(f.member,other.id(),req.id(),tc.id(),key())).code());
+        assertEquals(before,snapshot(f.project));
+        try(Connection c=runtimeConnection()){
+            context(c,f,f.member);try(var s=c.createStatement();var r=s.executeQuery("SELECT count(*) FROM field_definition")){assertTrue(r.next());assertEquals(1,r.getInt(1));}
+            context(c,sibling,f.member);try(var s=c.createStatement();var r=s.executeQuery("SELECT count(*) FROM field_definition")){assertTrue(r.next());assertEquals(0,r.getInt(1));}
+            context(c,f,f.member);try(var s=c.createStatement();var r=s.executeQuery("SELECT count(*) FROM field_definition")){assertTrue(r.next());assertEquals(1,r.getInt(1));}
+        }
+    }
     @Test void concurrentFieldRevisionsHaveOneExactStaleLoserAndTraceCreatesHaveOneIdentity() throws Exception {
         var f=fixture();var d=CoreCommands.JSON.readTree("{\"key\":\"note\",\"type\":\"TEXT\",\"required\":false,\"maxLength\":30}");
         var first=fields.create(f.admin,f.project,d,key());

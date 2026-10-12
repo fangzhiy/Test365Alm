@@ -13,6 +13,7 @@ REQUIRED = {
         'traceForeignDeletedEndpointsRlsAndAuditOutboxRollbackHaveNoEffects',
         'traceCoverageRequiresCurrentFrozenRevisionsPassAndNoActiveRerun',
         'fieldAndTraceKeysetPagesContinueWithoutScopeLeakOrDuplicates',
+        'sameTenantDifferentProjectFieldAndTraceScopesStayIsolatedOnReusedConnection',
     },
     'com.test365alm.server.identity.OidcCallbackSecurityIT': {
         'realOidcFieldMetadataHttpAdminViewerCsrfTypesVersionsAndScope',
