@@ -565,6 +565,297 @@ class OidcCallbackSecurityIT {
     }
 
     @Test
+    void realOidcTestCaseHttpEnforcesStrongEtagsCsrfAndInputBoundary() throws Exception {
+        TestCaseHttpFixture fixture = testCaseHttpFixture();
+        HttpActor member = fixture.member();
+        String collection = testCasePath(fixture.project());
+        String createBody = testCaseBody("HTTP member case", null, true);
+        HttpResponse<String> created = testCasePost(member, collection, null, createBody);
+        assertEquals(201, created.statusCode(), created.body());
+        assertEquals("\"1\"", created.headers().firstValue("etag").orElseThrow());
+        String id = jsonField(created.body(), "id");
+        String item = collection + "/" + id;
+        String stepKey = firstStepKey(created.body());
+        HttpResponse<String> reread = get(member.flow().client(), item);
+        assertEquals(200, reread.statusCode(), reread.body());
+        assertEquals(jsonField(created.body(), "id"), jsonField(reread.body(), "id"));
+        assertEquals(jsonNumber(created.body(), "displayNumber"), jsonNumber(reread.body(), "displayNumber"));
+        assertEquals(firstStepKey(created.body()), firstStepKey(reread.body()),
+                "fresh HTTP read preserves the server-generated initial step key");
+        assertEquals("\"1\"", reread.headers().firstValue("etag").orElseThrow());
+        assertEquals(member.principalId().toString(), jsonField(created.body(), "createdBy"));
+        assertTrue(get(member.flow().client(), collection).body().contains(id));
+
+        String revisionPath = item + "/revisions";
+        String revisionBody = testCaseBody("Edited through HTTP", stepKey, false);
+        HttpResponse<String> edited = testCasePost(member, revisionPath, "\"1\"", revisionBody);
+        assertEquals(200, edited.statusCode(), edited.body());
+        assertEquals("\"2\"", edited.headers().firstValue("etag").orElseThrow());
+        assertEquals(stepKey, firstStepKey(edited.body()));
+        assertEquals(2, jsonNumber(edited.body(), "revisionNo"));
+        HttpResponse<String> editedRead = get(member.flow().client(), item);
+        assertEquals(200, editedRead.statusCode(), editedRead.body());
+        assertEquals("Edited through HTTP", jsonField(editedRead.body(), "title"));
+        assertEquals(stepKey, firstStepKey(editedRead.body()));
+        TestCaseCounts baseline = testCaseCounts(fixture.project());
+
+        for (String absent : new String[] { null, "" }) {
+            assertTestCaseRejected(() -> testCasePost(member, revisionPath, absent, revisionBody),
+                    428, "PRECONDITION_REQUIRED");
+        }
+        for (String invalid : List.of("2", "W/\"2\"", "*", "\"2", "\"2\",\"3\"", "\"0\"")) {
+            assertTestCaseRejected(() -> testCasePost(member, revisionPath, invalid, revisionBody),
+                    400, "INVALID_REQUEST");
+        }
+        assertTestCaseRejected(() -> testCasePost(member, revisionPath, "\"1\"", revisionBody),
+                412, "STALE_VERSION");
+        assertTestCaseRejected(() -> testCasePost(member, collection, null, createBody, null, null),
+                403, "CSRF_REJECTED");
+        assertTestCaseRejected(() -> testCasePost(member, revisionPath, "\"2\"", revisionBody,
+                member.csrfHeader(), "synthetic-invalid-csrf"), 403, "CSRF_REJECTED");
+
+        List<String> invalidCreates = List.of(
+                createBody.replace("\"MANUAL\"", "\"AUTOMATED\""),
+                createBody.replace("\"title\":\"HTTP member case\"", "\"title\":123"),
+                createBody.replace("\"description\":\"plain text\"", "\"description\":{}"),
+                createBody.replace("\"title\":\"HTTP member case\"", "\"title\":\"\""),
+                createBody.replace("HTTP member case", "x".repeat(501)),
+                createBody.replace("plain text", "x".repeat(100_001)),
+                createBody.replace("\"ordinal\":1", "\"ordinal\":0"),
+                createBody.replace("\"ordinal\":1", "\"ordinal\":2"),
+                createBody.replace("\"ordinal\":1", "\"ordinal\":\"1\""),
+                createBody.replace("\"ordinal\":1", "\"ordinal\":1.5"),
+                createBody.replace("\"ordinal\":1", "\"ordinal\":4294967297"),
+                createBody.replace("\"action\":\"perform action\"", "\"action\":false"),
+                createBody.replace("perform action", "x".repeat(10_001)),
+                createBody.replace("expected result", "x".repeat(10_001)),
+                "{\"testType\":\"MANUAL\",\"title\":\"bad steps\",\"steps\":{}}",
+                "{\"testType\":\"MANUAL\",\"title\":\"bad steps\",\"steps\":[null]}",
+                "{\"testType\":\"MANUAL\",\"title\":\"bad steps\",\"steps\":[{\"action\":\"\",\"expected\":\"x\"}]}",
+                "{\"testType\":\"MANUAL\",\"title\":\"too many\",\"steps\":["
+                        + String.join(",", java.util.Collections.nCopies(201, "{\"action\":\"a\",\"expected\":\"e\"}")) + "]}");
+        for (String invalid : invalidCreates) {
+            assertTestCaseRejected(() -> testCasePost(member, collection, null, invalid), 400, "INVALID_REQUEST");
+        }
+        for (String controlledField : List.of("authorId", "tenantId", "permissions", "currentRevisionId", "requirementId")) {
+            String invalid = createBody.substring(0, createBody.length() - 1) + ",\"" + controlledField + "\":\"forged\"}";
+            assertTestCaseRejected(() -> testCasePost(member, collection, null, invalid), 400, "INVALID_REQUEST");
+        }
+        String duplicateSteps = "{\"title\":\"duplicate\",\"description\":\"\",\"preconditions\":\"\",\"steps\":["
+                + "{\"stepKey\":\"" + stepKey + "\",\"ordinal\":1,\"action\":\"a\",\"expected\":\"e\"},"
+                + "{\"stepKey\":\"" + stepKey + "\",\"ordinal\":2,\"action\":\"b\",\"expected\":\"f\"}]}";
+        assertTestCaseRejected(() -> testCasePost(member, revisionPath, "\"2\"", duplicateSteps), 400, "INVALID_REQUEST");
+        assertTestCaseRejected(() -> testCasePost(member, revisionPath, "\"2\"", createBody), 400, "INVALID_REQUEST");
+        assertTestCaseRejected(() -> testCasePost(member, revisionPath, "\"2\"",
+                revisionBody.replace("\"stepKey\":\"" + stepKey + "\"", "\"stepKey\":\"not-a-uuid\"")),
+                400, "INVALID_REQUEST");
+
+        assertEquals(200, get(fixture.viewer().flow().client(), item).statusCode());
+        assertEquals(200, get(fixture.viewer().flow().client(), revisionPath).statusCode());
+        assertTestCaseRejected(() -> testCasePost(fixture.viewer(), collection, null, createBody), 403, "FORBIDDEN");
+        assertTestCaseRejected(() -> testCasePost(fixture.viewer(), revisionPath, "\"2\"", revisionBody), 403, "FORBIDDEN");
+        HttpClient anonymous = newClientFixture().client();
+        assertTestCaseRejected(() -> get(anonymous, collection), 401, "UNAUTHENTICATED");
+        assertTestCaseRejected(() -> get(anonymous, item), 401, "UNAUTHENTICATED");
+        assertTestCaseRejected(() -> get(anonymous, revisionPath), 401, "UNAUTHENTICATED");
+        assertEquals(baseline, testCaseCounts(fixture.project()),
+                "HTTP rejected requests must not create case, revision, step, audit, outbox or idempotency rows");
+    }
+
+    @Test
+    void realOidcTestCaseHttpScopesReferencesAndRefreshesOldSessionPermissions() throws Exception {
+        TestCaseHttpFixture fixture = testCaseHttpFixture();
+        HttpActor member = fixture.member();
+        String collection = testCasePath(fixture.project());
+        HttpResponse<String> created = testCasePost(member, collection, null, testCaseBody("sensitive case A", null, true));
+        assertEquals(201, created.statusCode(), created.body());
+        String item = collection + "/" + jsonField(created.body(), "id");
+        String ownStep = firstStepKey(created.body());
+        HttpResponse<String> sibling = testCasePost(member, collection, null, testCaseBody("sensitive sibling", null, true));
+        assertEquals(201, sibling.statusCode(), sibling.body());
+        HttpResponse<String> foreignProject = testCasePost(fixture.admin(), testCasePath(fixture.otherProject()),
+                null, testCaseBody("foreign project secret", null, true));
+        HttpResponse<String> foreignTenant = testCasePost(fixture.admin(), testCasePath(fixture.otherTenantProject()),
+                null, testCaseBody("foreign tenant secret", null, true));
+        assertEquals(201, foreignProject.statusCode(), foreignProject.body());
+        assertEquals(201, foreignTenant.statusCode(), foreignTenant.body());
+        TestCaseCounts baseline = testCaseCounts(fixture.project());
+
+        for (HttpResponse<String> foreign : List.of(sibling, foreignProject, foreignTenant)) {
+            String foreignRevision = new tools.jackson.databind.json.JsonMapper().readTree(foreign.body())
+                    .path("currentRevision").path("id").asText();
+            assertTestCaseRejected(() -> get(member.flow().client(), item + "/revisions/" + foreignRevision),
+                    404, "NOT_FOUND");
+            String badStepBody = testCaseBody("must not accept a foreign step", firstStepKey(foreign.body()), false);
+            assertTestCaseRejected(() -> testCasePost(member, item + "/revisions", "\"1\"", badStepBody),
+                    400, "INVALID_REQUEST");
+        }
+        for (HttpResponse<String> foreign : List.of(foreignProject, foreignTenant)) {
+            assertTestCaseRejected(() -> get(member.flow().client(), collection + "/" + jsonField(foreign.body(), "id")),
+                    404, "NOT_FOUND");
+        }
+        for (UUID foreignProjectId : List.of(fixture.otherProject(), fixture.otherTenantProject())) {
+            assertTestCaseRejected(() -> get(member.flow().client(), testCasePath(foreignProjectId)), 404, "NOT_FOUND");
+        }
+        String revisionBody = testCaseBody("attempted write", ownStep, false);
+        // This outsider is a TENANT_ADMIN, but has no project membership. A malformed ETag must not reveal a version.
+        for (String path : List.of(collection, item, item + "/revisions")) {
+            assertTestCaseRejected(() -> get(fixture.outsider().flow().client(), path), 404, "NOT_FOUND");
+        }
+        assertTestCaseRejected(() -> testCasePost(fixture.outsider(), item + "/revisions", "wrong", revisionBody),
+                404, "NOT_FOUND");
+
+        try (var connection = ownerConnection(); var statement = connection.prepareStatement(
+                "UPDATE project_member SET roles = ARRAY['PROJECT_VIEWER']::text[], authorization_version = authorization_version + 1 "
+                        + "WHERE tenant_id = ? AND project_id = ? AND principal_id = ?")) {
+            statement.setObject(1, fixture.tenant()); statement.setObject(2, fixture.project());
+            statement.setObject(3, member.principalId()); assertEquals(1, statement.executeUpdate());
+        }
+        assertEquals(200, get(member.flow().client(), item).statusCode(), "same authenticated client remains readable after demotion without /me");
+        assertTestCaseRejected(() -> testCasePost(member, collection, null, testCaseBody("demoted", null, true)), 403, "FORBIDDEN");
+        assertTestCaseRejected(() -> testCasePost(member, item + "/revisions", "\"1\"", revisionBody), 403, "FORBIDDEN");
+        try (var connection = ownerConnection(); var statement = connection.prepareStatement(
+                "UPDATE project_member SET revoked_at = CURRENT_TIMESTAMP, authorization_version = authorization_version + 1 "
+                        + "WHERE tenant_id = ? AND project_id = ? AND principal_id = ?")) {
+            statement.setObject(1, fixture.tenant()); statement.setObject(2, fixture.project());
+            statement.setObject(3, member.principalId()); assertEquals(1, statement.executeUpdate());
+        }
+        for (String path : List.of(collection, item, item + "/revisions")) {
+            assertTestCaseRejected(() -> get(member.flow().client(), path), 404, "NOT_FOUND");
+        }
+        assertTestCaseRejected(() -> testCasePost(member, item + "/revisions", "\"1\"", revisionBody), 404, "NOT_FOUND");
+        // A distinct, still-joined viewer proves tenant invalidation and principal disabling independently of project revocation.
+        try (var connection = ownerConnection(); var statement = connection.prepareStatement(
+                "UPDATE tenant_member SET valid_until = CURRENT_TIMESTAMP WHERE tenant_id = ? AND principal_id = ?")) {
+            statement.setObject(1, fixture.tenant()); statement.setObject(2, fixture.viewer().principalId());
+            assertEquals(1, statement.executeUpdate());
+        }
+        assertTestCaseRejected(() -> get(fixture.viewer().flow().client(), item), 404, "NOT_FOUND");
+        try (var connection = ownerConnection(); var statement = connection.prepareStatement(
+                "UPDATE principal SET disabled_at = CURRENT_TIMESTAMP WHERE id = ?")) {
+            statement.setObject(1, fixture.admin().principalId()); assertEquals(1, statement.executeUpdate());
+        }
+        assertTestCaseRejected(() -> get(fixture.admin().flow().client(), item), 403, "FORBIDDEN");
+        assertTestCaseRejected(() -> testCasePost(fixture.admin(), item + "/revisions", "\"1\"", revisionBody),
+                403, "FORBIDDEN");
+        assertEquals(baseline, testCaseCounts(fixture.project()),
+                "cross-scope and revoked-session calls must not write case, revision, step, audit, outbox or idempotency rows");
+    }
+
+    private TestCaseHttpFixture testCaseHttpFixture() throws Exception {
+        String adminSubject = uniqueSubject("test-case-http-admin");
+        String memberSubject = uniqueSubject("test-case-http-member");
+        String viewerSubject = uniqueSubject("test-case-http-viewer");
+        String outsiderSubject = uniqueSubject("test-case-http-outsider");
+        HttpActor admin = actor(adminSubject);
+        HttpActor member = actor(memberSubject);
+        HttpActor viewer = actor(viewerSubject);
+        HttpActor outsider = actor(outsiderSubject);
+        UUID tenant = UUID.randomUUID();
+        UUID otherTenant = UUID.randomUUID();
+        UUID domain = UUID.randomUUID();
+        UUID otherDomain = UUID.randomUUID();
+        UUID project = UUID.randomUUID();
+        UUID otherProject = UUID.randomUUID();
+        UUID otherTenantProject = UUID.randomUUID();
+        try (var connection = ownerConnection()) {
+            insertTenantFixture(connection, tenant, "test-case-http-tenant-" + tenant, "Test case HTTP tenant");
+            insertTenantFixture(connection, otherTenant, "test-case-http-other-tenant-" + otherTenant, "Other tenant");
+            insertDomainFixture(connection, domain, tenant, "Test case HTTP domain");
+            insertDomainFixture(connection, otherDomain, otherTenant, "Other tenant domain");
+            insertTenantMemberFixture(connection, tenant, admin.principalId(), "TENANT_ADMIN");
+            insertTenantMemberFixture(connection, tenant, member.principalId(), "MEMBER");
+            insertTenantMemberFixture(connection, tenant, viewer.principalId(), "MEMBER");
+            insertTenantMemberFixture(connection, tenant, outsider.principalId(), "TENANT_ADMIN");
+            insertTenantMemberFixture(connection, otherTenant, admin.principalId(), "TENANT_ADMIN");
+            insertProjectFixture(connection, project, tenant, domain, "test-case-http-" + project, "Test case HTTP project", admin.principalId());
+            insertProjectFixture(connection, otherProject, tenant, domain, "test-case-http-other-" + otherProject, "Other project", admin.principalId());
+            insertProjectFixture(connection, otherTenantProject, otherTenant, otherDomain, "test-case-http-cross-" + otherTenantProject, "Cross tenant project", admin.principalId());
+            insertProjectMemberFixture(connection, tenant, project, admin.principalId(), "PROJECT_ADMIN");
+            insertProjectMemberFixture(connection, tenant, project, member.principalId(), "PROJECT_MEMBER");
+            insertProjectMemberFixture(connection, tenant, project, viewer.principalId(), "PROJECT_VIEWER");
+            insertProjectMemberFixture(connection, tenant, otherProject, admin.principalId(), "PROJECT_ADMIN");
+            insertProjectMemberFixture(connection, otherTenant, otherTenantProject, admin.principalId(), "PROJECT_ADMIN");
+        }
+        return new TestCaseHttpFixture(tenant, project, otherProject, otherTenantProject, admin, member, viewer, outsider);
+    }
+
+    private HttpActor actor(String subject) throws Exception {
+        Flow flow = runAuthorization(Variant.VALID, subject);
+        String csrf = get(flow.client(), "/api/v1/csrf").body();
+        return new HttpActor(flow, principalId(subject), jsonField(csrf, "headerName"), jsonField(csrf, "token"));
+    }
+
+    private String testCasePath(UUID projectId) {
+        return "/api/v1/projects/" + projectId + "/tests";
+    }
+
+    private String testCaseBody(String title, String stepKey, boolean create) {
+        String step = "{\"" + (stepKey == null ? "" : "stepKey\":\"" + stepKey + "\",\"")
+                + "ordinal\":1,\"action\":\"perform action\",\"expected\":\"expected result\"}";
+        return "{\"" + (create ? "testType\":\"MANUAL\",\"" : "")
+                + "title\":\"" + title + "\",\"description\":\"plain text\",\"preconditions\":\"ready\",\"steps\":[" + step + "]}";
+    }
+
+    private HttpResponse<String> testCasePost(HttpActor actor, String path, String ifMatch, String body) throws Exception {
+        return testCasePost(actor, path, ifMatch, body, actor.csrfHeader(), actor.csrfToken());
+    }
+
+    private HttpResponse<String> testCasePost(HttpActor actor, String path, String ifMatch, String body,
+            String csrfHeader, String csrfToken) throws Exception {
+        var builder = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + appPort + path))
+                .timeout(REQUEST_TIMEOUT).header("Content-Type", "application/json")
+                .header("Idempotency-Key", "test-case-http-" + UUID.randomUUID());
+        if (ifMatch != null) builder.header("If-Match", ifMatch);
+        if (csrfHeader != null && csrfToken != null) builder.header(csrfHeader, csrfToken);
+        return actor.flow().client().send(builder.POST(HttpRequest.BodyPublishers.ofString(body)).build(),
+                HttpResponse.BodyHandlers.ofString());
+    }
+
+    private void assertTestCaseRejected(HttpCall action, int status, String code) {
+        try {
+            HttpResponse<String> response = action.send();
+            assertEquals(status, response.statusCode(), response.body());
+            assertEquals(code, jsonField(response.body(), "code"), response.body());
+        } catch (Exception ex) {
+            throw new AssertionError("HTTP test-case request failed", ex);
+        }
+    }
+
+    @FunctionalInterface
+    private interface HttpCall { HttpResponse<String> send() throws Exception; }
+
+    private String firstStepKey(String body) {
+        Matcher matcher = Pattern.compile("\\\"steps\\\"\\s*:\\s*\\[\\s*\\{[^}]*?\\\"stepKey\\\"\\s*:\\s*\\\"([^\\\"]+)").matcher(body);
+        assertTrue(matcher.find(), "missing first step key");
+        return matcher.group(1);
+    }
+
+    private TestCaseCounts testCaseCounts(UUID projectId) throws Exception {
+        try (var connection = ownerConnection()) {
+            return new TestCaseCounts(countRowsForProject(connection, "test_case", projectId),
+                    countRowsForProject(connection, "test_revision", projectId),
+                    countRowsForProject(connection, "test_step", projectId),
+                    countRowsForProject(connection, "audit_event", projectId),
+                    countRowsForProject(connection, "test_case_outbox_event", projectId),
+                    countRowsForProject(connection, "test_case_idempotency", projectId));
+        }
+    }
+
+    private static int countRowsForProject(java.sql.Connection connection, String table, UUID projectId)
+            throws SQLException {
+        if (!List.of("test_case", "test_revision", "test_step", "audit_event", "test_case_outbox_event",
+                "test_case_idempotency").contains(table)) throw new IllegalArgumentException("unexpected testcase table");
+        try (var statement = connection.prepareStatement("SELECT COUNT(*) FROM " + table + " WHERE project_id = ?")) {
+            statement.setObject(1, projectId);
+            try (var rows = statement.executeQuery()) {
+                assertTrue(rows.next());
+                return rows.getInt(1);
+            }
+        }
+    }
+
+    @Test
     void legalTokenCompletesHttpCallbackAndPersistsPrincipal() throws Exception {
         String subject = uniqueSubject("legal");
         PrincipalSnapshot before = snapshot();
@@ -993,6 +1284,13 @@ class OidcCallbackSecurityIT {
     private record ClientFixture(HttpClient client, CookieManager cookies) { }
 
     private record Flow(HttpClient client, Scenario scenario, HttpResponse<String> callback) { }
+
+    private record HttpActor(Flow flow, UUID principalId, String csrfHeader, String csrfToken) { }
+
+    private record TestCaseHttpFixture(UUID tenant, UUID project, UUID otherProject, UUID otherTenantProject,
+            HttpActor admin, HttpActor member, HttpActor viewer, HttpActor outsider) { }
+
+    private record TestCaseCounts(int cases, int revisions, int steps, int audit, int outbox, int idempotency) { }
 
     private record PrincipalSnapshot(List<Map<String, String>> rows) {
         boolean has(String issuer, String subject) {

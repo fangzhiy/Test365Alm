@@ -332,8 +332,13 @@ public class ProjectService {
         // limited to the read/history actions.
         permissions.add("requirement:read");
         permissions.add("requirement:history:read");
+        // Manual test cases use a separate action namespace.  A viewer keeps
+        // the two read capabilities, while only an active project writer may
+        // create or append a revision; project administration is unrelated.
+        permissions.add("test:read");
+        permissions.add("test:history:read");
         if (isAdminRoles(roles, PROJECT_ADMINS) || roles.contains("PROJECT_MEMBER")) {
-            permissions.addAll(List.of("requirement:create", "requirement:update"));
+            permissions.addAll(List.of("requirement:create", "requirement:update", "test:create", "test:update"));
         }
         return new PermissionView(project.tenantId(), project.id(), actor, List.copyOf(roles), List.copyOf(permissions));
     }
@@ -347,6 +352,24 @@ public class ProjectService {
     /** Requirement write permission is distinct from member administration. */
     @Transactional(readOnly = true)
     public ProjectView requireRequirementWriteAccess(UUID actor, UUID projectId) {
+        ProjectView project = findProject(actor, projectId);
+        requireProjectAccess(actor, project.tenantId(), project.id());
+        setContext(project.tenantId(), actor);
+        if (!hasRole(actor, project.tenantId(), project.id(), Set.of("PROJECT_ADMIN", "PROJECT_MEMBER"), true)) {
+            throw ProjectAccessException.forbidden();
+        }
+        return project;
+    }
+
+    /** Manual test case reads share the project membership boundary. */
+    @Transactional(readOnly = true)
+    public ProjectView requireTestReadAccess(UUID actor, UUID projectId) {
+        return getProject(actor, projectId);
+    }
+
+    /** Manual test case writes are allowed to admins and ordinary members. */
+    @Transactional(readOnly = true)
+    public ProjectView requireTestWriteAccess(UUID actor, UUID projectId) {
         ProjectView project = findProject(actor, projectId);
         requireProjectAccess(actor, project.tenantId(), project.id());
         setContext(project.tenantId(), actor);
@@ -666,3 +689,4 @@ public class ProjectService {
     public record PermissionView(UUID tenantId, UUID projectId, UUID principalId, List<String> roles,
             List<String> permissions) { }
 }
+

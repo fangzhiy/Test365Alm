@@ -1,4 +1,4 @@
-﻿task_id,module_id,module,phase,owner_role,work_package,predecessor,final_module_dependencies,acceptance_ids,status,estimate_person_days,evidence
+task_id,module_id,module,phase,owner_role,work_package,predecessor,final_module_dependencies,acceptance_ids,status,estimate_person_days,evidence
 M01-T01,M01,范围冻结与兼容验证,P0,产品负责人 / ALM 领域专家,建立合法可访问的目标环境；登记版本、补丁、Edition、扩展、客户端位数、数据库、认证方式、项目数量。以截图及授权记录保存原始证据，不把 26.1 参考文档等同于客户的真实环境。,模块具体切片前置条件,,M01-AC01;M01-AC02;M01-AC03;M01-AC04;M01-AC05,PLANNED,TBD_AFTER_P0,
 M01-T02,M01,范围冻结与兼容验证,P0,产品负责人 / ALM 领域专家,逐模块录制正常、权限、错误、批量和历史行为；将菜单、字段、导入导出、站点管理及插件分别映射到 scope-matrix.csv。每个差异记录来源、业务影响和验收人。,M01-T01,,M01-AC01;M01-AC02;M01-AC03;M01-AC04;M01-AC05,PLANNED,TBD_AFTER_P0,
 M01-T03,M01,范围冻结与兼容验证,P0,产品负责人 / ALM 领域专家,选取普通、强定制、大数据量三个脱敏项目；提取元数据、关系、附件、运行历史与签名来源，制作 golden-dataset 清单和哈希，不使用未经授权的生产数据。,M01-T02,,M01-AC01;M01-AC02;M01-AC03;M01-AC04;M01-AC05,PLANNED,TBD_AFTER_P0,
@@ -41,7 +41,7 @@ M07-T03,M07,需求管理与评审,P1,后端 / 前端,所有变更校验 If-Match
 M07-T04,M07,需求管理与评审,P1,后端 / 前端,实现评审发起、意见、返工、批准与变更后重评；评审绑定修订而非永远指向最新内容。,M07-T03,M03;M04;M05;M06,M07-AC01;M07-AC02;M07-AC03;M07-AC04;M07-AC05,PLANNED,TBD_AFTER_P0,
 M07-T05,M07,需求管理与评审,P1,后端 / 前端,接入覆盖关系和需求间追踪；内容变化按版本差异标记受影响关系可疑，不自动宣布所有已关联测试已验证新需求。,M07-T04,M03;M04;M05;M06,M07-AC01;M07-AC02;M07-AC03;M07-AC04;M07-AC05,PLANNED,TBD_AFTER_P0,
 M07-T06,M07,需求管理与评审,P1,后端 / 前端,完成树懒加载、快速搜索、批量导入和 Excel 导出；大任务异步执行并校验下载者当时权限。,M07-T05,M03;M04;M05;M06,M07-AC01;M07-AC02;M07-AC03;M07-AC04;M07-AC05,PLANNED,TBD_AFTER_P0,
-M08-T01,M08,测试计划、步骤与配置,P1/P2,后端 / 前端 / QA,拆分测试身份、修订、步骤与参数；步骤使用稳定 step_key 和顺序值，不以数组下标标识历史步骤。,模块具体切片前置条件,M04;M05;M07,M08-AC01;M08-AC02;M08-AC03;M08-AC04;M08-AC05,PLANNED,TBD_AFTER_P0,
+M08-T01,M08,测试计划、步骤与配置,P1/P2,后端 / 前端 / QA,拆分测试身份、修订、步骤与参数；步骤使用稳定 step_key 和顺序值，不以数组下标标识历史步骤。,模块具体切片前置条件,M04;M05;M07,M08-AC01;M08-AC02;M08-AC03;M08-AC04;M08-AC05,IN_PROGRESS,R05-M08-001,
 M08-T02,M08,测试计划、步骤与配置,P1/P2,后端 / 前端 / QA,实现步骤编辑、拖拽排序、预期结果、资源关联、复制和批量维护；复制生成新身份并记录来源，不共享可变步骤。,M08-T01,M04;M05;M07,M08-AC01;M08-AC02;M08-AC03;M08-AC04;M08-AC05,PLANNED,TBD_AFTER_P0,
 M08-T03,M08,测试计划、步骤与配置,P1/P2,后端 / 前端 / QA,实现测试配置与数据集，采用显式的参数优先级：实例覆盖、配置值、用例默认；敏感参数保存密钥引用而非明文。,M08-T02,M04;M05;M07,M08-AC01;M08-AC02;M08-AC03;M08-AC04;M08-AC05,PLANNED,TBD_AFTER_P0,
 M08-T04,M08,测试计划、步骤与配置,P1/P2,后端 / 前端 / QA,支持被调用测试及参数映射；保存与执行前同时检查依赖图循环、缺失参数和版本约束；限制递归深度。,M08-T03,M04;M05;M07,M08-AC01;M08-AC02;M08-AC03;M08-AC04;M08-AC05,PLANNED,TBD_AFTER_P0,
@@ -191,3 +191,4 @@ M32-T03,M32,全量对齐、发行与持续维护,P4,项目负责人 / 独立 QA,
 M32-T04,M32,全量对齐、发行与持续维护,P4,项目负责人 / 独立 QA,冻结发行清单：源代码与构建、镜像、安装器、数据库迁移、SDK、文档、SBOM、备份恢复及已知差异；清单与实际发布文件逐项校验。,M32-T03,M01;M14;M17;M18;M20;M21;M22;M23;M24;M25;M26;M27;M28;M29;M30;M31,M32-AC01;M32-AC02;M32-AC03;M32-AC04;M32-AC05,PLANNED,TBD_AFTER_P0,
 M32-T05,M32,全量对齐、发行与持续维护,P4,项目负责人 / 独立 QA,成立变更委员会管理新版本对标、兼容回归及维护升级；新增客户定制或厂商扩展触发新范围版本，不能无限追加到已关闭合同。,M32-T04,M01;M14;M17;M18;M20;M21;M22;M23;M24;M25;M26;M27;M28;M29;M30;M31,M32-AC01;M32-AC02;M32-AC03;M32-AC04;M32-AC05,PLANNED,TBD_AFTER_P0,
 M32-T06,M32,全量对齐、发行与持续维护,P4,项目负责人 / 独立 QA,签署最终验收与维护移交；若关键兼容项未解决，只能交付已验证的阶段版本并公开差距，不把未完成写成“全量”。,M32-T05,M01;M14;M17;M18;M20;M21;M22;M23;M24;M25;M26;M27;M28;M29;M30;M31,M32-AC01;M32-AC02;M32-AC03;M32-AC04;M32-AC05,PLANNED,TBD_AFTER_P0,
+

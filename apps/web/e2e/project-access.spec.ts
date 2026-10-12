@@ -513,3 +513,182 @@ test('real Keycloak UI requirement flow creates edits and keeps viewer read-only
   }
   if (!businessError && cleanupError) throw cleanupError
 })
+
+test('real Keycloak UI manual test case flow creates steps, edits order, and keeps viewer read-only', async ({ page, browser }) => {
+  test.skip(!isOwnedCiRun(), 'destructive manual test case flow requires the current CI-owned R03 stack')
+  test.setTimeout(180_000)
+  const adminUser = process.env.R03_TEST_USER
+  const adminPassword = process.env.R03_TEST_USER_PASSWORD
+  const memberUser = process.env.R03_MEMBER_USER
+  const memberPassword = process.env.R03_MEMBER_PASSWORD
+  const viewerUser = process.env.R03_VIEWER_USER
+  const viewerPassword = process.env.R03_VIEWER_PASSWORD
+  const diagnostics = new UiDiagnostics()
+  if (!adminUser || !adminPassword || !memberUser || !memberPassword || !viewerUser || !viewerPassword) {
+    const error = new Error('Isolated R03 admin, member, and viewer credentials are required')
+    await diagnostics.write(test.info().title, error, undefined, 'manual-test-case-context')
+    throw error
+  }
+
+  let businessError: unknown
+  let cleanupError: unknown
+  let memberContext: import('@playwright/test').BrowserContext | undefined
+  let viewerContext: import('@playwright/test').BrowserContext | undefined
+  try {
+    const adminId = await diagnostics.step(page, 'manual test login (admin)', () => login(page, adminUser, adminPassword, 'R03 Tester', diagnostics))
+    memberContext = await browser.newContext()
+    const memberPage = await memberContext.newPage()
+    const memberId = await diagnostics.step(memberPage, 'manual test login (project member)', () => login(memberPage, memberUser, memberPassword, 'R03 Member', diagnostics))
+    viewerContext = await browser.newContext()
+    const viewerPage = await viewerContext.newPage()
+    const viewerId = await diagnostics.step(viewerPage, 'manual test login (viewer)', () => login(viewerPage, viewerUser, viewerPassword, 'R03 Viewer', diagnostics))
+    const { tenantId } = seedProjectAccessScope(adminId, viewerId, memberId)
+    const projectCode = `R05-E2E-${Date.now()}`
+    const accessRegion = page.getByRole('region', { name: '租户、项目与成员' })
+    const viewerAccessRegion = viewerPage.getByRole('region', { name: '租户、项目与成员' })
+    const projectSelect = accessRegion.locator('.access-selects select').nth(1)
+    const viewerProjectSelect = viewerAccessRegion.locator('.access-selects select').nth(1)
+
+    await diagnostics.step(page, 'manual test load scope', async () => {
+      await page.getByRole('button', { name: '加载访问范围' }).click()
+      await accessRegion.getByRole('combobox').first().selectOption(tenantId)
+      await expect(page.getByLabel('项目域')).toBeVisible()
+    })
+    await page.getByLabel('项目代码').fill(projectCode)
+    await page.getByLabel('显示名称').fill('R05 manual test project')
+    await diagnostics.step(page, 'manual test create project', async () => {
+      await page.getByRole('button', { name: '创建项目' }).click()
+      await expect(projectSelect.locator('option').filter({ hasText: `R05 manual test project（${projectCode}）` })).toHaveCount(1)
+      await expect(page.getByRole('region', { name: '项目详情' })).toContainText('R05 manual test project')
+    })
+    const projectId = await projectSelect.locator('option').filter({ hasText: `R05 manual test project（${projectCode}）` }).getAttribute('value')
+    expect(projectId).toMatch(/^[0-9a-f-]{36}$/)
+    await diagnostics.step(page, 'manual test authorize project member', async () => {
+      const candidate = page.getByLabel('同租户候选主体')
+      await candidate.selectOption(memberId)
+      await page.getByLabel('固定角色').selectOption('PROJECT_MEMBER')
+      await page.getByRole('button', { name: '保存成员' }).click()
+      await expect(page.getByText('成员授权已保存')).toBeVisible()
+    })
+    await diagnostics.step(page, 'manual test authorize viewer', async () => {
+      const candidate = page.getByLabel('同租户候选主体')
+      await candidate.selectOption(viewerId)
+      await page.getByLabel('固定角色').selectOption('PROJECT_VIEWER')
+      await page.getByRole('button', { name: '保存成员' }).click()
+      await expect(page.getByText('成员授权已保存')).toBeVisible()
+    })
+    const memberAccessRegion = memberPage.getByRole('region', { name: '租户、项目与成员' })
+    const memberProjectSelect = memberAccessRegion.locator('.access-selects select').nth(1)
+    const testCasesPanel = memberPage.locator('section.test-cases-panel')
+    const testTitle = `R05 member manual test ${Date.now()}`
+
+    await diagnostics.step(memberPage, 'manual test member load scope', async () => {
+      await memberPage.getByRole('button', { name: '加载访问范围' }).click()
+      await memberAccessRegion.getByRole('combobox').first().selectOption(tenantId)
+      await expect(memberProjectSelect.locator('option').filter({ hasText: `R05 manual test project（${projectCode}）` })).toHaveCount(1)
+      await memberProjectSelect.selectOption(projectId as string)
+      await expect(memberPage.getByText('R03 Member')).toBeVisible()
+      await expect(memberPage.getByRole('button', { name: '保存成员' })).not.toBeVisible()
+      const memberPermissions = await memberPage.request.get(`/api/v1/me/permissions?projectId=${projectId}`)
+      expect(memberPermissions.status()).toBe(200)
+      const memberPermissionBody = await memberPermissions.json() as { roles: string[], permissions: string[] }
+      expect(memberPermissionBody.roles).toContain('PROJECT_MEMBER')
+      expect(memberPermissionBody.roles).not.toContain('PROJECT_ADMIN')
+      expect(memberPermissionBody.permissions).toEqual(expect.arrayContaining(['test:read', 'test:create', 'test:update']))
+    })
+
+    await diagnostics.step(memberPage, 'manual test create', async () => {
+      await expect(testCasesPanel.getByLabel('测试用例标题')).toBeVisible()
+      await testCasesPanel.getByLabel('测试用例标题').fill(testTitle)
+      await testCasesPanel.getByLabel('测试用例说明').fill('A browser-driven manual test definition.')
+      await testCasesPanel.getByLabel('测试用例前置条件').fill('A disposable account exists.')
+      await testCasesPanel.getByRole('button', { name: '新增步骤' }).click()
+      await testCasesPanel.getByLabel('步骤 1 操作').fill('Open the login page')
+      await testCasesPanel.getByLabel('步骤 1 预期结果').fill('The login form is visible')
+      await testCasesPanel.getByRole('button', { name: '新增步骤' }).click()
+      await testCasesPanel.getByLabel('步骤 2 操作').fill('Submit valid credentials')
+      await testCasesPanel.getByLabel('步骤 2 预期结果').fill('The workbench is visible')
+      await testCasesPanel.getByRole('button', { name: '创建用例' }).click()
+      await expect(testCasesPanel).toContainText('测试用例已创建')
+      await expect(testCasesPanel.locator('.test-case-list .requirement-row').first()).toContainText(testTitle)
+      await expect(testCasesPanel.locator('.revision-row')).toHaveCount(1)
+      await expect(testCasesPanel.getByRole('button', { name: '保存为新修订' })).toBeVisible()
+    })
+    const initialStepKeys = await testCasesPanel.locator('.test-step code').allTextContents()
+    expect(initialStepKeys).toHaveLength(2)
+
+    await diagnostics.step(memberPage, 'manual test reload and read', async () => {
+      await memberPage.reload()
+      await expect(memberPage.getByText('R03 Member')).toBeVisible()
+      const reloadedAccess = memberPage.getByRole('region', { name: '租户、项目与成员' })
+      await reloadedAccess.getByRole('button', { name: /加载访问范围|加载中/ }).click()
+      await reloadedAccess.getByRole('combobox').first().selectOption(tenantId)
+      await expect(reloadedAccess.locator('.access-selects select').nth(1).locator('option').filter({ hasText: `R05 manual test project（${projectCode}）` })).toHaveCount(1)
+      await reloadedAccess.locator('.access-selects select').nth(1).selectOption(projectId as string)
+      const reloadedPanel = memberPage.locator('section.test-cases-panel')
+      await expect(reloadedPanel.locator('.test-case-list .requirement-row').first()).toContainText(testTitle)
+      await reloadedPanel.locator('.test-case-list .requirement-row').first().click()
+      await expect(reloadedPanel.getByLabel('编辑测试用例标题')).toHaveValue(testTitle)
+      await expect(reloadedPanel.getByLabel('步骤 1 操作')).toHaveValue('Open the login page')
+      await expect(reloadedPanel.getByRole('button', { name: '保存为新修订' })).toBeVisible()
+    })
+
+    await diagnostics.step(memberPage, 'manual test edit and reorder', async () => {
+      const panel = memberPage.locator('section.test-cases-panel')
+      const beforeReorder = await panel.locator('.test-step code').allTextContents()
+      expect(beforeReorder).toEqual(initialStepKeys)
+      await panel.getByRole('button', { name: '下移' }).first().click()
+      const afterReorder = await panel.locator('.test-step code').allTextContents()
+      expect(afterReorder).toEqual([initialStepKeys[1], initialStepKeys[0]])
+      expect(new Set(afterReorder)).toEqual(new Set(initialStepKeys))
+      await panel.getByLabel('编辑测试用例说明').fill('The second revision preserves stable step keys.')
+      await panel.getByRole('button', { name: '保存为新修订' }).click()
+      await expect(panel).toContainText('测试用例已保存为新修订')
+      await expect(panel).toContainText('2 个修订')
+      await expect(panel.locator('.test-step code')).toHaveText([initialStepKeys[1], initialStepKeys[0]])
+      await expect(panel.getByRole('region', { name: '测试用例修订历史' }).getByRole('button', { name: /修订 1/ })).toBeVisible()
+      await panel.getByRole('region', { name: '测试用例修订历史' }).getByRole('button', { name: /修订 1/ }).click()
+      const oldRevision = panel.locator('.revision-readonly')
+      await expect(oldRevision.locator('.test-step code')).toHaveText(initialStepKeys)
+      await expect(oldRevision.locator('.test-step').nth(0)).toContainText('Open the login page')
+      await expect(oldRevision.locator('.test-step').nth(0)).toContainText('The login form is visible')
+      await expect(oldRevision.locator('.test-step').nth(1)).toContainText('Submit valid credentials')
+      await expect(oldRevision.locator('.test-step').nth(1)).toContainText('The workbench is visible')
+    })
+
+    await diagnostics.step(viewerPage, 'manual test viewer read', async () => {
+      await viewerPage.getByRole('button', { name: '加载访问范围' }).click()
+      await viewerAccessRegion.getByRole('combobox').first().selectOption(tenantId)
+      await expect(viewerProjectSelect.locator('option').filter({ hasText: `R05 manual test project（${projectCode}）` })).toHaveCount(1)
+      await viewerProjectSelect.selectOption(projectId as string)
+      const viewerPanel = viewerPage.locator('section.test-cases-panel')
+      await expect(viewerPanel.locator('.test-case-list .requirement-row').first()).toContainText(testTitle)
+      await viewerPanel.locator('.test-case-list .requirement-row').first().click()
+      await expect(viewerPanel).toContainText('只读用户可以查看用例和历史，但不能创建或保存。')
+      await expect(viewerPanel.getByRole('button', { name: '创建用例' })).not.toBeVisible()
+      await expect(viewerPanel.getByRole('button', { name: '保存为新修订' })).not.toBeVisible()
+      await expect(viewerPanel.getByRole('button', { name: '新增步骤' })).not.toBeVisible()
+      await expect(viewerPanel.locator('.revision-row')).toHaveCount(2)
+    })
+
+    await diagnostics.step(viewerPage, 'manual test viewer write denied', async () => {
+      const viewerCreate = await write(viewerPage, 'POST', `/api/v1/projects/${projectId}/tests`, {
+        title: 'R05 viewer must not create', description: '', preconditions: '', testType: 'MANUAL', steps: [],
+      }, diagnostics)
+      expect(viewerCreate.status()).toBe(403)
+      await expect(viewerCreate.json()).resolves.toMatchObject({ code: 'FORBIDDEN' })
+    })
+  } catch (error) {
+    businessError = error
+    throw error
+  } finally {
+    try {
+      await memberContext?.close()
+      await viewerContext?.close()
+    } catch (error) {
+      cleanupError = error
+    }
+    await diagnostics.write(test.info().title, businessError, cleanupError, 'manual-test-case-context')
+  }
+  if (!businessError && cleanupError) throw cleanupError
+})

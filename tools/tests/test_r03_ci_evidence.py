@@ -6,7 +6,7 @@ from tools.redact_r03_logs import redact
 from tools.verify_r03_report import count_results
 from tools.verify_r03_oidc_http_report import REQUIRED_TESTS, verify
 from tools.verify_r03_project_access_report import REQUIRED_PROJECT_TESTS, verify_project_access
-from tools.verify_r03_project_browser_report import REQUIRED_REQUIREMENT_UI_TEST, REQUIRED_TEST as REQUIRED_PROJECT_BROWSER_TEST, REQUIRED_UI_TEST as REQUIRED_PROJECT_UI_TEST, verify as verify_project_browser
+from tools.verify_r03_project_browser_report import REQUIRED_MANUAL_TEST_CASE_UI_TEST, REQUIRED_REQUIREMENT_UI_TEST, REQUIRED_TEST as REQUIRED_PROJECT_BROWSER_TEST, REQUIRED_UI_TEST as REQUIRED_PROJECT_UI_TEST, verify as verify_project_browser
 
 
 class R03CiEvidenceTests(unittest.TestCase):
@@ -72,10 +72,11 @@ class R03CiEvidenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             report = Path(directory) / "results.xml"
             report.write_text(
-                '<testsuites><testsuite tests="3" failures="0" errors="0" skipped="0">'
+                '<testsuites><testsuite tests="4" failures="0" errors="0" skipped="0">'
                 f'<testcase name="{REQUIRED_PROJECT_BROWSER_TEST}" />'
                 f'<testcase name="{REQUIRED_PROJECT_UI_TEST}" />'
                 f'<testcase name="{REQUIRED_REQUIREMENT_UI_TEST}" />'
+                f'<testcase name="{REQUIRED_MANUAL_TEST_CASE_UI_TEST}" />'
                 '</testsuite></testsuites>'
             )
             valid, summary = verify_project_browser(report)
@@ -94,3 +95,4 @@ class R03CiEvidenceTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

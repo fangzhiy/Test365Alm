@@ -22,9 +22,10 @@ class PrepareR03DevTests(unittest.TestCase):
                 self.assertEqual("S256", data["clients"][0]["attributes"]["pkce.code.challenge.method"])
                 self.assertEqual(["http://127.0.0.1:5173/login/oauth2/code/test365alm"],
                                  data["clients"][0]["redirectUris"])
-                self.assertEqual({"r03-user", "r03-viewer"},
+                self.assertEqual({"r03-user", "r03-member", "r03-viewer"},
                                  {user["username"] for user in data["users"]})
                 self.assertIn(b"R03_VIEWER_PASSWORD=", before)
+                self.assertIn(b"R03_MEMBER_PASSWORD=", before)
                 self.assertEqual(2, prepare_r03_dev.main())
                 self.assertEqual(before, env.read_bytes())
 
