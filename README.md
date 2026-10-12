@@ -1,8 +1,36 @@
 # Test365Alm
-
 企业级应用质量管理平台研发规划基线。对标原 ALM/Quality Center 产品体系；具体目标版本、Edition、扩展和旧生态兼容范围须在 P0 冻结。
 
-> **当前状态：R07-INT-001-FIX01 非空旧执行库升级补证。** 保留 R02～R06 最小切片；本轮只增加升级测试和证据门禁，不代表完整模块或 ALM 已完成，不执行主线合并。
+> **当前状态：R08-CORE-BATCH01。** PR #1～#6 已按授权进入默认分支；主线 `1e49617f283ffa54673d590a1aba3e72fcfbe14e` 的六 Job CI 已通过。新分支提供 M04 字段定义、M11 需求→用例关联最小切片，仍须独立审核，不代表完整模块或 ALM 完成。
+
+## R08 字段元数据与需求测试追踪
+
+从现有本机隔离开发服务启动（下文 R03 启动说明不变），登录并选择项目：
+
+1. PROJECT_ADMIN 在“项目字段元数据”定义 TEXT/NUMBER/ENUM、必填/默认/约束，保存后选择字段并调用真实服务器验证值。修订是追加历史，key/type 不变；VIEWER 没有定义写入口。
+2. 普通 PROJECT_MEMBER 通过现有需求与手工用例页面创建对象，在需求详情“需求→测试追踪”选择本项目用例并建立关系。
+3. 点击“刷新覆盖统计”：未执行用例的 PASS 为 0；完成该绑定修订的手工运行 PASS 后再刷新可观察同步覆盖。存在活动重跑、需求/用例修订变化时不把旧 PASS 当当前通过。
+4. 关联失效使用明确的带版本写操作，不物理删除历史。结果未知时锁定原快照，点击“重试原意图”沿用原幂等键，不能通过刷新自动重复创建。
+
+本轮不存储业务自定义字段值、不实施动态表单设计器、导入/同步、suspect、watermark 或缺陷关系。详细语义见 [字段契约](contracts/field-metadata.md)、[追踪契约](contracts/requirement-test-trace.md) 和 [ADR 022](docs/adr/022-r08-field-metadata-and-typed-trace.md)。
+
+```powershell
+cd apps/server
+mvn -B -ntp -Pintegration verify
+# Windows Wrapper 是独立调用方式：.\mvnw.cmd -B -ntp -Pintegration verify
+# Linux：./mvnw -B -ntp -Pintegration verify
+cd ../..
+python tools/verify_r08_core_report.py apps/server/target/failsafe-reports
+python -m unittest discover -s tools/tests -v
+python tools/validate_package.py
+cd apps/web
+npm ci
+npm run lint
+npm run test:run
+npm run build
+```
+
+真实数据库测试使用 Testcontainers 独占资源；不读取开发 `.env`，owner 只负责迁移/夹具/核验，业务使用受限 runtime。正式 V17 新增本切片表与 RLS，V1—V16 不变；独立失败迁移探针现为 V18。原 V13/V14→V16 专项继续执行，新增非空 V16→V17 数据/历史/幂等保留测试。完整六 Job CI 还执行原停库恢复及单 worker、零重试 Keycloak 浏览器流程。
 
 当前开发状态以 [development-status.md](docs/development-status.md) 和最新轮次记录为准；R03/R02 历史记录保留供追溯。
 

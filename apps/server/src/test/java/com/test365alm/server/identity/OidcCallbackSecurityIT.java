@@ -875,6 +875,62 @@ class OidcCallbackSecurityIT {
                 "cross-scope and revoked-session calls must not write case, revision, step, audit, outbox or idempotency rows");
     }
 
+    @Test
+    void realOidcFieldMetadataHttpAdminViewerCsrfTypesVersionsAndScope() throws Exception {
+        var f=testCaseHttpFixture();String root="/api/v1/projects/"+f.project()+"/field-definitions";
+        String d="{\"key\":\"estimate\",\"type\":\"NUMBER\",\"required\":true,\"precision\":5,\"scale\":2,\"maximum\":\"100.00\"}";
+        var created=testCasePost(f.admin(),root,null,d);assertEquals(201,created.statusCode(),created.body());
+        String item=root+"/"+jsonField(created.body(),"id");
+        assertEquals("\"1\"",created.headers().firstValue("ETag").orElseThrow());
+        assertEquals(200,get(f.viewer().flow().client(),item).statusCode());
+        assertEquals(200,testCasePost(f.member(),item+"/validate",null,"{\"revision\":1,\"value\":\"12.34\"}").statusCode());
+        var before=coreRows(f.project());
+        assertTestCaseRejected(()->testCasePost(f.viewer(),root,null,d),403,"FORBIDDEN");
+        assertTestCaseRejected(()->testCasePost(f.member(),root,null,d),403,"FORBIDDEN");
+        assertTestCaseRejected(()->testCasePost(f.admin(),root,null,d,null,null),403,"CSRF_REJECTED");
+        for(String bad:List.of(d.replace("estimate","title"),d.replace("NUMBER","SCRIPT"),d.replace("true","\"true\"")))assertTestCaseRejected(()->testCasePost(f.admin(),root,null,bad),400,"INVALID_REQUEST");
+        assertTestCaseRejected(()->testCasePost(f.viewer(),item+"/validate",null,"{\"revision\":1,\"value\":\"100.01\"}"),422,"VALIDATION_FAILED");
+        assertTestCaseRejected(()->get(f.outsider().flow().client(),item),404,"NOT_FOUND");
+        assertTestCaseRejected(()->get(f.admin().flow().client(),"/api/v1/projects/"+f.otherTenantProject()+"/field-definitions/"+jsonField(created.body(),"id")),404,"NOT_FOUND");
+        assertEquals(before,coreRows(f.project()));
+        var revised=corePatch(f.admin(),item,"\"1\"",d);assertEquals(200,revised.statusCode(),revised.body());
+        before=coreRows(f.project());assertTestCaseRejected(()->corePatch(f.admin(),item,"\"1\"",d),412,"STALE_VERSION");assertEquals(before,coreRows(f.project()));
+        assertEquals(200,get(f.viewer().flow().client(),item+"/revisions/1").statusCode());
+    }
+
+    @Test
+    void realOidcTraceHttpTypedEndpointsViewerCsrfRevokeAndNoIllegalEffects() throws Exception {
+        var f=testCaseHttpFixture();String root="/api/v1/projects/"+f.project();
+        var req=testCasePost(f.member(),root+"/requirements",null,"{\"title\":\"R08 HTTP requirement\",\"body\":\"text\"}");assertEquals(201,req.statusCode(),req.body());
+        var tc=testCasePost(f.member(),root+"/tests",null,testCaseBody("R08 HTTP test",null,true));assertEquals(201,tc.statusCode(),tc.body());
+        String rid=jsonField(req.body(),"id"),tid=jsonField(tc.body(),"id");String d="{\"requirementId\":\""+rid+"\",\"testCaseId\":\""+tid+"\"}";
+        var link=testCasePost(f.member(),root+"/trace-links",null,d);assertEquals(201,link.statusCode(),link.body());
+        String item=root+"/trace-links/"+jsonField(link.body(),"id")+"/invalidate";
+        assertEquals(200,get(f.viewer().flow().client(),root+"/trace-links?requirementId="+rid).statusCode());
+        var stats=get(f.member().flow().client(),root+"/coverage?requirementId="+rid);assertEquals(200,stats.statusCode());assertEquals(0,jsonNode(stats.body(),"passedTests").intValue());
+        var before=coreRows(f.project());
+        assertTestCaseRejected(()->testCasePost(f.viewer(),root+"/trace-links",null,d),403,"FORBIDDEN");
+        assertTestCaseRejected(()->testCasePost(f.member(),root+"/trace-links",null,d,null,null),403,"CSRF_REJECTED");
+        assertTestCaseRejected(()->testCasePost(f.member(),root+"/trace-links",null,d),409,"DUPLICATE_LINK");
+        assertTestCaseRejected(()->testCasePost(f.member(),root+"/trace-links",null,d.replace(tid,UUID.randomUUID().toString())),404,"NOT_FOUND");
+        assertTestCaseRejected(()->testCasePost(f.viewer(),item,"\"1\"","{}"),403,"FORBIDDEN");
+        assertEquals(before,coreRows(f.project()));
+        var inactive=testCasePost(f.member(),item,"\"1\"","{}");assertEquals(200,inactive.statusCode(),inactive.body());
+        before=coreRows(f.project());
+        try(var c=ownerConnection();var s=c.prepareStatement("UPDATE project_member SET revoked_at=CURRENT_TIMESTAMP,authorization_version=authorization_version+1 WHERE project_id=? AND principal_id=?")){s.setObject(1,f.project());s.setObject(2,f.member().principalId());assertEquals(1,s.executeUpdate());}
+        assertTestCaseRejected(()->get(f.member().flow().client(),root+"/trace-links?requirementId="+rid),404,"NOT_FOUND");
+        assertTestCaseRejected(()->testCasePost(f.member(),root+"/trace-links",null,d),404,"NOT_FOUND");
+        assertEquals(before,coreRows(f.project()));
+    }
+    private HttpResponse<String> corePatch(HttpActor actor,String path,String tag,String body)throws Exception{
+        return actor.flow().client().send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+appPort+path)).timeout(REQUEST_TIMEOUT).header("Content-Type","application/json").header(actor.csrfHeader(),actor.csrfToken()).header("If-Match",tag).header("Idempotency-Key",UUID.randomUUID().toString()).method("PATCH",HttpRequest.BodyPublishers.ofString(body)).build(),HttpResponse.BodyHandlers.ofString());
+    }
+    private Map<String,List<String>> coreRows(UUID project)throws Exception{
+        var result=new java.util.TreeMap<String,List<String>>();try(var c=ownerConnection()){
+            for(String table:List.of("field_definition","field_definition_revision","trace_link","trace_link_revision","core_command_idempotency","core_outbox_event","audit_event"))try(var s=c.prepareStatement("SELECT to_jsonb(t)::text FROM "+table+" t WHERE project_id=? ORDER BY to_jsonb(t)::text")){s.setObject(1,project);try(var r=s.executeQuery()){var rows=new ArrayList<String>();while(r.next())rows.add(r.getString(1));result.put(table,rows);}}
+        }return result;
+    }
+
     private TestCaseHttpFixture testCaseHttpFixture() throws Exception {
         String adminSubject = uniqueSubject("test-case-http-admin");
         String memberSubject = uniqueSubject("test-case-http-member");

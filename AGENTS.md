@@ -11,6 +11,11 @@
 
 ## 项目状态
 
+- R08 当前默认主线已合入 PR #1～#6；新业务分支必须从已验证主线建立，不再向旧 PR 追加。新 R08 PR 不自动合并。
+- M04/M11 仅字段定义/共享值验证、typed 需求→用例关系及有限同步覆盖切片。契约为 `contracts/field-metadata.md`、`contracts/requirement-test-trace.md`，决策 ADR 022；不能修改整个模块/WBS/验收的 PLANNED/NOT_RUN。
+- 正式迁移当前 V17；仅增加新迁移，V1—V16 不变，独立故意失败探针当前 V18。历史文档中的 V17 失败探针是当时事实，不是现行配置。
+- R08 专项：`mvn -B -ntp -Pintegration verify '-Dit.test=CoreMetadataTraceDatabaseIT,ManualExecutionMigrationUpgradeIT,OidcCallbackSecurityIT'`；完整仍 `mvn -B -ntp -Pintegration verify`，Windows Wrapper 独立为 `.\mvnw.cmd`，Linux `./mvnw`。根目录 `python tools/verify_r08_core_report.py apps/server/target/failsafe-reports` 要求确切 M04/M11 DB、真实 OIDC HTTP、V16 非空升级测试名，无失败/错误/跳过。浏览器必须包含真实字段验证和 MEMBER 追踪→执行 PASS 流程，保留原十个用例、单 worker、零重试。
+
 - 当前目录包含规划与研发辅助工具，以及 R02 工程底座、R03 身份/项目访问切片和 R04-M07-001 需求最小切片的 `apps/web` Vite 前端与 `apps/server` Spring Boot 服务；需求切片不代表完整 M07、M03 或产品完成。
 - R03-M03-001 在独立 `feat/r03-m03-001` 分支增加本地 OIDC 首个切片；PR #1 未合并时，新 PR 依赖 `feat/r02-m02-001`。登录成功不代表已获得项目权限、RLS 或完整 M03。
 - 所有产品验收、迁移、兼容、安全和性能结论必须有真实证据。

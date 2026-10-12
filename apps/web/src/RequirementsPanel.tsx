@@ -3,6 +3,7 @@ import type { FormEvent } from 'react'
 import { requirementsApi, newIdempotencyKey } from './requirements'
 import type { Requirement, RequirementInput, RequirementRevision } from './requirements'
 import type { ProjectAccess } from './projectAccess'
+import TraceLinksPanel from './TraceLinksPanel'
 
 type PanelState = 'idle' | 'loading' | 'ready' | 'error'
 type RequirementsPanelProps = { projectId: string; access: ProjectAccess | null; resetSignal?: number }
@@ -213,6 +214,7 @@ export default function RequirementsPanel({ projectId, access, resetSignal = 0 }
           </> : <><p className="requirement-body">{selected.body || '（无正文）'}</p><p className="access-empty">只读用户可以查看需求和历史，但不能创建或保存。</p></>}
         </form>
         <section className="requirement-history" aria-label="修订历史">
+          {detailReady && <TraceLinksPanel projectId={projectId} requirementId={selected.id} access={access} />}
           <div className="member-list-heading"><strong>不可变修订历史</strong><span>{revisions.length} 个修订</span></div>
           {revisions.length === 0 ? <p className="access-empty">暂无修订历史。</p> : <div className="revision-list">{revisions.map((revision) => <button type="button" className="revision-row" key={revision.id} onClick={() => setSelectedRevision(revision)}><span>修订 {revision.revisionNumber}</span><small>{revision.createdBy} · {revision.createdAt}</small></button>)}</div>}
           {selectedRevision && <article className="revision-readonly"><strong>修订 {selectedRevision.revisionNumber}（只读）</strong><h4>{selectedRevision.title}</h4><p>{selectedRevision.body || '（无正文）'}</p><small>{selectedRevision.createdBy} · {selectedRevision.createdAt}</small></article>}
