@@ -2,6 +2,7 @@ import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor, act } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode } from 'react'
+vi.mock('./AuthPanel', () => ({ default: () => null }))
 import App from './App'
 
 const jsonResponse = (body: unknown, status = 200) => Promise.resolve(new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }))

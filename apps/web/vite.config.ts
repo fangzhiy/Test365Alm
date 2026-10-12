@@ -7,5 +7,5 @@ const devHost = process.env.TEST365ALM_WEB_HOST ?? '127.0.0.1'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
-  server: { host: devHost, proxy: { '/api': backendUrl, '/health': backendUrl } },
+  server: { host: devHost, proxy: { '/api': backendUrl, '/health': backendUrl, '/oauth2': backendUrl, '/login': backendUrl } },
 })
