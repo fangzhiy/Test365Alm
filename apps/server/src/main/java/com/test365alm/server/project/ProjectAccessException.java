@@ -35,4 +35,16 @@ public final class ProjectAccessException extends RuntimeException {
     public static ProjectAccessException invalid(String message) {
         return new ProjectAccessException("INVALID_REQUEST", HttpStatus.BAD_REQUEST, message);
     }
+
+    public static ProjectAccessException preconditionRequired(String message) {
+        return new ProjectAccessException("PRECONDITION_REQUIRED", HttpStatus.PRECONDITION_REQUIRED, message);
+    }
+
+    public static ProjectAccessException preconditionFailed(String code, String message) {
+        return new ProjectAccessException(code, HttpStatus.PRECONDITION_FAILED, message);
+    }
+
+    public static ProjectAccessException unprocessable(String message) {
+        return new ProjectAccessException("VALIDATION_FAILED", HttpStatus.UNPROCESSABLE_ENTITY, message);
+    }
 }

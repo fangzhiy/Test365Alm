@@ -26,10 +26,10 @@ class CiWorkflowTests(unittest.TestCase):
         self.assertIn("github_sha=", workflow)
         self.assertIn("checkout_sha=", workflow)
 
-    def test_migration_job_records_formal_v6_before_intentional_v7_failure(self):
+    def test_migration_job_records_formal_v9_before_intentional_v10_failure(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("Verify formal V6 then intentional V7 migration startup failure", workflow)
-        self.assertIn("Formal V6 migration and intentional V7 failure were detected", workflow)
+        self.assertIn("Verify formal V9 then intentional V10 migration startup failure", workflow)
+        self.assertIn("Formal V9 migration and intentional V10 failure were detected", workflow)
         self.assertIn("verify_r02_migration_failure.py", workflow)
 
     def test_server_job_requires_project_access_rls_evidence(self):
@@ -43,6 +43,11 @@ class CiWorkflowTests(unittest.TestCase):
         self.assertIn("Require real HTTP OIDC callback integration report", workflow)
         self.assertIn("verify_r03_oidc_http_report.py", workflow)
         self.assertIn("apps/server/oidc-http-report.txt", workflow)
+
+    def test_server_job_requires_requirement_integration_evidence(self):
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("verify_r04_requirement_report.py", workflow)
+        self.assertIn("apps/server/requirement-report.txt", workflow)
 
     def test_browser_job_requires_dual_user_project_access_evidence(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")

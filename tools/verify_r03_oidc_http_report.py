@@ -10,6 +10,7 @@ from pathlib import Path
 REQUIRED_TESTS = {
     "realHttpApplicationUsesRestrictedRuntimeRole",
     "realOidcProjectHttpScopesTenantsAndRejectsViewerWrites",
+    "realOidcRequirementHttpEnforcesStrongEtagsCsrfAndMembershipScope",
     "realOidcSessionCanUseProjectHttpEndpointsThroughRuntimeDatasource",
     "unbootstrappedOidcSubjectCannotCreateTenantOrProjectAccess",
     "legalTokenCompletesHttpCallbackAndPersistsPrincipal",
