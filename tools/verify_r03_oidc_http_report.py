@@ -27,6 +27,8 @@ REQUIRED_TESTS = {
     "realOidcTraceHttpTypedEndpointsViewerCsrfRevokeAndNoIllegalEffects",
     "realOidcDefectHttpMemberEtagsCsrfStrictInputAndViewerBoundary",
     "realOidcDefectHttpFailedSourceRetestAndClosePreserveOriginalEvidence",
+    "realOidcReleaseHttpAdminDatesEtagsCsrfAndRoleBoundary",
+    "realOidcReleaseHttpTypedScopeSnapshotsAndOldSessionRevocation",
 }
 
 

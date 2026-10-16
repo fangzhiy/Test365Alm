@@ -3,7 +3,17 @@
 
 > **当前状态：R10-CORE-BATCH03 实施中。** PR #1～#8 已进入默认分支 `chore/r01-status-001`，当前已验证主线 `a2419e292c004b2cd4c7278bdaa40b1ce3442a22`，主线六Job CI38931708362成功。R10从该主线建立独立M06分支；下面R08/R09说明和轮次记录保留历史背景。各项仅最小切片，不代表完整模块或ALM完成。
 
-## R09 缺陷与失败步骤复测
+## R10 发布、周期与冻结质量快照
+
+沿用下文已有本机隔离启动，不覆盖 `.env.r03`。PROJECT_ADMIN 登录并选项目，在“发布与周期工作台”创建发布和日期，打开详情创建日期包含于发布的周期；从真实需求/用例候选加入范围，显示的是已冻结 revision。新增源修订不会自动改变该范围。
+
+点击“生成质量快照”，查看分子/分母、规则和范围指纹。在原手工执行工作台完成该冻结用例后再评估，新的快照反映执行事实，历史快照保持原值。活动重跑不会把旧 PASS 算当前 PASS。MEMBER/VIEWER 可查看发布、周期及快照，但无写入权限；未入项目的租户管理员无隐式访问。
+
+发布/周期编辑使用版本条件；412 保留草稿，读取最新后必须明确采用或放弃。未知写入保留原键/内容/版本重试；写已确认后仅刷新 GET。归档后全部新写入拒绝，历史仍可读。列表通过“更多”继续分页，不下载全部页；范围最多1000、相关缺陷最多10000，超限明确拒绝评估，不显示截断指标。
+
+正式迁移当前 V19、专用失败探针 V20。完整命令沿用下方 `mvn -B -ntp -Pintegration verify`，专项证据检查为 `python tools/verify_r10_release_report.py apps/server/target/failsafe-reports`；浏览器为 `npx playwright test e2e/releases.spec.ts --workers=1 --retries=0`，仅对本轮 CI-owned 环境执行。契约见 [releases](contracts/releases.md)、[ADR024](docs/adr/024-r10-release-cycle-quality-snapshot.md)、[R10实际记录](docs/progress/runs/R10-CORE-BATCH03.md)。不是完整规划、质量中心、审批或资产管理模块。
+
+## R09 缺陷与失败步骤复测（历史切片）
 
 沿用下文 R03 本机隔离启动方式，不覆盖已有 `.env.r03`。登录普通 PROJECT_MEMBER 并选择项目：
 
@@ -15,7 +25,7 @@
 
 请求超时或网络断开时，未知写意图锁定原内容/版本/幂等键，用“重试原意图”确认；不要换新键重复创建。412 保留旧草稿及基础版本；读取最新后明确采用或放弃，不自动重发覆盖。已确认写成功后读取失败，仅刷新 GET。项目/身份/读取权限失效清理原范围。附件/通知/自定义工作流/SLA/复杂树/同步/AI/完整报表未实现。
 
-契约：[缺陷](contracts/defects.md)；决策：[ADR023](docs/adr/023-r09-defect-core-and-related-retest.md)；输入与实际失败/验证：[R09记录](docs/progress/runs/R09-CORE-BATCH02.md)。正式迁移当前V18、专用失败探针V19；下面R08/R06段落中的版本为历史切片说明。
+契约：[缺陷](contracts/defects.md)；决策：[ADR023](docs/adr/023-r09-defect-core-and-related-retest.md)；输入与实际失败/验证：[R09记录](docs/progress/runs/R09-CORE-BATCH02.md)。R09当时正式迁移V18、专用失败探针V19；下面R08/R06段落中的版本也是历史切片说明。
 
 ```powershell
 cd apps/server

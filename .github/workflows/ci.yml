@@ -200,6 +200,11 @@ jobs:
         run: |
           set -o pipefail
           python ../../tools/verify_r09_defect_report.py target/failsafe-reports 2>&1 | tee defect-r09-report.txt
+      - name: Require M06 exact database HTTP concurrency rollback and nonempty upgrade evidence
+        if: always()
+        run: |
+          set -o pipefail
+          python ../../tools/verify_r10_release_report.py target/failsafe-reports 2>&1 | tee release-r10-report.txt
       - name: Upload backend evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -221,6 +226,7 @@ jobs:
             apps/server/execution-upgrade-report.txt
             apps/server/core-r08-report.txt
             apps/server/defect-r09-report.txt
+            apps/server/release-r10-report.txt
             apps/server/target/surefire-reports/**
             apps/server/target/failsafe-reports/**
           if-no-files-found: error
@@ -320,7 +326,7 @@ jobs:
         run: |
           set -o pipefail
           ./mvnw -B -ntp package -DskipTests "-Dbuild.commit=${GITHUB_SHA}" 2>&1 | tee migration-build.txt
-      - name: Verify formal V18 then intentional V19 migration startup failure
+      - name: Verify formal V19 then intentional V20 migration startup failure
         run: |
           set +e
           python -u tools/verify_r02_migration_failure.py --env-file .env.r02-test --compose-project "test365alm-r02-migration-${GITHUB_RUN_ID}" --server-port 18082 --wait-seconds 90 2>&1 | tee migration-failure.txt
@@ -333,7 +339,7 @@ jobs:
             summary=$(tr '\n' ' ' < migration-failure.txt | cut -c1-4000)
             echo "::error title=migration-failure::${summary:-no output captured}"
           else
-            echo "Formal V18 migration and intentional V19 failure were detected for ${GITHUB_SHA}"
+            echo "Formal V19 migration and intentional V20 failure were detected for ${GITHUB_SHA}"
           fi
           exit "$status"
       - name: Upload migration evidence
@@ -517,6 +523,7 @@ jobs:
             local-evidence/r03/manual-test-case-context-full.json
             local-evidence/r03/manual-execution-context-full.json
             local-evidence/r03/defect-ui-context-full.json
+            local-evidence/r03/release-ui-context-full.json
             local-evidence/r03/playwright-results.xml
             local-evidence/r03/project-browser-report.txt
             local-evidence/r03/import-permissions.txt

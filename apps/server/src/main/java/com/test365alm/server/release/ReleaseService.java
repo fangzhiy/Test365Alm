@@ -45,7 +45,7 @@ public class ReleaseService {
         var p=commandScope(actor,project);long version=CoreCommands.version(tag);
         String route="release:edit:"+id,hash=CoreCommands.hash(Long.toString(version),CoreCommands.canonical(body));
         var replay=commands.replay(p,actor,route,key,hash,ReleaseView.class);if(replay!=null)return replay;
-        var old=read(p,id);version(old.rowVersion(),version);var c=ReleaseRules.release(body,content(old));
+        var old=readForUpdate(p,id);version(old.rowVersion(),version);var c=ReleaseRules.release(body,content(old));
         if(jdbc.queryForObject("SELECT count(*) FROM release_cycle WHERE tenant_id=? AND project_id=? AND release_id=? AND(start_date<? OR end_date>?)",Integer.class,p.tenantId(),project,id,c.startDate(),c.endDate())>0)throw outside();
         jdbc.update("UPDATE release_plan SET name=?,description=?,start_date=?,end_date=?,status=?,row_version=row_version+1,updated_at=CURRENT_TIMESTAMP WHERE tenant_id=? AND project_id=? AND id=?",c.name(),c.description(),c.startDate(),c.endDate(),c.status(),p.tenantId(),project,id);
         var result=read(p,id);event(p,actor,id,null,null,result.rowVersion(),c.status().equals("ARCHIVED")?"RELEASE_ARCHIVED":"RELEASE_UPDATED",Map.of("releaseId",id,"version",result.rowVersion(),"status",result.status()));
@@ -60,7 +60,7 @@ public class ReleaseService {
         var p=commandScope(actor,project);var c=ReleaseRules.cycle(body,null);
         String route="release:cycle:create:"+release,hash=CoreCommands.hash(CoreCommands.canonical(body));
         var replay=commands.replay(p,actor,route,key,hash,CycleView.class);if(replay!=null)return replay;
-        var parent=read(p,release);mutable(parent);within(parent,c);
+        var parent=readForUpdate(p,release);mutable(parent);within(parent,c);
         UUID id=UUID.randomUUID();
         jdbc.update("INSERT INTO release_cycle(tenant_id,project_id,release_id,id,name,start_date,end_date,status,row_version,created_by) VALUES(?,?,?,?,?,?,?,'PLANNED',1,?)",p.tenantId(),project,release,id,c.name(),c.startDate(),c.endDate(),actor);
         var result=readCycle(p,release,id);event(p,actor,release,id,null,1,"CYCLE_CREATED",Map.of("cycleId",id,"version",1));
@@ -70,7 +70,7 @@ public class ReleaseService {
         var p=commandScope(actor,project);long version=CoreCommands.version(tag);
         String route="release:cycle:edit:"+release+":"+id,hash=CoreCommands.hash(Long.toString(version),CoreCommands.canonical(body));
         var replay=commands.replay(p,actor,route,key,hash,CycleView.class);if(replay!=null)return replay;
-        var parent=read(p,release);mutable(parent);var old=readCycle(p,release,id);version(old.rowVersion(),version);
+        var parent=readForUpdate(p,release);mutable(parent);var old=readCycle(p,release,id);version(old.rowVersion(),version);
         var c=ReleaseRules.cycle(body,new ReleaseRules.Content(old.name(),"",old.startDate(),old.endDate(),old.status()));within(parent,c);
         jdbc.update("UPDATE release_cycle SET name=?,start_date=?,end_date=?,status=?,row_version=row_version+1,updated_at=CURRENT_TIMESTAMP WHERE tenant_id=? AND project_id=? AND release_id=? AND id=?",c.name(),c.startDate(),c.endDate(),c.status(),p.tenantId(),project,release,id);
         var result=readCycle(p,release,id);event(p,actor,release,id,null,result.rowVersion(),"CYCLE_UPDATED",Map.of("cycleId",id,"version",result.rowVersion(),"status",result.status()));
@@ -92,7 +92,7 @@ public class ReleaseService {
         UUID cycle=body.has("cycleId")?uuid(body.get("cycleId")):null;
         String route="release:scope:add:"+release,hash=CoreCommands.hash(CoreCommands.canonical(body));
         var replay=commands.replay(p,actor,route,key,hash,ScopeView.class);if(replay!=null)return replay;
-        var parent=read(p,release);mutable(parent);if(cycle!=null)mutable(readCycle(p,release,cycle));
+        var parent=readForUpdate(p,release);mutable(parent);if(cycle!=null)mutable(readCycle(p,release,cycle));
         if(jdbc.queryForObject("SELECT count(*) FROM release_scope WHERE tenant_id=? AND project_id=? AND release_id=?",Integer.class,p.tenantId(),project,release)>=1000)throw ProjectAccessException.conflict("SCOPE_LIMIT","Release scope is limited to 1000 memberships");
         UUID revision;
         if(kind.equals("REQUIREMENT"))revision=referenceRevision("SELECT current_revision_id FROM requirement WHERE tenant_id=? AND project_id=? AND id=? AND deleted_at IS NULL",p,endpoint);
@@ -112,7 +112,7 @@ public class ReleaseService {
     @Transactional public Removed removeScope(UUID actor,UUID project,UUID release,UUID id,String key) {
         var p=commandScope(actor,project);String route="release:scope:remove:"+release+":"+id,hash=CoreCommands.hash(id.toString());
         var replay=commands.replay(p,actor,route,key,hash,Removed.class);if(replay!=null)return replay;
-        var parent=read(p,release);mutable(parent);var old=readScope(p,release,id);if(old.cycleId()!=null)mutable(readCycle(p,release,old.cycleId()));
+        var parent=readForUpdate(p,release);mutable(parent);var old=readScope(p,release,id);if(old.cycleId()!=null)mutable(readCycle(p,release,old.cycleId()));
         jdbc.update("DELETE FROM release_scope WHERE tenant_id=? AND project_id=? AND release_id=? AND id=?",p.tenantId(),project,release,id);
         var result=new Removed(id,true);event(p,actor,release,old.cycleId(),null,parent.rowVersion(),"RELEASE_SCOPE_REMOVED",Map.of("scopeId",id,"scopeVersion",parent.scopeVersion()+1));
         commands.save(p,actor,route,key,hash,result);return result;
@@ -124,7 +124,7 @@ public class ReleaseService {
     @Transactional public Snapshot evaluate(UUID actor,UUID project,UUID release,String key) {
         var p=commandScope(actor,project);String route="release:evaluate:"+release,hash=CoreCommands.hash("{}");
         var replay=commands.replay(p,actor,route,key,hash,Snapshot.class);if(replay!=null)return replay;
-        var parent=one(jdbc.query("SELECT * FROM release_plan WHERE tenant_id=? AND project_id=? AND id=? FOR UPDATE",ReleaseService::release,p.tenantId(),project,release));
+        var parent=readForUpdate(p,release);
         if(parent.status().equals("ARCHIVED"))throw ProjectAccessException.conflict("RELEASE_READ_ONLY","Archived release cannot be evaluated");
         // One SQL statement observes all metric sources at the same MVCC snapshot,
         // including execution transactions that use their own per-run locks.
@@ -142,6 +142,7 @@ public class ReleaseService {
         return page(jdbc.query("SELECT id,project_id,release_id,evaluated_at,evaluated_by,metric_version,rule,scope_version,scope_fingerprint,requirement_count,coverage_count,planned_count,completed_count,pass_count,related_defect_count,open_defect_count FROM quality_snapshot WHERE tenant_id=? AND project_id=? AND release_id=? AND id>? ORDER BY id LIMIT ?",ReleaseService::summary,p.tenantId(),project,release,CoreCommands.cursor(cursor),n+1),n,SnapshotSummary::id);
     }
     private ReleaseView read(ProjectService.ProjectView p,UUID id) {return one(jdbc.query("SELECT * FROM release_plan WHERE tenant_id=? AND project_id=? AND id=?",ReleaseService::release,p.tenantId(),p.id(),id));}
+    private ReleaseView readForUpdate(ProjectService.ProjectView p,UUID id) {return one(jdbc.query("SELECT * FROM release_plan WHERE tenant_id=? AND project_id=? AND id=? FOR UPDATE",ReleaseService::release,p.tenantId(),p.id(),id));}
     private CycleView readCycle(ProjectService.ProjectView p,UUID release,UUID id) {return one(jdbc.query("SELECT * FROM release_cycle WHERE tenant_id=? AND project_id=? AND release_id=? AND id=?",ReleaseService::cycle,p.tenantId(),p.id(),release,id));}
     private ScopeView readScope(ProjectService.ProjectView p,UUID release,UUID id) {return one(jdbc.query("SELECT * FROM release_scope WHERE tenant_id=? AND project_id=? AND release_id=? AND id=?",ReleaseService::scopeRow,p.tenantId(),p.id(),release,id));}
     private Snapshot readSnapshot(ProjectService.ProjectView p,UUID release,UUID id) {
