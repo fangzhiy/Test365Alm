@@ -1,10 +1,13 @@
 # Test365Alm 开发状态
 
-## R11-CORE-BATCH04-FIX01 当前状态（代码修正完成，真实GREEN待验证）
+## R11-CORE-BATCH04-FIX01 当前状态（代码六Job通过，待独立审核）
 
 - 从已审核c150958继续`feat/r11-m05-001` / PR10，base R10 PR9；原成功与失败记录均保留。完整[输入](progress/inputs/R11-CORE-BATCH04-FIX01.md)、[本轮证据](progress/runs/R11-CORE-BATCH04-FIX01.md)。本轮只补allocator/current完整性、terminal冻结错误和正式scanner provision，未扩展附件范围。
 - c3c1d13仅回归提交在Push38953261084/PR38953268643真实复现5类runtime非法提交及感染重放422→409/hash冲突400，149IT中3失败、0错误/跳过；非环境假红。随后追加V21延迟提交约束、terminal error快照及正式Python/SQL工具；失败探针实际移V22，旧V1—V20未改。
-- 本机系统Maven66单元、213Vitest、116Python、TypeScript构建/lint/规划校验已通过；Wrapper缓存ACL退出1，沙箱回环/npm权限失败与正常权限复跑分开。真实非空升级、scanner账号及HTTP GREEN仍待Ubuntu六Job CI，不把本机编译或静态审查写成通过。PR9/10均未合并，无部署、定时任务或M12。
+- 本地/远端代码均`561062ba15a9e2695d1c26e66d84fe91b316bf11`；[Push38958095983](https://github.com/fangzhiy/Test365Alm/actions/runs/38958095983)/[PR38958100160](https://github.com/fangzhiy/Test365Alm/actions/runs/38958100160)六Job全部success。PR checkout/build=`b659b9ee9b8c52e086cad8fba55122a2aaeab1c4`，父为base d213e47和head561062b，tree一致。最终文档交付及其CI在回复另行核对，不追写自身SHA。
+- F01—F04代码证据PASS：真实runtime提交边界拒绝allocator/current回退/跳号；感染complete原key两次相同422/FILE_INFECTED，新key409，503原key可恢复；正式scanner工具最小LOGIN+真实SCRAM、非空V20逐字段保留后CLEAN rev3均通过。F05代码CI通过，最终交付CI待交付回复核对。实际66单元、152集成（M05 DB16+旧升级1+terminal5+provision升级2+HTTP3=27；整个OIDC24）、213Vitest、123Python、完整14浏览器+独立UI1，0F/E/S。新增门禁拒绝缺失/重复/失败/错误/跳过，不改成宽松总数判断。
+- 保留三次修复候选失败：libpq空服务变量连接前失败→真正unset；trust导致错误密码核验假成功→要求实际SCRAM；全部业务通过但旧OIDC名单23缺新用例→闭集24/源码一致性和逐case回归。未删测试/加retry/改认证。历史38946999225的/me401本轮未复现，根因仍未证明。
+- 本机系统Maven66单元、213Vitest、123Python、TypeScript构建/lint/规划校验通过；Wrapper缓存ACL退出1，沙箱回环/npm权限失败与正常权限复跑分开。Docker engine不可达，真实数据库/存储/scanner/浏览器本机BLOCKED_LOCAL，由UbuntuCI真实验证，不冒充本机成功。无整轮外部阻断；生产scanner策略/运维、完整M05和旧ALM兼容未验收。PR9/10均未合并，无部署、恢复定时任务或M12。
 
 ## R11-CORE-BATCH04 当前状态（M05 最小切片代码CI通过，待独立审核）
 

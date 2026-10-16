@@ -17,7 +17,7 @@
 
 本机 `docker version` 当前退出1：29.7.2客户端存在，desktop-linux engine命名管道不存在。本机真实PG/S3/clamd为BLOCKED_LOCAL；使用已有UbuntuCI运行真实红/绿证明，不用mock或owner执行业务替代。历史38946999225登录/me401根因未证明，不改认证/超时/retry。
 
-## 当前验收
+## RED阶段及本机过程（历史，不代表最终状态）
 
 仅新增回归的远端提交`c3c1d13bd471c5c677752bec9f4da5dc07956f27`已经实际push退出0，父提交为上述c150958；当时未修改任何生产文件。新增AssetDatabaseIT 1项（6类独立runtime攻击）及AssetTerminalOutcomeIT 5项。系统Maven `mvn -B -ntp -DskipTests test-compile`退出0仅证明编译，不作测试通过；真实[Push38953261084](https://github.com/fangzhiy/Test365Alm/actions/runs/38953261084)/[PR38953268643](https://github.com/fangzhiy/Test365Alm/actions/runs/38953268643)已触发。
 
@@ -25,7 +25,7 @@ Push server Job117149672709实际RED：63单元通过；149集成，3失败、0e
 
 报告门禁自身新增精确名称断言：旧REQUIRED运行1项失败退出1；新增F01、5个terminal、2个provision确切名称后，7项离线门禁通过退出0。首次沙箱运行因Windows临时目录ACL失败，正常用户权限复跑通过，未削弱测试。探针/CI离线测试15项退出0：实际工具版本常量及历史查询改V21、失败文件改V22（这不等于真实启动验证）。
 
-F01、F02、F03、F04、F05：NOT_RUN，实施验证中。当前没有宣称新迁移或terminal重放通过。
+在这个RED时间点，F01/F02为FAIL（目标缺陷已实际复现），F03/F04为NOT_RUN（尚未实施对应工具与用例），F05为FAIL（真实CI已执行且失败）；随后真实修复结果在本文后续章节单独记录，不把RED写成GREEN。
 
 修复候选本机验证：系统Maven `mvn -B -ntp test`最终退出0，66单元（新增CoreCommandsOutcomeTest 3）、0F/E/S，编译47个测试源。此前沙箱回环被拒导致网络测试错误，停止该次进程退出1；正常权限第一次又遇到并行编写中的helper参数未补完编译失败，全部源码完成后复跑66通过。聚焦3单元曾因Spring两个422枚举别名直接比较失败，改为HTTP数值422并仍精确比较code/message，非业务语义放宽。
 
@@ -46,3 +46,72 @@ Push RED制品已读取到被忽略的`local-evidence/r11-fix01-red/backend/targ
 第二候选`9d5be0ca975e8d241e556cca84a73e0f9c18a066`的[Push38955997267](https://github.com/fangzhiy/Test365Alm/actions/runs/38955997267)/[PR38956004394](https://github.com/fangzhiy/Test365Alm/actions/runs/38956004394)均仅server失败。PR checkout/build `13bc149c16210af0f381de7d9c8b70dadfe0f67a`；66单元、152IT中151通过/1失败/0error/0skip，其他五Job均success，完整14浏览器及独立UI1通过。真实同容器libpq对照及非空升级/正式LOGIN/CLEAN rev3均已通过，证实第一失败的环境隔离修复。唯一剩余失败是已有LOGIN错误密码的反例却返回0：容器127.0.0.1匹配trust，连接成功不能证明秘密参与认证。保留此失败，不删除wrong-password断言。
 
 后续收紧正式工具：两次连接显式要求`require_auth=scram-sha-256`，并固定`PGREQUIREAUTH`；不接受父环境改成none，不支持该参数的旧客户端也必须拒绝，不能只靠未知环境变量被忽略。测试专属数据库初始化host SCRAM，保留local Unix无秘密对照，检查实际HBA和trust被强制SCRAM拒绝；不修改任何用户数据库/HBA。依据[PG17连接认证要求](https://www.postgresql.org/docs/17/libpq-connect.html#LIBPQ-CONNECT-REQUIRE-AUTH)。本机118项Python在干净9d5be0c实际退出0；这不替代新增认证修正后的完整验证。
+
+## 第三候选：业务全部通过，旧门禁遗漏新名称（保留）
+
+代码`c08b7ad916e8b3b44b9a1315c0bbca68e56f1356`的[Push38957097675](https://github.com/fangzhiy/Test365Alm/actions/runs/38957097675)/[PR38957103747](https://github.com/fangzhiy/Test365Alm/actions/runs/38957103747)仍为failure，仅server失败。PR实际checkout/build为`12ee1cd1af32a57db838cb3451fdb5f9b8a6de97`，ref=`refs/pull/10/merge`；不是分支head。单元66、集成152均0F/E/S，包括正式provision的两个真实场景、所有资产DB/terminal/HTTP，以及原模块回归。其他五Job通过，浏览器14+独立项目UI1通过。原`/me401`本次未复现，根因仍未证明。
+
+剩余失败准确位于`Require real HTTP OIDC callback integration report`：`verify_r03_oidc_http_report.py`闭集仍是23个名称，新`realOidcAssetHttpTerminalCompleteFreezesRejectionAndReauthorizesReplay`被判unexpected。M05专项27个IT门禁已通过，但不能代替旧OIDC门禁。修复须把实际第24项加入原闭集并增加源码/名单一致性及缺失、重复、F/E/S回归，不能改成忽略未知用例或跳过门禁。
+
+PR backend制品[12071356538](https://github.com/fangzhiy/Test365Alm/actions/runs/38957103747/artifacts/12071356538)已核验到被忽略的`local-evidence/r11-fix01-candidate3/backend`。正式工具真实升级身份为`r11_fix_scanner_f8a11503b17740d283eb6c4903b58180`：LOGIN/INHERIT/scanner membership=true，SUPERUSER/BYPASSRLS/CREATEDB/CREATEROLE/REPLICATION/runtime membership=false。非空升级前包含asset1、revision2、upload2、scan2、attachment1、audit13、asset Outbox10、core idempotency5；逐字段旧行/对象身份保留，之后真实CLEAN发布rev3，外项目及未确认upload的CLEAN写入被精确拒绝。wrong-password、trust不满足SCRAM、重复配置不扩权、既有group LOGIN和不安全role拒绝均已执行通过。
+
+本机在c08b7ad复跑系统`mvn -B -ntp test`退出0（66/0F/E/S），完整Python119项退出0、规划校验0。CI实际Temurin21.0.12.1+1、Maven Wrapper3.9.16/Python3.12.15；本机Java17.0.2/系统Maven3.9.14不同。该候选业务测试通过仍不等于F05通过，待门禁修正后的完整Push/PR。
+
+门禁自修采用测试先行：`python -m unittest tools.tests.test_r03_ci_evidence -v`原代码11项/3失败；只补名称后仍4失败，暴露重复testcase和汇总为零却含failure/error/skipped子标记的假报告未被拒绝。最终只改该校验器和对应测试：闭集24与真实Java `@Test`方法名单一致，真实case计数/唯一性检查及逐case非通过检查。专项11/11退出0，全Python123退出0；首次沙箱temp ACL失败不算功能RED。代码提交`561062ba15a9e2695d1c26e66d84fe91b316bf11`正常push、远端SHA一致。使用该校验器重新检查第三候选的真实XML，OIDC24及M05专项27门禁均退出0；最终仍须本代码的新Push/PR实际通过，不能把重新解析旧XML当成新CI。
+
+## 实际修复及文件对应
+
+| 范围 | 修改文件及原因 |
+|---|---|
+| F01提交完整性 | 新增`apps/server/src/main/resources/db/migration/V21__asset_revision_commit_integrity.sql`；SECURITY INVOKER、固定search_path、延迟到提交检查真实连续revision集合/allocator/current，不依赖可伪造GUC。`AssetDatabaseIT`新增合法runtime/MEMBER六类独立事务及并发rev3/rev4对照。 |
+| F02冻结错误 | `asset/AssetService.java`在感染拒绝的业务事务内保存terminal outcome；`core/CoreCommands.java`增加显式版本化、受限status/code/safe message错误信封，旧成功JSON不变。新增`CoreCommandsOutcomeTest`、`AssetTerminalOutcomeIT`以及`identity/OidcCallbackSecurityIT`的一个真实HTTP矩阵。 |
+| F03正式身份 | 新增`tools/provision_asset_scanner_role.py`及唯一SQL源`.sql`、离线`tools/tests/test_asset_scanner_provision.py`。明确授权operator、最小子进程环境、实际SCRAM、秘密不入argv/日志、不自动旋转和不安全角色拒绝。`AssetTestInfrastructure.java`只负责证明Testcontainers资源归属并调用正式工具，不以helper DDL代替这条验收。 |
+| F04非空升级 | 新增`AssetProvisioningUpgradeIT.java`两个方法：真实非空V20全行保持、再次迁移0、正式LOGIN重复核验、真实CLEAN rev3、越范围/未确认CLEAN拒绝；另一方法保留group LOGIN并验证不安全角色/错误秘密/会话日志边界。 |
+| V21/V22联动 | `PrincipalUpgradeIT`、`ReleaseCycleDatabaseIT`、`RequirementMigrationUpgradeIT`、`TestCaseMigrationUpgradeIT`更新实际执行迁移数量；`verify_r02_migration_failure.py`、对应离线测试及`test_ci_workflow.py`、`.github/workflows/ci.yml`实际运行V21成功/V22精确失败。未改旧迁移或旧夹具内容来伪造升级。 |
+| 必需门禁 | `verify_r11_asset_report.py`、`test_r11_asset_evidence.py`加入本FIX确切方法；`verify_r03_oidc_http_report.py`、`test_r03_ci_evidence.py`修正24项闭集及逐case证据。缺失、重复、失败、错误、跳过均拒绝。 |
+| 文档 | 本完整输入、执行记录、development-status、README、AGENTS、assets契约、ADR025记录边界、操作方式、真实失败和验证版本；保留原R11记录。 |
+
+本轮相对起点共31个新增/修改文件、无删除；前端产品源码/浏览器用例、依赖版本、原V1—V20均未修改。系统Maven/Wrapper的区别、真实scanner/S3、旧模块门禁和全部有效回归继续保留。
+
+## 可复核命令、结果与证据位置
+
+以下命令根目录执行，除注明`apps/server`、`apps/web`。退出码按各自实际调用记录，不能把一次后续成功覆盖此前失败。
+
+| 命令/环境 | 实际结果 | 证据 |
+|---|---|---|
+| `python -m unittest discover -s tools/tests -v`，Windows正常用户权限 | 最新门禁代码123项，exit0；含provision12及新增OIDC门禁4方法 | 本机执行输出；对应CI planning-evidence/Python报告 |
+| `python tools/validate_package.py` | exit0；184业务规划验收仍NOT_EXECUTED，不提升WBS/G0状态 | planning-evidence |
+| `mvn -B -ntp test`，apps/server系统Maven | c08b7ad：66，0F/E/S，exit0；561062b仅Python门禁变化 | `apps/server/target/surefire-reports`，本机03:46:54+08最终输出 |
+| `.\mvnw.cmd -B -ntp test`，Windows Wrapper | exit1，缓存AccessDenied，零测试，不作PASS | 上述本机过程；不同于系统Maven |
+| `npm ci --no-audit --no-fund`，apps/web | 正常权限exit0；沙箱EPERM exit1独立保留 | 本机输出；CI frontend-evidence |
+| `npm run lint` / `npm run test:run -- --reporter=verbose --reporter=json --outputFile.json=../../local-evidence/r11-fix01/vitest.json` / `npm run build` | 各exit0；213测试，19文件，0F/E/S；TypeScript/Vite成功，9既有lint warning | `local-evidence/r11-fix01/vitest.json`及CI frontend-evidence |
+| `python tools/verify_r11_asset_web_report.py local-evidence/r11-fix01/vitest.json` | exit0，M05组件24/API5精确名称 | 本机JSON/门禁摘要 |
+| CI `./mvnw -B -ntp test`、`./mvnw -B -ntp -Pintegration verify -Dbuild.commit=<实际GITHUB_SHA>` | 第三候选66单元/152集成全部通过；整体Job因旧门禁失败已单列，随后完整CI结果另列 | backend-evidence的unit-tests.txt/integration-build.txt、Surefire/Failsafe XML、checkout-sha.txt |
+| CI `python tools/verify_r02_readiness.py ...`、`python tools/verify_r02_migration_failure.py ...` | 第三候选两Job通过：相同后端数据库停/恢复、V21启动成功后独立V22精确失败 | readiness-recovery-evidence、migration-failure-evidence，保留资源归属清理 |
+| CI `npx playwright test ... --grep "real Keycloak UI project flow" --workers=1 --reporter=list`、`npm run test:e2e` | 第三候选独立1+完整14全部通过；workers1/retries0，M05页面仅1，不能把14全部算M05 | r03-oidc-browser-evidence的两个日志、JUnit、browser-status、脱敏timeline |
+| `python tools/verify_r03_oidc_http_report.py <真实下载XML目录>`、`python tools/verify_r11_asset_report.py <同目录>` | 561062b门禁针对c08实际报告均exit0，分别24个OIDC方法及27个M05精确场景；不冒充新CI | `local-evidence/r11-fix01-candidate3/backend`及原制品链接 |
+| `git diff --check`；对本轮改动进行private-key/GitHub-token/AWS-key模式扫描 | diff exit0；rg exit1表示无匹配，不等于全量安全审计；跟踪文件无真实.env/私钥 | 本机命令输出及完整31文件清单 |
+
+执行环境：本机Windows11/PowerShell7.6.5、Java17.0.2、系统Maven3.9.14、Node26、Python3.12.8；CI Ubuntu/Temurin21.0.12.1+1、Wrapper3.9.16、Node24.21.0、Python3.12.15。Maven编译目标仍17（既有偏差未擅自调整）。真实隔离PostgreSQL17.11、SeaweedFS4.48、ClamAV1.5.4及原固定digest未升级。owner仅夹具/迁移/核验，业务使用runtime，扫描证明由正式配置的独立scanner连接。
+
+## 已验证代码提交及验收映射
+
+本地/远端代码SHA均`561062ba15a9e2695d1c26e66d84fe91b316bf11`；[Push38958095983](https://github.com/fangzhiy/Test365Alm/actions/runs/38958095983)和[PR38958100160](https://github.com/fangzhiy/Test365Alm/actions/runs/38958100160)的planning-tools、web、server、readiness-recovery、migration-failure、oidc-browser六Job均success。PR实际checkout/build `b659b9ee9b8c52e086cad8fba55122a2aaeab1c4`，`refs/pull/10/merge`；父提交为base `d213e47bebbe0f89522be48c3e58003d008cdf06`与head561062b。两个树均`7470df30ff696d4e974067ebb3d20b375ead64be`，没有把merge-ref写成head。
+
+已下载本代码PR制品到被忽略的`local-evidence/r11-fix01-code/{backend,frontend,planning,browser}`。远端backend制品[12070924892](https://github.com/fangzhiy/Test365Alm/actions/runs/38958100160/artifacts/12070924892)、browser[12071163285](https://github.com/fangzhiy/Test365Alm/actions/runs/38958100160/artifacts/12071163285)；同run的frontend/planning/readiness/migration制品均存在。Surefire XML 66、Failsafe XML 152，0F/E/S；M05精确27个IT，较原18新增9，另新增3个core error单元；OIDC全类24中M05只有3个综合HTTP矩阵。Vitest JSON213全部通过，Python报告`Ran 123 tests ... OK`（较原106新增17），完整Playwright14/独立UI1均exit0，无重试/跳过。
+
+| 验收 | 状态及确切证据 |
+|---|---|
+| F01 | PASS。`AssetDatabaseIT.publishedAssetAllocatorAndCurrentPointerCannotMoveBackwardOrGap`：真实runtime+MEMBER、rev1/rev2，对allocator调小/+100、allocator+pointer回退、仅pointer回退、无revision advance、真实CLEAN修订gap独立事务提交均被目标23514拒绝，八表无副作用；同方法正常并发rev3/rev4连续唯一。旧独立pointer防线保留。 |
+| F02 | PASS。`AssetTerminalOutcomeIT`5方法和`OidcCallbackSecurityIT.realOidcAssetHttpTerminalCompleteFreezesRejectionAndReauthorizesReplay`：真实clamd感染首次/同key重放均422 FILE_INFECTED且safe message相同；newkey409 UPLOAD_REJECTED；不同hash409 IDEMPOTENCY_KEY_REUSED；无重扫/scan/audit/Outbox/版本副作用。真实暂停scanner得到503 SCAN_UNAVAILABLE/SCAN_FAILED，原key恢复PUBLISHED，成功重放不变。原会话撤权/tenant过期404、disabled在HTTP过滤器403，均不返回旧终态；Service直接调用不可见统一404。 |
+| F03 | PASS。`AssetProvisioningUpgradeIT.scannerProvisioningPreservesExistingGroupLoginAndRejectsUnsafeRoles`及`upgradedDatabaseUsesProvisionedRestrictedScannerLogin`实际调用仓库Python/SQL。最新升级child current_user=`r11_fix_scanner_2165526d01764240a35465e703de9c24`，LOGIN/INHERIT/scanner=true；SUPERUSER/BYPASSRLS/CREATEDB/CREATEROLE/REPLICATION/runtime=false。正确已确认CLEAN能写，外项目/未确认CLEAN精确23514拒绝；原group LOGIN仍可登录，重复不扩权，错误密码与trust拒绝，秘密/verifier日志断言通过。 |
+| F04 | PASS。同`upgradedDatabaseUsesProvisionedRestrictedScannerLogin`在V20真实业务生成asset1/revision2/upload2/scan2/attachment1/audit13/Outbox10/idempotency5，所有public旧表逐行逐字段快照V21迁移前后相等，再迁移0。rev1/rev2字节、hash/MIME/size/object key、current=rev2/next=3、旧link和成功幂等rev1均保留，正式新scanner发布rev3/next=4后旧记录仍在。旧V19→V20非空升级方法继续通过。 |
+| F05 | 代码CI PASS：上述Push/PR六Job、全部精确报告门禁、实际V21成功/V22失败、真实PG/S3/clamd和14+1浏览器通过。最终文档交付会产生新SHA；其Push/PR实际结果在交付回复核对，不预先声称通过，也不为回写最新CI反复提交。 |
+
+该代码PR的readiness记录同一PID4111：startup live200/ready200，停库live200/ready503，恢复ready200无重启；实际监听`::ffff:127.0.0.1`。迁移探针确认正式V21完成，独立V22目标失败、子进程exit1是该负向场景预期，整个验证脚本exit0；资源清理只限本轮所有权清单。这里的通过不等于生产上线、外部审核通过或整模块完成。
+
+## 剩余边界
+
+本机Docker29.7.2客户端存在，但Linux engine命名管道不可用：真实PG/S3/clamd/Keycloak本机复跑BLOCKED_LOCAL，UbuntuCI不是本机通过。Wrapper缓存权限和npm沙箱EPERM分别保留，未修改系统全局权限、用户Docker/HBA或任何生产环境。技能通用definition-of-done引用文件在本机不存在，完成定义直接使用仓库AGENTS与用户F01—F05，不降低验收。
+
+未知`/me401`（历史Push38946999225）本轮未复现，根因仍未证明；不改认证、不加登录/Playwright retry、不提高超时。原1fcbda1 scanner恢复失败保留在原R11记录；本轮三次候选失败及修正均在上文，不静默删除。生产scanner运维/secret轮换、对象服务安全评审、GC/配额/完整DoS及全量漏洞审计未交付，不宣称完整M05或兼容全部旧ALM。PR9/10保持Open，不合并、部署、恢复定时任务、改默认分支/规则/可见性或开始M12。

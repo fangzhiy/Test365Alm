@@ -104,6 +104,8 @@ Flyway只管理`test365alm_scanner`能力角色与表权限，不管理登录秘
 
 应用继续显式读取`TEST365ALM_ASSETS_SCANNER_DB_USERNAME`与`TEST365ALM_ASSETS_SCANNER_DB_PASSWORD`；不能回退runtime/migrator密码，连接URL固定同应用数据库。工具只供已授权owner/operator，秘密安全输入、不打印、不提交；本轮真实provision只在测试专属PostgreSQL。生产凭据保管、轮换及网络隔离仍须运维评审。
 
+正式provision入口在operator和子角色核验连接均显式要求SCRAM-SHA-256，不能把trust下的连接成功算成密码已验证；不支持认证要求的客户端安全拒绝。容器模式真正unset继承的libpq服务偏转项，不能设空字符串。工具不自动改变HBA、角色既有密码、系统日志设置或用户配置文件；会话日志保护或角色限制不足时拒绝，可能已提交创建但登录核验失败的情况须明确人工核查，不谎报整体回滚。
+
 外部I/O与DB没有2PC：会话创建即分配内部唯一quarantine及候选published对象身份。receipt事务失败保留CREATED，外部对象可能存在但不能下载，同uploadId安全重试；发布对象成功而DB事务失败时可识别为会话候选orphan，因无DBrevision无业务下载；publish事务成功而quarantine删除失败，PUBLISHED保持，cleanupPending=true可诊断。清理不改变冻结发布响应；后续状态GET显示当前cleanup状态。本轮不做GC daemon。
 
 并发采用DB锁和持久化幂等串行化相同命令；同uploadId相同PUT只一receipt，相同complete只一有效发布/scan结果。已有asset版本分配锁定asset而非裸MAX()+1；两个并发新版本唯一递增。合法CLEAN发布/关联与audit/Outbox/幂等同事务，分别注入audit/outbox失败；恢复后同意图安全继续。

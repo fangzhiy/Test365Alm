@@ -1,9 +1,11 @@
 # Test365Alm
 企业级应用质量管理平台研发规划基线。对标原 ALM/Quality Center 产品体系；具体目标版本、Edition、扩展和旧生态兼容范围须在 P0 冻结。
 
-## R11-FIX01：资产边界修正（实施/验证中）
+## R11-FIX01：资产边界修正（代码CI通过，待独立审核）
 
 继续[PR #10](https://github.com/fangzhiy/Test365Alm/pull/10)，依赖未合并PR9。原c150958交付的完整成功证据保留；新增回归c3c1d13已在真实CI复现allocator/current回退及感染同key结果变化。最新范围/验收见[FIX01记录](docs/progress/runs/R11-CORE-BATCH04-FIX01.md)。正式迁移追加V21，故意失败探针V22；下文旧V20/V21仅为原轮次历史，不改写旧迁移或清库。
+
+代码验证`561062ba15a9e2695d1c26e66d84fe91b316bf11`的[Push38958095983](https://github.com/fangzhiy/Test365Alm/actions/runs/38958095983)/[PR38958100160](https://github.com/fangzhiy/Test365Alm/actions/runs/38958100160)六Job全部success，PR实际checkout/build为`b659b9ee9b8c52e086cad8fba55122a2aaeab1c4`。66单元、152真实集成（M05精确27，整个OIDC24中M05仅3）、213前端、123Python、完整浏览器14+独立UI1，零失败/错误/跳过；非空V20→V21及正式SCRAM scanner LOGIN真实通过。三次候选失败及门禁自修保留。最终文档交付自己的CI在交付回复核对，不循环追写文档；历史/me401未复现，根因仍未证明。
 
 已有数据库升级后的scanner账号由正式`python tools/provision_asset_scanner_role.py`提供。先由授权operator完成备份/评估及Flyway升级，再在受控终端从秘密管理渠道设置`PGHOST`、`PGPORT`、`PGDATABASE`、`PGUSER`与operator的`PGPASSWORD`或`PGPASSFILE`/TLS配置，并设置新独立`TEST365ALM_ASSETS_SCANNER_DB_USERNAME`、`TEST365ALM_ASSETS_SCANNER_DB_PASSWORD`；密码须24..256个非空格ASCII字符。不要将真实值写进命令参数、聊天、日志或仓库，不启用shell trace。
 

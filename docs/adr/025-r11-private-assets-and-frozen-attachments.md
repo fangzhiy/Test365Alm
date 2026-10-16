@@ -51,6 +51,8 @@ INFECTED terminal complete与其业务审计/Outbox在同事务保存冻结错�
 
 本段为决策说明，RED复现、GREEN结果、非空V20数据和具体运行身份见[FIX01记录](../progress/runs/R11-CORE-BATCH04-FIX01.md)。PostgreSQL依据：[延迟约束触发器](https://www.postgresql.org/docs/17/sql-createtrigger.html)、[角色属性](https://www.postgresql.org/docs/17/role-attributes.html)、[SCRAM口令认证](https://www.postgresql.org/docs/17/auth-password.html)。不把环境变量秘密当不可被同机特权进程读取的安全存储，也不承诺生产全量安全审计。
 
+FIX01自修进一步明确：libpq的`PGSERVICE=`不是unset，容器入口用`env -u`移除偏转项。正常连接并不足以证明密码，因为trust可以不检查密码；正式入口两次连接以显式`require_auth=scram-sha-256`和固定`PGREQUIREAUTH`要求完整握手，不支持该参数也安全拒绝。只对本轮测试容器初始化host SCRAM，不替用户改HBA或放宽权限。该决定由真实错误密码反例推动，保留原失败及同资源对照；依据[libpq认证要求](https://www.postgresql.org/docs/17/libpq-connect.html#LIBPQ-CONNECT-REQUIRE-AUTH)。
+
 - [MinIO Java 9.0.3 README](https://github.com/minio/minio-java/tree/9.0.3)、[OkHttp JVM 依赖说明](https://github.com/square/okhttp/tree/parent-5.3.2)、[Tika core 文档](https://tika.apache.org/3.3.3/gettingstarted.html)。
 - [ClamD INSTREAM 协议](https://docs.clamav.net/manual/Usage/ClamdProtocol.html)、[官方容器说明](https://docs.clamav.net/manual/Installing/Docker.html)、[SeaweedFS mini 源码](https://github.com/seaweedfs/seaweedfs/blob/4.48/weed/command/mini.go)。
 - 新 Java 库为 Apache-2.0；SDK 不是 MinIO server。已核对上游公告，9.0.3 不在 MinIO SDK CVE-2025-59952 的 <8.6.0 范围；Tika core 不引入 PDF parser。不能将局部公告核对写成完整依赖安全认证。
