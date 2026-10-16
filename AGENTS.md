@@ -16,7 +16,7 @@
 
 - 2026-10-17 R10 起点：默认主线 `chore/r01-status-001@a2419e292c004b2cd4c7278bdaa40b1ce3442a22` 已合入PR #1～#8，主线CI38931708362六Job成功。新R10 M06分支从此已验证主线建立，base为默认分支。下面更早轮次未合并/依赖分支说明均为历史；新PR不自动合并。
 - M04/M11 仅字段定义/共享值验证、typed 需求→用例关系及有限同步覆盖切片。契约为 `contracts/field-metadata.md`、`contracts/requirement-test-trace.md`，决策 ADR 022；不能修改整个模块/WBS/验收的 PLANNED/NOT_RUN。
-- R10 正式迁移当前 V19；仅增加新迁移，V1—V18 不变，独立故意失败探针当前 V20。历史文档中的 V17/V18/V19 失败探针是当时事实，不是现行配置。
+- R10当轮正式迁移V19/独立故意失败探针V20；现行R11为正式V20/探针V21，V1—V19不变。下文旧轮次的迁移版本及“附件未实现”等范围均为当时事实，当前范围以本文件R11段落和对应契约为准。
 - R08 专项：`mvn -B -ntp -Pintegration verify '-Dit.test=CoreMetadataTraceDatabaseIT,ManualExecutionMigrationUpgradeIT,OidcCallbackSecurityIT'`；完整仍 `mvn -B -ntp -Pintegration verify`，Windows Wrapper 独立为 `.\mvnw.cmd`，Linux `./mvnw`。根目录 `python tools/verify_r08_core_report.py apps/server/target/failsafe-reports` 要求确切 M04/M11 DB、真实 OIDC HTTP、V16 非空升级测试名，无失败/错误/跳过。浏览器必须包含真实字段验证和 MEMBER 追踪→执行 PASS 流程，保留原十个用例、单 worker、零重试。
 
 - 当前目录包含规划与研发辅助工具，以及 R02 工程底座、R03 身份/项目访问切片和 R04-M07-001 需求最小切片的 `apps/web` Vite 前端与 `apps/server` Spring Boot 服务；需求切片不代表完整 M07、M03 或产品完成。

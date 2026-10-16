@@ -20,7 +20,7 @@ BlobStore 的生产实现为真实 S3-compatible SDK，不使用内存对象冒�
 
 ## 不可信文件与扫描
 
-1..25MiB 声明与实际流式限制；服务端重新计算 SHA-256，检测内容类型只允许 text/plain、PDF、PNG、JPEG。文件名仅显示，去除路径/CRLF/控制字符，服务端 UUID 生成对象位置。raw PUT 不走 multipart。请求独有临时文件在 finally 删除。
+1字节..25MiB 声明与实际流式限制；服务端重新计算 SHA-256，检测内容类型只允许 text/plain、PDF、PNG、JPEG。文件名仅显示，去除路径/CRLF/控制字符，服务端 UUID 生成对象位置。raw PUT 不走 multipart，并显式设置 `spring.servlet.multipart.enabled=false`，防止进入处理器前被默认解析器写盘；真实配置测试RED→GREEN和实际OIDC HTTP畸形multipart拒绝验证这一边界。请求独有临时文件在 finally 删除；进程崩溃清理和全量资源耗尽防护不在本轮承诺内。
 
 clamd 使用有界 INSTREAM，不发送本机文件路径。只有精确 CLEAN 才发布，INFECTED 持久化终态 REJECTED；异常/未知/超时为 SCAN_FAILED，允许原意图明确重试但不能下载。clamd TCP 本身不提供认证/TLS，因此只用于可信隔离本机/容器网络，不作为公网服务。
 

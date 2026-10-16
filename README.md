@@ -1,11 +1,11 @@
 # Test365Alm
 企业级应用质量管理平台研发规划基线。对标原 ALM/Quality Center 产品体系；具体目标版本、Edition、扩展和旧生态兼容范围须在 P0 冻结。
 
-> **当前状态：R10-CORE-BATCH03 最小切片代码CI通过，待独立审核。** PR #1～#8 已进入默认分支 `chore/r01-status-001`，主线 `a2419e292c004b2cd4c7278bdaa40b1ce3442a22` 六Job CI38931708362成功。R10独立 [PR #9](https://github.com/fangzhiy/Test365Alm/pull/9) 代码fa72209的Push38936921155/PR38936929050六Job通过，未合并；最终交付CI以执行回复核对。下面R08/R09说明和轮次记录保留历史背景。各项仅最小切片，不代表完整模块或ALM完成。
+> **当前状态：R11-CORE-BATCH04 资产附件最小切片代码CI通过，待独立审核。** [PR #10](https://github.com/fangzhiy/Test365Alm/pull/10) 依赖未合并的R10 PR #9，base为 `feat/r10-m06-001`。代码 `2a38148bfad5fd9b8e599b6d469a8e8b7601717d` 的Push38948375346/PR38948383146均六Job成功；最终文档交付CI在回复核对。默认分支仍 `chore/r01-status-001@a2419e292c004b2cd4c7278bdaa40b1ce3442a22`，PR #1～#8已合入。下文旧轮次的范围、未实现项和迁移版本为当时历史，现行M05及V20/V21以本节为准；不代表完整模块或ALM完成。
 
-## R11 私有资产与冻结附件（实施中）
+## R11 私有资产与冻结附件（最小切片，代码验证通过）
 
-本轮仅M05第一切片，尚待完整CI验收；起点/真实结果见[记录](docs/progress/runs/R11-CORE-BATCH04.md)，规则见[契约](contracts/assets.md)/[ADR025](docs/adr/025-r11-private-assets-and-frozen-attachments.md)。R10 PR9尚未合并，新功能不写入主线。
+本轮仅M05第一切片；代码CI实际63单元、143真实集成、213前端、106 Python、14完整浏览器及独立项目UI另1项，零失败/错误/跳过。起点、确切场景、两次历史红CI及限制见[记录](docs/progress/runs/R11-CORE-BATCH04.md)，规则见[契约](contracts/assets.md)/[ADR025](docs/adr/025-r11-private-assets-and-frozen-attachments.md)。R10 PR9尚未合并，新功能不写入主线。历史孤立登录间歇失败根因未证明，增加安全诊断并保留原测试，不宣称已根治。
 
 全新隔离开发环境：根目录执行`python tools/prepare_r03_dev.py`，它生成随机本地凭据并拒绝覆盖已有`.env.r03`/realm。使用唯一项目名，运行`docker compose --env-file .env.r03 -f compose.r03.yaml -f compose.r11.yaml -p <唯一项目名> up -d postgres keycloak asset-store asset-scanner`。新PostgreSQL容器初始化独立runtime/scanner账号，Flyway由migrator执行V20；S3两个私有bucket、clamd都只发布回环端口。不要对已有数据库卷重新初始化或清空。
 
@@ -27,7 +27,7 @@ PowerShell分别启动后端/前端：` . .\tools\import_r03_env.ps1`加载同�
 
 发布/周期编辑使用版本条件；412 保留草稿，读取最新后必须明确采用或放弃。未知写入保留原键/内容/版本重试；写已确认后仅刷新 GET。归档后全部新写入拒绝，历史仍可读。列表通过“更多”继续分页，不下载全部页；范围最多1000、相关缺陷最多10000，超限明确拒绝评估，不显示截断指标。
 
-正式迁移当前 V19、专用失败探针 V20。完整命令沿用下方 `mvn -B -ntp -Pintegration verify`，专项证据检查为 `python tools/verify_r10_release_report.py apps/server/target/failsafe-reports`；浏览器为 `npx playwright test e2e/releases.spec.ts --workers=1 --retries=0`，仅对本轮 CI-owned 环境执行。契约见 [releases](contracts/releases.md)、[ADR024](docs/adr/024-r10-release-cycle-quality-snapshot.md)、[R10实际记录](docs/progress/runs/R10-CORE-BATCH03.md)。不是完整规划、质量中心、审批或资产管理模块。
+R10当轮正式迁移 V19、专用失败探针 V20；现行R11已为正式V20/探针V21。完整命令沿用下方 `mvn -B -ntp -Pintegration verify`，专项证据检查为 `python tools/verify_r10_release_report.py apps/server/target/failsafe-reports`；浏览器为 `npx playwright test e2e/releases.spec.ts --workers=1 --retries=0`，仅对本轮 CI-owned 环境执行。契约见 [releases](contracts/releases.md)、[ADR024](docs/adr/024-r10-release-cycle-quality-snapshot.md)、[R10实际记录](docs/progress/runs/R10-CORE-BATCH03.md)。不是完整规划、质量中心、审批或资产管理模块。
 
 前端在`apps/web`执行 `npm run test:run -- --reporter=verbose --reporter=json --outputFile.json=../../local-evidence/r10/vitest.json` 后，在根目录执行 `python tools/verify_r10_release_web_report.py local-evidence/r10/vitest.json`，验证实际组件/API测试名称与完整结果。CI保存`frontend-evidence`内JSON/摘要，以及`backend-evidence`内Failsafe XML/`release-r10-report.txt`；浏览器仅上传脱敏事件时间线与JUnit，不上传原始认证trace。
 
@@ -304,7 +304,7 @@ python tools/verify_r02_readiness.py --env-file .env.r02-test --compose-project 
 
 脚本严格要求监听地址可验证且只能是 `127.0.0.1`、`::1` 或 `::ffff:127.0.0.1`；无法枚举监听、进程提前退出、版本提交不一致、端口被占用或数据源不是本机专用 PostgreSQL 时失败。首次 `up` 前会检查目标项目是否已有容器（包括停止的容器）、网络或卷；任何已有资源都会使脚本拒绝运行。默认使用当前本地 Docker context；若专用测试配置写入 `TEST365ALM_DOCKER_CONTEXT`，它必须与当前 context 一致。远端 Docker context 被拒绝。测试配置只接受脚本规定的键；父进程的 Spring、JVM 和 Compose 覆盖项不会传入子进程。
 
-启动迁移失败验证保留正式 V9，向临时目录注入独立的 V10 故障迁移，不修改正式 `db/migration`；脚本先确认正式 V9 已成功记录：
+启动迁移失败验证保留正式 V20，向临时目录注入独立的 V21 故障迁移，不修改正式 `db/migration`；脚本先确认正式 V20 已成功记录：
 
 ```powershell
 python tools/verify_r02_migration_failure.py --env-file .env.r02-test --compose-project test365alm-r02-migration-manual --server-port 18082

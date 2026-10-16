@@ -1,10 +1,12 @@
 # Test365Alm 开发状态
 
-## R11-CORE-BATCH04 实施中（M05 资产/附件最小切片，未完成验收）
+## R11-CORE-BATCH04 当前状态（M05 最小切片代码CI通过，待独立审核）
 
-- 实际起点为R10最终交付 `d213e47bebbe0f89522be48c3e58003d008cdf06`，PR #9仍Open未合并；默认分支仍`a2419e2…`。新分支`feat/r11-m05-001`，新PR将以`feat/r10-m06-001`为base并明确依赖PR9。未合并或修改旧分支。
-- 追加正式V20、失败探针V21；private S3、真实clamd、受限scanner写证明、不可变资产版本/typed附件、后端代理下载和详情UI正在联调。完整[原文](progress/inputs/R11-CORE-BATCH04.md)、[实际记录](progress/runs/R11-CORE-BATCH04.md)、[契约](../contracts/assets.md)、[ADR025](adr/025-r11-private-assets-and-frozen-attachments.md)。
-- 当前本机210 Vitest（新增24组件+5API）、104 Python及规划校验通过；后端新增HTTP已编译，完整数据库/扫描/浏览器尚待本轮CI，N01—N10不据此标PASS。本机Docker Linux engine管道不存在、Java17/Node26与CI目标Java21/Node24区分记录。
+- 实际起点为R10最终交付 `d213e47bebbe0f89522be48c3e58003d008cdf06`，PR #9仍Open未合并；默认分支仍`a2419e2…`。新分支`feat/r11-m05-001` / [PR #10](https://github.com/fangzhiy/Test365Alm/pull/10)，base `feat/r10-m06-001`，Depends on PR #9。未合并或修改旧分支。
+- 追加正式V20、失败探针V21；private S3/真实clamd、受限scanner写证明、不可变资产版本/typed附件、后端代理下载和三类详情UI已实现。S3/DB非2PC，孤儿对象不能经业务下载，清理失败显式cleanupPending。完整[原文](progress/inputs/R11-CORE-BATCH04.md)、[实际记录](progress/runs/R11-CORE-BATCH04.md)、[契约](../contracts/assets.md)、[ADR025](adr/025-r11-private-assets-and-frozen-attachments.md)。
+- 本地/远端代码均 `2a38148bfad5fd9b8e599b6d469a8e8b7601717d`；[Push38948375346](https://github.com/fangzhiy/Test365Alm/actions/runs/38948375346)/[PR38948383146](https://github.com/fangzhiy/Test365Alm/actions/runs/38948383146)六Job全部success，PR实际checkout/build `f32dd2beb4bbf992f09c38ef4aeb6b687b0dbfb4`，不是head。实际63单元/143真实集成（M05 DB15、非空升级1、HTTP2；OIDC整个类23）、213Vitest（M05组件24/API5，另3安全诊断）/106Python/14完整浏览器（M05仅1）+独立项目UI1，零失败/错误/跳过。精确报告门禁与六制品核对，N01—N09代码证据PASS；N10代码CI通过，最终文档交付CI在回复另行核对，不追写自身SHA。
+- 保留首轮1fcbda1扫描器恢复失败及8f7孤立登录失败。前者以真实容器pause/unpause和身份核验修正有限故障夹具；后者只证实登录阶段/me401，根因未证明，补安全配对诊断而未改变认证、超时或retry，后续b82和2a完整Push/PR均成功。不以成功抹去历史风险。自审补Windows配置加载、真实multipart自动解析关闭、临时文件异常清理。
+- 本机系统Maven63/前端213/106Python通过；WindowsWrapper因缓存AccessDenied退出1、零测试，与系统Maven分开。本机Docker Linux engine不存在，真实PG/S3/clamd/Keycloak复跑BLOCKED_LOCAL，由UbuntuCI实际验证；本机Java17/Node26、CI Java21/Node24、编译target17区分。生产对象服务/IAM与病毒库运维、GC/配额/完整DoS、全量依赖审计未验收。
 - 保留R10已独立审核的成果及以下历史。完整M05、M01/G0输入、旧ALM兼容和原规划未验收项不改状态。本轮不部署、不恢复定时任务、不进入后续模块。
 
 ## R10-CORE-BATCH03 当前状态（M06 最小切片代码CI通过，待独立审核）
