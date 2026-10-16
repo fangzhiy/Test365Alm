@@ -25,6 +25,8 @@
 
 R10 M06 仅发布/周期/强类型冻结范围/同步不可变质量快照；契约 `contracts/releases.md`、ADR024。ADMIN写，MEMBER/VIEWER读；范围最多1000、相关缺陷最多10000，超限明确拒绝，不把截断指标当完整。`mvn -B -ntp -Pintegration verify` 执行全部业务验证，根目录 `python tools/verify_r10_release_report.py apps/server/target/failsafe-reports` 要求12个DB、1个非空V18→V19及2个真实OIDC方法无失败/错误/跳过/重复。新增浏览器名称 `real Keycloak UI admin plans release cycle scope and freezes quality snapshots`；六Job、单worker、零重试不变。目标版本/本机差异仍须独立记录，业务通过不等于完整M06或原规划门禁通过。
 
+R10前端完整命令在`apps/web`执行 `npm run test:run -- --reporter=verbose --reporter=json --outputFile.json=../../local-evidence/r10/vitest.json`；根目录 `python tools/verify_r10_release_web_report.py local-evidence/r10/vitest.json` 要求18组件+3API确切名称，并核对全套实际计数、无失败/错误/跳过/todo/重复。JSON报告与门禁摘要均是CI必需制品，不以总数代替关键用例。
+
 R09 的 M10 仅缺陷核心/不可变来源/有限流转/原M09复测，不是完整模块。契约 `contracts/defects.md`、ADR023、记录 `docs/progress/runs/R09-CORE-BATCH02.md`。普通成员写、VIEWER只读；来源与复测绑定真实run/attempt/manifest/step及当前解决修订。不能信任客户端派生数据或verified；当前周期相关PASS在关闭事务内重验。
 
 R09完整验证：`mvn -B -ntp -Pintegration verify`（Windows Wrapper独立 `.\mvnw.cmd`；Linux `./mvnw`），根目录 `python tools/verify_r09_defect_report.py apps/server/target/failsafe-reports`；前端 `npm ci`、`npm run lint`、`npm run test:run`、`npm run build`。CI保留六Job/原精确名称门禁，新缺陷9个DB、1个非空升级及2个真实OIDC方法必须实际无失败/错误/跳过；整个OIDC19项不是19个缺陷矩阵。浏览器新增 `real Keycloak UI member creates defect from FAIL retests PASS closes and preserves history`，全部12项、单worker/零重试；只上传无表单值/token的脱敏timeline。

@@ -1,11 +1,16 @@
 # Test365Alm 开发状态
 
-## R10-CORE-BATCH03 当前状态（主线核验通过，M06 实施中）
+## R10-CORE-BATCH03 当前状态（M06 最小切片代码CI通过，待独立审核）
 
 - 2026-10-17 实际 GitHub 默认分支 `chore/r01-status-001@a2419e292c004b2cd4c7278bdaa40b1ce3442a22`；PR #7 merged (`e908b8e9f23be65efa95ecdf358229406d9f0fe4`)、PR #8 merged (`a2419e2…`)。原 R09 最终交付 `32e13d86731b0e2bc5a7d844c94a6f471f9a941e` 已在主线，下面各轮 Open/待合并/旧默认 SHA 均为当时历史快照，不是当前状态。
 - [主线CI38931708362](https://github.com/fangzhiy/Test365Alm/actions/runs/38931708362) 实际 checkout=`a2419e2…`，六 Job success；44单元/110集成/160前端/85Python/12完整浏览器+独立项目UI1，失败/错误/跳过0。旧M07/M09/M11/M10精确报告门禁通过，六个制品存在。
 - 阶段A本机在上述主线完成系统Maven44单元、Vitest160、Python85/规划校验、TypeScript/Vite构建。沙箱权限初次失败如实保留；正常权限重跑通过。Docker Desktop Linux engine不可达，本机真实数据库/浏览器为 BLOCKED_LOCAL；CI成功不是本机成功。
-- 从上述真实主线新建 `feat/r10-m06-001`，新PR以默认分支为base，不依赖已合并的feature分支。全文 [R10输入](progress/inputs/R10-CORE-BATCH03.md)、[本轮记录](progress/runs/R10-CORE-BATCH03.md)；契约 [releases.md](../contracts/releases.md)。M06尚在实施，不预先声明验收通过；32模块/WBS/G0状态不改。
+- 从上述真实主线新建 `feat/r10-m06-001` / [PR #9](https://github.com/fangzhiy/Test365Alm/pull/9)，base默认分支，不依赖旧feature分支。代码本地/远端均`fa722090586a131075f0668f253d09134bcc7e87`；[Push38936921155](https://github.com/fangzhiy/Test365Alm/actions/runs/38936921155)/[PR38936929050](https://github.com/fangzhiy/Test365Alm/actions/runs/38936929050)六Job均success。PR实际checkout/构建提交`87d4292e0b6672c3567846bcb6ec6016c8063240`，非head。最终文档交付新SHA/CI由回复核对，本文不循环追写自身SHA。
+- 实现有限Release/Cycle创建/读取/编辑及发布归档、真实日期包含、typed需求/测试冻结scope、不可变同步quality snapshot、ADMIN写/成员只读、ETag/精确412/幂等/audit与Outbox同事务。正式新增V19，旧V1—V18不变；故意失败探针V20。全文 [R10输入](progress/inputs/R10-CORE-BATCH03.md)、[本轮记录](progress/runs/R10-CORE-BATCH03.md)、[契约](../contracts/releases.md)、[ADR024](adr/024-r10-release-cycle-quality-snapshot.md)。
+- M01—M10代码证据通过：46单元/125真实PG集成（M06 DB12/非空升级1/HTTP2；整个OIDC21不是21个M06矩阵）、181Vitest（新增组件18/API3）、95Python、完整浏览器13（M06 DOM1）及独立项目UI另1，零失败/错误/跳过。所有原门禁保留，新增frontend按实际JSON逐名检查，缺失/失败/错误/跳过/重复不能通过。ADMIN真实页面A→原执行PASS→B/A不变、独立VIEWER读/写拒绝通过。
+- 首轮db4409e的Push38936264506/PR38936311923失败历史保留：新增HTTP测试误把既有修订接口200断言成201，其他五Job成功；核对控制器/契约后修预期并完整重验成功。自审还修复已确认写后GET失败提示丢失、分页新增重叠重复、父锁/范围版本及soft-delete边界，未删测试或增加retry。
+- 本机系统Maven3.9.14及WindowsWrapper3.9.16各自46单元通过，前端181/build/lint、Python95通过；Docker engine不可达，真实DB/Keycloak本机BLOCKED_LOCAL，UbuntuCI真实通过不等于本机通过。Java17/Node26与CI Java21/Node24差异及编译target17不变。整体阻断NONE，9条既有lintwarning和Action弃用告警不扩成升级任务。
+- 仅M06第一核心切片：最多1000scope/10000相关缺陷，指标口径v1、无综合质量分数；完整排期/Gantt/审批/附件/异步报表/M05/M12等未实现。32模块/WBS/G0/完整AC状态不改。PR9未合并，未部署、未恢复定时任务、未开始下一模块。
 
 ## R09-CORE-BATCH02 历史快照（下述未合并状态是2026-10-16执行时事实）
 

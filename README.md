@@ -1,7 +1,7 @@
 # Test365Alm
 企业级应用质量管理平台研发规划基线。对标原 ALM/Quality Center 产品体系；具体目标版本、Edition、扩展和旧生态兼容范围须在 P0 冻结。
 
-> **当前状态：R10-CORE-BATCH03 实施中。** PR #1～#8 已进入默认分支 `chore/r01-status-001`，当前已验证主线 `a2419e292c004b2cd4c7278bdaa40b1ce3442a22`，主线六Job CI38931708362成功。R10从该主线建立独立M06分支；下面R08/R09说明和轮次记录保留历史背景。各项仅最小切片，不代表完整模块或ALM完成。
+> **当前状态：R10-CORE-BATCH03 最小切片代码CI通过，待独立审核。** PR #1～#8 已进入默认分支 `chore/r01-status-001`，主线 `a2419e292c004b2cd4c7278bdaa40b1ce3442a22` 六Job CI38931708362成功。R10独立 [PR #9](https://github.com/fangzhiy/Test365Alm/pull/9) 代码fa72209的Push38936921155/PR38936929050六Job通过，未合并；最终交付CI以执行回复核对。下面R08/R09说明和轮次记录保留历史背景。各项仅最小切片，不代表完整模块或ALM完成。
 
 ## R10 发布、周期与冻结质量快照
 
@@ -12,6 +12,8 @@
 发布/周期编辑使用版本条件；412 保留草稿，读取最新后必须明确采用或放弃。未知写入保留原键/内容/版本重试；写已确认后仅刷新 GET。归档后全部新写入拒绝，历史仍可读。列表通过“更多”继续分页，不下载全部页；范围最多1000、相关缺陷最多10000，超限明确拒绝评估，不显示截断指标。
 
 正式迁移当前 V19、专用失败探针 V20。完整命令沿用下方 `mvn -B -ntp -Pintegration verify`，专项证据检查为 `python tools/verify_r10_release_report.py apps/server/target/failsafe-reports`；浏览器为 `npx playwright test e2e/releases.spec.ts --workers=1 --retries=0`，仅对本轮 CI-owned 环境执行。契约见 [releases](contracts/releases.md)、[ADR024](docs/adr/024-r10-release-cycle-quality-snapshot.md)、[R10实际记录](docs/progress/runs/R10-CORE-BATCH03.md)。不是完整规划、质量中心、审批或资产管理模块。
+
+前端在`apps/web`执行 `npm run test:run -- --reporter=verbose --reporter=json --outputFile.json=../../local-evidence/r10/vitest.json` 后，在根目录执行 `python tools/verify_r10_release_web_report.py local-evidence/r10/vitest.json`，验证实际组件/API测试名称与完整结果。CI保存`frontend-evidence`内JSON/摘要，以及`backend-evidence`内Failsafe XML/`release-r10-report.txt`；浏览器仅上传脱敏事件时间线与JUnit，不上传原始认证trace。
 
 ## R09 缺陷与失败步骤复测（历史切片）
 
