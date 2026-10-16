@@ -345,6 +345,7 @@ public class ProjectService {
         permissions.add("run:history:read");
         permissions.addAll(List.of("defect:read","defect:history:read"));
         permissions.addAll(List.of("release:read","milestone:read"));
+        permissions.addAll(List.of("asset:read","attachment:read","asset:download"));
         if (isAdminRoles(roles, PROJECT_ADMINS)) {
             permissions.addAll(List.of("release:create","release:update","release:archive","cycle:create","cycle:update","scope:update","milestone:evaluate"));
         }
@@ -352,6 +353,7 @@ public class ProjectService {
             permissions.addAll(List.of("requirement:create", "requirement:update", "test:create", "test:update",
                     "test-set:create", "test-set:update", "run:write", "test:run"));
             permissions.addAll(List.of("defect:create","defect:update","defect:transition"));
+            permissions.addAll(List.of("asset:upload","asset:version:create","attachment:create"));
         }
         return new PermissionView(project.tenantId(), project.id(), actor, List.copyOf(roles), List.copyOf(permissions));
     }

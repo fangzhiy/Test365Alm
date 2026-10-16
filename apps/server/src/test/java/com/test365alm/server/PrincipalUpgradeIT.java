@@ -51,7 +51,7 @@ class PrincipalUpgradeIT {
         // build/terminal execution guards) are
         // pending after the V2 checkpoint;
         // each must apply exactly once.
-        assertEquals(17, latest.migrate().migrationsExecuted);
+        assertEquals(18, latest.migrate().migrationsExecuted);
         assertEquals(0, latest.migrate().migrationsExecuted);
         try (var connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
                 var statement = connection.createStatement()) {
