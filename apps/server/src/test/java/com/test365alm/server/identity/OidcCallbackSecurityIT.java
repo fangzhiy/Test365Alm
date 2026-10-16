@@ -1212,6 +1212,45 @@ class OidcCallbackSecurityIT {
         try(var c=ownerConnection();var s=c.prepareStatement("UPDATE tenant_member SET valid_until=CURRENT_TIMESTAMP WHERE tenant_id=? AND principal_id=?")){s.setObject(1,f.tenant());s.setObject(2,f.admin().principalId());assertEquals(1,s.executeUpdate());}
         assertAssetRejected(f.project(),()->get(f.admin().flow().client(),download),404,"NOT_FOUND");assertAssetRejected(f.project(),()->get(f.admin().flow().client(),asset),404,"NOT_FOUND");
     }
+    @Test
+    void realOidcAssetHttpTerminalCompleteFreezesRejectionAndReauthorizesReplay() throws Exception {
+        byte[] eicar=("X5O!P%@AP[4\\PZX54(P^)7CC)7}$"+"EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*").getBytes(StandardCharsets.US_ASCII);
+        for(String loss:List.of("revoked","disabled","expired")) {
+            var f=testCaseHttpFixture();String root="/api/v1/projects/"+f.project()+"/uploads";
+            var created=testCasePost(f.member(),root,null,assetUploadBody(eicar,"terminal-outcome.txt",null));assertEquals(201,created.statusCode(),created.body());
+            String item=root+"/"+jsonField(created.body(),"id"),complete=item+"/complete",key=UUID.randomUUID().toString();
+            assertEquals(200,assetPut(f.member(),item,eicar,f.member().csrfToken()).statusCode());
+            var first=defectHttp(f.member(),complete,"POST",null,"{}",key,f.member().csrfToken());
+            assertEquals(422,first.statusCode(),first.body());assertEquals("FILE_INFECTED",jsonField(first.body(),"code"));
+            var rejected=JSON.readTree(get(f.member().flow().client(),item).body());assertEquals("REJECTED",rejected.get("state").textValue());
+            var before=assetRows(f.project());
+            var replay=defectHttp(f.member(),complete,"POST",null,"{}",key,f.member().csrfToken());
+            assertEquals(first.statusCode(),replay.statusCode(),replay.body());
+            assertEquals(jsonField(first.body(),"code"),jsonField(replay.body(),"code"));
+            assertEquals(jsonField(first.body(),"message"),jsonField(replay.body(),"message"));
+            assertEquals(before,assetRows(f.project()),"HTTP terminal replay must preserve every scan/audit/Outbox/upload/idempotency field");
+            assertEquals(rejected.get("rowVersion"),JSON.readTree(get(f.member().flow().client(),item).body()).get("rowVersion"));
+            assertAssetRejected(f.project(),()->testCasePost(f.member(),complete,null,"{}"),409,"UPLOAD_REJECTED");
+            assertAssetRejected(f.project(),()->defectHttp(f.member(),complete,"POST",null,"{\"unexpected\":true}",key,f.member().csrfToken()),409,"IDEMPOTENCY_KEY_REUSED");
+            assertAssetRejected(f.project(),()->testCasePost(f.member(),complete,null,"{\"unexpected\":true}"),400,"INVALID_REQUEST");
+            assertEquals(1,before.get("scan_result").size());assertEquals(0,before.get("asset_revision").size());
+            try(var c=ownerConnection()) {
+                String sql=switch(loss) {
+                    case "revoked" -> "UPDATE project_member SET revoked_at=CURRENT_TIMESTAMP,authorization_version=authorization_version+1 WHERE principal_id=? AND project_id=?";
+                    case "disabled" -> "UPDATE principal SET disabled_at=CURRENT_TIMESTAMP WHERE id=?";
+                    case "expired" -> "UPDATE tenant_member SET valid_until=CURRENT_TIMESTAMP WHERE principal_id=? AND tenant_id=?";
+                    default -> throw new AssertionError(loss);
+                };
+                try(var s=c.prepareStatement(sql)) {
+                    s.setObject(1,f.member().principalId());
+                    if(!loss.equals("disabled"))s.setObject(2,loss.equals("revoked")?f.project():f.tenant());
+                    assertEquals(1,s.executeUpdate());
+                }
+            }
+            // The original authenticated client calls complete directly, without a /me refresh.
+            assertAssetRejected(f.project(),()->defectHttp(f.member(),complete,"POST",null,"{}",key,f.member().csrfToken()),loss.equals("disabled")?403:404,loss.equals("disabled")?"FORBIDDEN":"NOT_FOUND");
+        }
+    }
     private String assetUploadBody(byte[] content,String name,String assetId)throws Exception {
         var values=new LinkedHashMap<String,Object>();values.put("filename",name);values.put("size",content.length);values.put("sha256",assetSha(content));values.put("contentType","text/plain");if(assetId!=null)values.put("assetId",assetId);return JSON.writeValueAsString(values);
     }

@@ -58,14 +58,16 @@ public class AssetService {
         });
     }
     public Upload complete(UUID actor,UUID project,UUID id,JsonNode body,String key) {
-        Completion done=tx.execute(t->{var p=scope(actor,project,true);FieldRules.fields(body,Set.of());var row=upload(p,id,actor,true);var u=row.view();
+        Completion done=tx.execute(t->{var p=scope(actor,project,true);var row=upload(p,id,actor,true);var u=row.view();
+            if(body==null)throw ProjectAccessException.invalid("A JSON object is required");
             String route="asset:upload:complete:"+id,hash=CoreCommands.hash(CoreCommands.canonical(body));
             var replay=commands.replay(p,actor,route,key,hash,Upload.class);if(replay!=null)return new Completion(replay,null,row.quarantineKey());
+            FieldRules.fields(body,Set.of());
             if(u.state().equals("REJECTED"))throw ProjectAccessException.conflict("UPLOAD_REJECTED","Infected upload cannot be published");
             if(u.state().equals("CREATED"))throw ProjectAccessException.conflict("UPLOAD_NOT_READY","Upload content has not been confirmed");
             if(u.state().equals("PUBLISHED")){commands.save(p,actor,route,key,hash,u);return new Completion(u,null,row.quarantineKey());}
             if(jdbc.queryForObject("SELECT count(*) FROM scan_result WHERE tenant_id=? AND project_id=? AND upload_id=? AND status='INFECTED'",Integer.class,p.tenantId(),project,id)>0)
-                return rejectInfected(p,actor,id);
+                return rejectInfected(p,actor,id,route,key,hash);
             // Revalidate the stored bytes, not just the original HTTP receipt.
             try(var raw=blobs.openQuarantine(row.quarantineKey());var content=FileRules.inspect(raw,u.declaredSize(),u.declaredSha256(),u.declaredContentType())) {
                 MalwareScanner.ScanResult scan;
@@ -78,7 +80,7 @@ public class AssetService {
                     return new Completion(null,AssetRules.error("SCAN_UNAVAILABLE",HttpStatus.SERVICE_UNAVAILABLE,"Scanner unavailable; upload remains quarantined"),null);
                 }
                 if(scan.status()==MalwareScanner.Status.INFECTED) {
-                    return rejectInfected(p,actor,id);
+                    return rejectInfected(p,actor,id,route,key,hash);
                 }
                 if(scan.status()!=MalwareScanner.Status.CLEAN)throw new IllegalStateException("Unrecognized scan result");
                 // Deterministic candidate key is recoverable even if a later DB statement fails.
@@ -100,10 +102,12 @@ public class AssetService {
         if(done.error()!=null)throw done.error();
         cleanupAfterCommit(actor,project,id,done.quarantineKey());return done.result();
     }
-    private Completion rejectInfected(ProjectService.ProjectView p,UUID actor,UUID id) {
+    private Completion rejectInfected(ProjectService.ProjectView p,UUID actor,UUID id,String route,String key,String hash) {
         jdbc.update("UPDATE upload_session SET state='REJECTED',last_error_code='FILE_INFECTED',row_version=row_version+1,updated_at=CURRENT_TIMESTAMP WHERE tenant_id=? AND project_id=? AND id=?",p.tenantId(),p.id(),id);
         event(p,actor,id,null,null,null,"UPLOAD_SCAN_REJECTED",Map.of("uploadId",id,"state","REJECTED"));
-        return new Completion(null,AssetRules.error("FILE_INFECTED",HttpStatus.UNPROCESSABLE_ENTITY,"Malware detected; upload rejected"),null);
+        var rejection=AssetRules.error("FILE_INFECTED",HttpStatus.UNPROCESSABLE_ENTITY,"Malware detected; upload rejected");
+        commands.saveTerminalError(p,actor,route,key,hash,rejection);
+        return new Completion(null,rejection,null);
     }
     private void cleanupAfterCommit(UUID actor,UUID project,UUID id,String key) {
         if(key==null)return;
