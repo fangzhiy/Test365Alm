@@ -33,7 +33,8 @@ REQUIRED = {
 }
 
 
-def verify(path):
+def verify(path, required_suites=None, label='M06 component 18 + API 3'):
+    required_suites = REQUIRED if required_suites is None else required_suites
     try:
         report = json.loads(Path(path).read_text(encoding='utf-8-sig'))
         if not isinstance(report, dict) or report.get('success') is not True:
@@ -55,7 +56,7 @@ def verify(path):
         if report['numTotalTestSuites'] != report['numPassedTestSuites'] or report['numTotalTestSuites'] < len(suites):
             return False, 'FAIL: suite counters are inconsistent'
         actual = 0
-        required_seen = {filename: Counter() for filename in REQUIRED}
+        required_seen = {filename: Counter() for filename in required_suites}
         seen_files = set()
         for suite in suites:
             if not isinstance(suite, dict) or suite.get('status') != 'passed' or suite.get('message'):
@@ -70,7 +71,7 @@ def verify(path):
             cases = suite.get('assertionResults')
             if not isinstance(cases, list) or not cases:
                 return False, 'FAIL: zero tests or malformed assertions in a test file'
-            matches = [required for required in REQUIRED
+            matches = [required for required in required_suites
                        if filename == required or filename.endswith('/' + required)]
             for case in cases:
                 if not isinstance(case, dict) or case.get('status') != 'passed' or case.get('failureMessages') != []:
@@ -83,10 +84,10 @@ def verify(path):
                     required_seen[required][name] += 1
         if actual == 0 or actual != report['numTotalTests'] or actual != report['numPassedTests']:
             return False, 'FAIL: actual assertions disagree with global test counters'
-        for filename, names in REQUIRED.items():
+        for filename, names in required_suites.items():
             if any(required_seen[filename][name] != 1 for name in names):
-                return False, f'FAIL: missing or duplicate exact M06 name in {filename}'
-        return True, f'PASS: {actual} actual Vitest assertions; M06 component 18 + API 3 exact names; zero failures/errors/skips'
+                return False, f'FAIL: missing or duplicate exact name in {filename}'
+        return True, f'PASS: {actual} actual Vitest assertions; {label} exact names; zero failures/errors/skips'
     except (OSError, ValueError, TypeError):
         return False, 'FAIL: cannot read a valid Vitest JSON report'
 

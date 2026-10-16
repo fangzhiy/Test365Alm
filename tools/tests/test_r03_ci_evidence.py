@@ -4,7 +4,7 @@ from pathlib import Path
 
 from tools.redact_r03_logs import redact
 from tools.verify_r03_report import count_results
-from tools.verify_r03_project_browser_report import REQUIRED_CORE_UI_TEST, REQUIRED_DEFECT_UI_TEST, REQUIRED_RELEASE_UI_TEST
+from tools.verify_r03_project_browser_report import REQUIRED_CORE_UI_TEST, REQUIRED_DEFECT_UI_TEST, REQUIRED_RELEASE_UI_TEST, REQUIRED_ASSET_UI_TEST
 from tools.verify_r03_oidc_http_report import REQUIRED_TESTS, verify
 from tools.verify_r03_project_access_report import REQUIRED_PROJECT_TESTS, verify_project_access
 from tools.verify_r03_project_browser_report import REQUIRED_MANUAL_EXECUTION_UI_TEST, REQUIRED_MANUAL_TEST_CASE_UI_TEST, REQUIRED_REQUIREMENT_UI_TEST, REQUIRED_TEST as REQUIRED_PROJECT_BROWSER_TEST, REQUIRED_UI_TEST as REQUIRED_PROJECT_UI_TEST, verify as verify_project_browser
@@ -18,6 +18,18 @@ class R03CiEvidenceTests(unittest.TestCase):
         self.assertNotIn("user-secret", result)
         self.assertNotIn("opaque-token", result)
         self.assertEqual(3, result.count("[REDACTED]"))
+
+    def test_redacts_generated_asset_storage_and_scanner_credentials(self):
+        env = ("TEST365ALM_ASSETS_S3_ACCESS_KEY=synthetic-access\n"
+               "TEST365ALM_ASSETS_S3_SECRET_KEY=synthetic-secret\n"
+               "R11_SCANNER_PASSWORD=synthetic-scanner\n"
+               "TEST365ALM_ASSETS_SCANNER_DB_PASSWORD=synthetic-scanner\n"
+               "AWS_ACCESS_KEY_ID=synthetic-sdk-access\n")
+        result = redact(env, "S3 Access Key: synthetic-access; Secret Key: synthetic-secret; "
+                        "scanner password: synthetic-scanner; SDK key: synthetic-sdk-access")
+        for secret in ("synthetic-access", "synthetic-secret", "synthetic-scanner", "synthetic-sdk-access"):
+            self.assertNotIn(secret, result)
+        self.assertEqual(4, result.count("[REDACTED]"))
 
     def test_counts_real_executed_tests_and_failures(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -73,7 +85,7 @@ class R03CiEvidenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             report = Path(directory) / "results.xml"
             report.write_text(
-                '<testsuites><testsuite tests="8" failures="0" errors="0" skipped="0">'
+                '<testsuites><testsuite tests="9" failures="0" errors="0" skipped="0">'
                 f'<testcase name="{REQUIRED_PROJECT_BROWSER_TEST}" />'
                 f'<testcase name="{REQUIRED_PROJECT_UI_TEST}" />'
                 f'<testcase name="{REQUIRED_REQUIREMENT_UI_TEST}" />'
@@ -82,6 +94,7 @@ class R03CiEvidenceTests(unittest.TestCase):
                 f'<testcase name="{REQUIRED_CORE_UI_TEST}" />'
                 f'<testcase name="{REQUIRED_DEFECT_UI_TEST}" />'
                 f'<testcase name="{REQUIRED_RELEASE_UI_TEST}" />'
+                f'<testcase name="{REQUIRED_ASSET_UI_TEST}" />'
                 '</testsuite></testsuites>'
             )
             valid, summary = verify_project_browser(report)

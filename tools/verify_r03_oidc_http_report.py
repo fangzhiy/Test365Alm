@@ -29,6 +29,8 @@ REQUIRED_TESTS = {
     "realOidcDefectHttpFailedSourceRetestAndClosePreserveOriginalEvidence",
     "realOidcReleaseHttpAdminDatesEtagsCsrfAndRoleBoundary",
     "realOidcReleaseHttpTypedScopeSnapshotsAndOldSessionRevocation",
+    "realOidcAssetHttpIntegrityCsrfRolesAndIdempotency",
+    "realOidcAssetHttpTypedLinksFrozenVersionsAndLiveDownloadRevocation",
 }
 
 

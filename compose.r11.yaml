@@ -1,0 +1,36 @@
+# Local/CI-only M05 services; use together with compose.r03.yaml and an owned run ID.
+services:
+  postgres:
+    environment:
+      POSTGRES_SCANNER_PASSWORD: ${R11_SCANNER_PASSWORD:?required}
+  asset-store:
+    labels:
+      test365alm.r03.run: ${R03_RUN_ID:?required}
+    image: chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
+    command: ["mini", "-dir=/data", "-ip=127.0.0.1", "-ip.bind=0.0.0.0", "-s3.port=8333", "-bucket=r11-quarantine,r11-published", "-master.telemetry=false", "-webdav=false", "-admin.ui=false"]
+    environment:
+      AWS_ACCESS_KEY_ID: ${TEST365ALM_ASSETS_S3_ACCESS_KEY:?required}
+      AWS_SECRET_ACCESS_KEY: ${TEST365ALM_ASSETS_S3_SECRET_KEY:?required}
+    ports:
+      - "127.0.0.1:${R11_S3_PORT:-18333}:8333"
+    volumes:
+      - r11-asset-data:/data
+  asset-scanner:
+    labels:
+      test365alm.r03.run: ${R03_RUN_ID:?required}
+    image: clamav/clamav:1.5.4-debian13-slim@sha256:9a96980b265cb2b51a20bdcca921dc80aa55ed0e56cdfb076198ee27a9171927
+    environment:
+      CLAMAV_NO_FRESHCLAMD: "true"
+      CLAMAV_NO_MILTERD: "true"
+      CLAMD_CONF_StreamMaxLength: "26M"
+    ports:
+      - "127.0.0.1:${R11_CLAMD_PORT:-13310}:3310"
+    volumes:
+      - r11-clam-data:/var/lib/clamav
+volumes:
+  r11-asset-data:
+    labels:
+      test365alm.r03.run: ${R03_RUN_ID:?required}
+  r11-clam-data:
+    labels:
+      test365alm.r03.run: ${R03_RUN_ID:?required}

@@ -13,7 +13,7 @@ def redact(env_text: str, log_text: str) -> str:
         if "=" not in line or line.startswith("#"):
             continue
         key, value = line.split("=", 1)
-        if ("PASSWORD" in key or "SECRET" in key or "TOKEN" in key) and value:
+        if any(marker in key for marker in ("PASSWORD", "SECRET", "TOKEN", "ACCESS_KEY")) and value:
             secrets.append(value)
     for secret in sorted(set(secrets), key=len, reverse=True):
         log_text = log_text.replace(secret, "[REDACTED]")

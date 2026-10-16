@@ -90,6 +90,12 @@ jobs:
           set -o pipefail
           python --version
           python ../../tools/verify_r10_release_web_report.py ../../local-evidence/r10/vitest.json 2>&1 | tee release-web-report.txt
+      - name: Require exact M05 frontend upload and recovery evidence
+        if: always()
+        run: |
+          set -o pipefail
+          cd ../..
+          python tools/verify_r11_asset_web_report.py local-evidence/r10/vitest.json 2>&1 | tee apps/web/asset-web-report.txt
       - name: Summarize frontend failures
         if: failure()
         run: |
@@ -116,6 +122,7 @@ jobs:
             apps/web/lint.txt
             apps/web/test-results.txt
             apps/web/release-web-report.txt
+            apps/web/asset-web-report.txt
             local-evidence/r10/vitest.json
             apps/web/build.txt
           if-no-files-found: error
@@ -216,6 +223,11 @@ jobs:
         run: |
           set -o pipefail
           python ../../tools/verify_r10_release_report.py target/failsafe-reports 2>&1 | tee release-r10-report.txt
+      - name: Require M05 real storage scanner database upgrade and HTTP evidence
+        if: always()
+        run: |
+          set -o pipefail
+          python ../../tools/verify_r11_asset_report.py target/failsafe-reports 2>&1 | tee asset-r11-report.txt
       - name: Upload backend evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -238,6 +250,7 @@ jobs:
             apps/server/core-r08-report.txt
             apps/server/defect-r09-report.txt
             apps/server/release-r10-report.txt
+            apps/server/asset-r11-report.txt
             apps/server/target/surefire-reports/**
             apps/server/target/failsafe-reports/**
           if-no-files-found: error
@@ -337,7 +350,7 @@ jobs:
         run: |
           set -o pipefail
           ./mvnw -B -ntp package -DskipTests "-Dbuild.commit=${GITHUB_SHA}" 2>&1 | tee migration-build.txt
-      - name: Verify formal V19 then intentional V20 migration startup failure
+      - name: Verify formal V20 then intentional V21 migration startup failure
         run: |
           set +e
           python -u tools/verify_r02_migration_failure.py --env-file .env.r02-test --compose-project "test365alm-r02-migration-${GITHUB_RUN_ID}" --server-port 18082 --wait-seconds 90 2>&1 | tee migration-failure.txt
@@ -350,7 +363,7 @@ jobs:
             summary=$(tr '\n' ' ' < migration-failure.txt | cut -c1-4000)
             echo "::error title=migration-failure::${summary:-no output captured}"
           else
-            echo "Formal V19 migration and intentional V20 failure were detected for ${GITHUB_SHA}"
+            echo "Formal V20 migration and intentional V21 failure were detected for ${GITHUB_SHA}"
           fi
           exit "$status"
       - name: Upload migration evidence
@@ -434,9 +447,9 @@ jobs:
             docker image inspect quay.io/keycloak/keycloak:26.4.4@sha256:c6459d5fae1b759f5d667ebdc6237ab3121379c3494e213898569014ede1846d \
               --format 'keycloak image user={{.Config.User}}' \
               > local-evidence/r03/image-user.txt 2>&1 || status=1
-            docker compose --env-file .env.r03 -f compose.r03.yaml -p "$project" ps -a \
+            docker compose --env-file .env.r03 -f compose.r03.yaml -f compose.r11.yaml -p "$project" ps -a \
               > local-evidence/r03/containers-raw.txt 2>&1 || status=1
-            docker compose --env-file .env.r03 -f compose.r03.yaml -p "$project" logs --no-color postgres keycloak \
+            docker compose --env-file .env.r03 -f compose.r03.yaml -f compose.r11.yaml -p "$project" logs --no-color postgres keycloak asset-store asset-scanner \
               > local-evidence/r03/containers-raw.log 2>&1 || status=1
             python tools/redact_r03_logs.py .env.r03 local-evidence/r03/containers-raw.txt local-evidence/r03/containers.txt || status=1
             python tools/redact_r03_logs.py .env.r03 local-evidence/r03/containers-raw.log local-evidence/r03/containers.log || status=1
@@ -455,9 +468,10 @@ jobs:
             exit "$status"
           }
           trap cleanup EXIT
-          docker compose --env-file .env.r03 -f compose.r03.yaml -p "$project" up -d postgres keycloak
+          docker compose --env-file .env.r03 -f compose.r03.yaml -f compose.r11.yaml -p "$project" up -d postgres keycloak asset-store asset-scanner
           python tools/r03_resource_guard.py capture --project "$project" --run-id "$run_id" \
             --context "$TEST365ALM_DOCKER_CONTEXT" --output local-evidence/r03/resource-manifest.json
+          python tools/verify_r11_services.py 2>&1 | tee local-evidence/r03/asset-services.txt
           for i in $(seq 1 90); do
             container_id="$(docker compose --env-file .env.r03 -f compose.r03.yaml -p "$project" ps -q keycloak)"
             if [ -z "$container_id" ] || [ "$(docker inspect --format '{{.State.Running}}' "$container_id")" != true ]; then
@@ -535,6 +549,8 @@ jobs:
             local-evidence/r03/manual-execution-context-full.json
             local-evidence/r03/defect-ui-context-full.json
             local-evidence/r03/release-ui-context-full.json
+            local-evidence/r03/asset-ui-context-full.json
+            local-evidence/r03/asset-services.txt
             local-evidence/r03/playwright-results.xml
             local-evidence/r03/project-browser-report.txt
             local-evidence/r03/import-permissions.txt

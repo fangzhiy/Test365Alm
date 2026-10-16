@@ -26,6 +26,9 @@ class PrepareR03DevTests(unittest.TestCase):
                                  {user["username"] for user in data["users"]})
                 self.assertIn(b"R03_VIEWER_PASSWORD=", before)
                 self.assertIn(b"R03_MEMBER_PASSWORD=", before)
+                self.assertIn(b"TEST365ALM_ASSETS_ENABLED=true", before)
+                self.assertIn(b"TEST365ALM_ASSETS_S3_SECRET_KEY=", before)
+                self.assertIn(b"TEST365ALM_ASSETS_S3_QUARANTINE_BUCKET=r11-quarantine", before)
                 self.assertEqual(2, prepare_r03_dev.main())
                 self.assertEqual(before, env.read_bytes())
 
