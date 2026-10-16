@@ -114,6 +114,38 @@ class DefectDatabaseIT {
   assertEquals(25,a.items().size());assertEquals(2,b.items().size());assertNull(b.nextCursor());
   assertEquals(27,java.util.stream.Stream.concat(a.items().stream(),b.items().stream()).map(DefectService.DefectView::id).distinct().count());
  }
+ @Test void unrelatedPassActiveRetestAndPreviousResolutionCannotVerifyCurrentCycle() {
+  var f=fixture();var run=failingRun(f);var a=run.currentAttempt();var d=defects.fromStep(f.member,f.project,content("Cycle"),run.run().id(),a.id(),a.steps().get(0).stepKey(),key());
+  d=defects.transition(f.member,f.project,d.id(),"RESOLVED","first repair","\"1\"",key());
+  var unrelated=execution.rerun(f.member,f.project,run.run().id(),key());complete(f,run.run().id(),unrelated.id(),"PASS");assertFalse(defects.verification(f.member,f.project,d.id()).eligible());
+  var retest=defects.retest(f.member,f.project,d.id(),"\"2\"",key());assertFalse(defects.verification(f.member,f.project,d.id()).eligible());complete(f,retest.runId(),retest.attemptId(),"PASS");assertTrue(defects.verification(f.member,f.project,d.id()).eligible());
+  d=defects.transition(f.member,f.project,d.id(),"REOPENED","new failure","\"2\"",key());assertFalse(defects.verification(f.member,f.project,d.id()).eligible(),"REOPENED cannot advertise previous cycle PASS");
+  d=defects.transition(f.member,f.project,d.id(),"RESOLVED","second repair","\"3\"",key());var resolved=d;assertFalse(defects.verification(f.member,f.project,d.id()).eligible());
+  assertEquals("RETEST_PASS_REQUIRED",assertThrows(ProjectAccessException.class,()->defects.transition(f.member,f.project,resolved.id(),"CLOSED","old PASS","\"4\"",key())).code());
+  retest=defects.retest(f.member,f.project,d.id(),"\"4\"",key());complete(f,retest.runId(),retest.attemptId(),"PASS");assertTrue(defects.verification(f.member,f.project,d.id()).eligible());
+  var newer=execution.rerun(f.member,f.project,retest.runId(),key());assertFalse(defects.verification(f.member,f.project,d.id()).eligible(),"new active attempt supersedes old completed PASS");
+  complete(f,retest.runId(),newer.id(),"PASS");assertFalse(defects.verification(f.member,f.project,d.id()).eligible(),"unassociated newer PASS is not defect verification");
+ }
+ @Test void legitimateRuntimeWriterCannotForgeInitialStateAppendCommittedSourceOrAlterSnapshot() throws Exception {
+  var f=fixture();var run=failingRun(f);var a=run.currentAttempt();var s=a.steps().get(0);var d=defects.create(f.member,f.project,content("No source yet"),null,key());var before=snapshot(f.project);
+  try(var c=runtimeConnection(f,f.member)) {
+   assertEquals("test365alm_runtime",query(c,"SELECT current_user"));
+   assertEquals(f.member.toString(),query(c,"SELECT current_setting('test365alm.principal_id')"));
+   String initial="INSERT INTO defect(tenant_id,project_id,id,display_number,row_version,status,title,severity,priority,current_revision_id,created_by) VALUES('"+f.tenant+"','"+f.project+"','"+UUID.randomUUID()+"',999,1,'CLOSED','forged','HIGH','HIGH','"+UUID.randomUUID()+"','"+f.member+"')";
+   sqlDenied(c,initial,"23514","defect initial state must be OPEN version 1");
+   sqlDenied(c,sourceInsert(f,d.id(),run,"observed FAIL"),"55006","defect links can only be assembled in creation transaction");
+  }
+  // A new creation transaction with correct scope, real FKs and unused IDs: only the snapshot differs.
+  try(var c=runtimeConnection(f,f.member)) {
+   c.setAutoCommit(false);UUID id=UUID.randomUUID(),rev=UUID.randomUUID();
+   c.createStatement().executeUpdate("INSERT INTO defect(tenant_id,project_id,id,display_number,row_version,status,title,severity,priority,current_revision_id,created_by) VALUES('"+f.tenant+"','"+f.project+"','"+id+"',999,1,'OPEN','building','HIGH','HIGH','"+rev+"','"+f.member+"')");
+   sqlDenied(c,sourceInsert(f,id,run,"forged snapshot"),"23514","defect source must match finished failing step snapshot");c.rollback();
+  }
+  assertEquals(before,snapshot(f.project));var valid=defects.fromStep(f.member,f.project,content("Valid source"),run.run().id(),a.id(),s.stepKey(),key());assertEquals("observed FAIL",valid.links().stream().filter(l->l.kind().equals("RUN_STEP")).findFirst().orElseThrow().actualResult());
+ }
+ private static String query(java.sql.Connection c,String sql)throws Exception{try(var rs=c.createStatement().executeQuery(sql)){assertTrue(rs.next());return rs.getString(1);}}
+ private static void sqlDenied(java.sql.Connection c,String sql,String state,String reason){var e=assertThrows(java.sql.SQLException.class,()->c.createStatement().executeUpdate(sql));assertEquals(state,e.getSQLState());assertTrue(e.getMessage().contains(reason),e.getMessage());}
+ private String sourceInsert(Fixture f,UUID defect,com.test365alm.server.execution.ExecutionService.RunDetail run,String actual){var a=run.currentAttempt();var s=a.steps().get(0);return "INSERT INTO defect_link(tenant_id,project_id,id,defect_id,kind,test_case_id,test_revision_id,run_id,attempt_id,manifest_id,step_key,actual_result,expected_result,source_conclusion,source_version,created_by) VALUES('"+f.tenant+"','"+f.project+"','"+UUID.randomUUID()+"','"+defect+"','RUN_STEP','"+run.manifest().sourceTestCaseId()+"','"+run.manifest().sourceRevisionId()+"','"+run.run().id()+"','"+a.id()+"','"+run.manifest().id()+"','"+s.stepKey()+"','"+actual+"','Expected','FAIL',"+s.rowVersion()+",'"+f.member+"')";}
  private void fault(String table,Runnable call){owner().execute("REVOKE INSERT ON "+table+" FROM test365alm_runtime");try{var e=assertThrows(org.springframework.dao.DataAccessException.class,call::run);assertTrue(e.getMostSpecificCause().getMessage().contains("permission denied for table "+table));}finally{owner().execute("GRANT INSERT ON "+table+" TO test365alm_runtime");}}
  private static void assertOneWinner(List<Object> result){assertEquals(1,result.stream().filter(v->v instanceof DefectService.DefectView).count());assertEquals(1,result.stream().filter(v->v instanceof ProjectAccessException e&&e.status().value()==412&&e.code().equals("STALE_VERSION")).count());}
  private List<Object> concurrent(java.util.concurrent.Callable<?> call)throws Exception{
