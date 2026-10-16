@@ -1,5 +1,12 @@
 # Test365Alm 开发状态
 
+## R11-CORE-BATCH04 实施中（M05 资产/附件最小切片，未完成验收）
+
+- 实际起点为R10最终交付 `d213e47bebbe0f89522be48c3e58003d008cdf06`，PR #9仍Open未合并；默认分支仍`a2419e2…`。新分支`feat/r11-m05-001`，新PR将以`feat/r10-m06-001`为base并明确依赖PR9。未合并或修改旧分支。
+- 追加正式V20、失败探针V21；private S3、真实clamd、受限scanner写证明、不可变资产版本/typed附件、后端代理下载和详情UI正在联调。完整[原文](progress/inputs/R11-CORE-BATCH04.md)、[实际记录](progress/runs/R11-CORE-BATCH04.md)、[契约](../contracts/assets.md)、[ADR025](adr/025-r11-private-assets-and-frozen-attachments.md)。
+- 当前本机210 Vitest（新增24组件+5API）、104 Python及规划校验通过；后端新增HTTP已编译，完整数据库/扫描/浏览器尚待本轮CI，N01—N10不据此标PASS。本机Docker Linux engine管道不存在、Java17/Node26与CI目标Java21/Node24区分记录。
+- 保留R10已独立审核的成果及以下历史。完整M05、M01/G0输入、旧ALM兼容和原规划未验收项不改状态。本轮不部署、不恢复定时任务、不进入后续模块。
+
 ## R10-CORE-BATCH03 当前状态（M06 最小切片代码CI通过，待独立审核）
 
 - 2026-10-17 实际 GitHub 默认分支 `chore/r01-status-001@a2419e292c004b2cd4c7278bdaa40b1ce3442a22`；PR #7 merged (`e908b8e9f23be65efa95ecdf358229406d9f0fe4`)、PR #8 merged (`a2419e2…`)。原 R09 最终交付 `32e13d86731b0e2bc5a7d844c94a6f471f9a941e` 已在主线，下面各轮 Open/待合并/旧默认 SHA 均为当时历史快照，不是当前状态。

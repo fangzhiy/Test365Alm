@@ -3,7 +3,23 @@
 
 > **当前状态：R10-CORE-BATCH03 最小切片代码CI通过，待独立审核。** PR #1～#8 已进入默认分支 `chore/r01-status-001`，主线 `a2419e292c004b2cd4c7278bdaa40b1ce3442a22` 六Job CI38931708362成功。R10独立 [PR #9](https://github.com/fangzhiy/Test365Alm/pull/9) 代码fa72209的Push38936921155/PR38936929050六Job通过，未合并；最终交付CI以执行回复核对。下面R08/R09说明和轮次记录保留历史背景。各项仅最小切片，不代表完整模块或ALM完成。
 
-## R10 发布、周期与冻结质量快照
+## R11 私有资产与冻结附件（实施中）
+
+本轮仅M05第一切片，尚待完整CI验收；起点/真实结果见[记录](docs/progress/runs/R11-CORE-BATCH04.md)，规则见[契约](contracts/assets.md)/[ADR025](docs/adr/025-r11-private-assets-and-frozen-attachments.md)。R10 PR9尚未合并，新功能不写入主线。
+
+全新隔离开发环境：根目录执行`python tools/prepare_r03_dev.py`，它生成随机本地凭据并拒绝覆盖已有`.env.r03`/realm。使用唯一项目名，运行`docker compose --env-file .env.r03 -f compose.r03.yaml -f compose.r11.yaml -p <唯一项目名> up -d postgres keycloak asset-store asset-scanner`。新PostgreSQL容器初始化独立runtime/scanner账号，Flyway由migrator执行V20；S3两个私有bucket、clamd都只发布回环端口。不要对已有数据库卷重新初始化或清空。
+
+已有`.env.r03`时不删除/覆盖它：按`prepare_r03_dev.py`列出的R11键在受控独立环境自行配置对象服务/扫描账号；旧数据库必须先备份评估并由授权迁移身份按V20升级，再单独设置scanner登录凭据。不要把migrator/owner凭据填入scanner或runtime。应用scanner连接固定使用同一个datasource URL；`TEST365ALM_ASSETS_ENABLED`默认false，未配置不提供伪成功上传。
+
+PowerShell分别启动后端/前端：` . .\tools\import_r03_env.ps1`加载同一份配置，在`apps/server`运行`.\mvnw.cmd spring-boot:run`；在`apps/web`运行`npm run dev`。可先运行`python tools/verify_r11_services.py`检查本机私有S3拒绝匿名访问及真实clamd benign控制。应用健康探针仍只说明平台/数据库状态，不声称外部文件服务全部正常。
+
+普通MEMBER进入需求、用例或缺陷详情的“附件”区域：选择允许类型文件→创建会话→上传→扫描发布→关联冻结版本→下载。可查看资产/上传新版本，旧关联仍下载原修订；VIEWER只能读取/下载。未知结果使用原意图重试或“读取上传状态/恢复本人上传会话”，不要换键重建同一上传。
+
+完整验证：根目录`python -m unittest discover -s tools/tests -v`和`python tools/validate_package.py`；后端`mvn -B -ntp -Pintegration verify`（Windows Wrapper独立`.\mvnw.cmd`，Linux`./mvnw`）。Testcontainers自行创建真实临时PG/S3/clamd，不读取开发数据源。执行根目录`python tools/verify_r11_asset_report.py apps/server/target/failsafe-reports`。前端沿用下方JSON测试命令，再运行`python tools/verify_r11_asset_web_report.py local-evidence/r10/vitest.json`。浏览器`npm run test:e2e`只在CI-owned归属资源中执行；保留全部原用例、单worker、零重试。
+
+停止本机环境用同一Compose文件/项目名`stop`，不删除卷。CI只经既有resource-manifest归属校验清理本轮资源，不使用项目级强制清卷。S3/scanner不可用时保持隔离/安全失败；扫描失败可明确重试，感染拒绝为终态；cleanupPending不是下载授权漏洞，完整GC仍未实现。无生产部署、免费外部共享存储或客户数据配置。
+
+## R10 发布、周期与冻结质量快照（历史）
 
 沿用下文已有本机隔离启动，不覆盖 `.env.r03`。PROJECT_ADMIN 登录并选项目，在“发布与周期工作台”创建发布和日期，打开详情创建日期包含于发布的周期；从真实需求/用例候选加入范围，显示的是已冻结 revision。新增源修订不会自动改变该范围。
 
