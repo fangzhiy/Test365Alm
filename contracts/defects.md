@@ -17,6 +17,8 @@
 
 状态机：OPEN→IN_PROGRESS/RESOLVED；IN_PROGRESS→RESOLVED；RESOLVED→CLOSED/REOPENED；REOPENED→IN_PROGRESS/RESOLVED。非法409 INVALID_TRANSITION。重新RESOLVED形成新验证周期，不复用旧周期PASS；不自动关闭、不删除失败历史。
 
+REOPENED/OPEN/IN_PROGRESS 的 verification 必须为 false；保留旧 resolved 修订仅供历史，不表示当前可关闭。CLOSED 仍可查看关闭时关联的历史，后续 M09 新尝试可能使实时 verification 不再满足，不能据此改写已保存关闭修订。
+
 ## 权限、版本和事务
 
 ADMIN/MEMBER：defect:read/create/update/transition/history:read；VIEWER仅read/history。未加入项目的TENANT_ADMIN无权；撤权、停用、租户成员失效对下一直接请求生效。
