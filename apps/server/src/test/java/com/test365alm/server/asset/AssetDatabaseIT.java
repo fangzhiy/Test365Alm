@@ -47,7 +47,7 @@ class AssetDatabaseIT {
 
     @Test void memberUploadUsesPrivateQuarantineAndServerVerifiedReceipt() throws Exception {
         var f=fixture();assertEquals("test365alm_runtime",runtime.queryForObject("SELECT current_user",String.class));
-        assertEquals(20,owner().queryForObject("SELECT count(*) FROM flyway_schema_history WHERE success",Integer.class));
+        assertEquals(21,owner().queryForObject("SELECT count(*) FROM flyway_schema_history WHERE success",Integer.class));
         var body=body(TEXT,"../../report\r\n\".txt",null);String intent=key();var upload=assets.createUpload(f.member,f.project,body,intent);
         assertEquals(upload,assets.createUpload(f.member,f.project,body,intent));assertNull(upload.assetId());assertNull(upload.revisionId());assertEquals("CREATED",upload.state());
         String q=internal(upload.id(),"quarantine_key");assertEquals("quarantine/"+f.tenant+"/"+f.project+"/"+upload.id(),q);assertFalse(q.contains("report"));

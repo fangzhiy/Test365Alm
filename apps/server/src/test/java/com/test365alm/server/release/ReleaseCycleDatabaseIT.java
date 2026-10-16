@@ -49,7 +49,7 @@ class ReleaseCycleDatabaseIT {
         String createKey=key();var first=releases.create(f.admin,f.project,releaseBody("First"),createKey);
         assertEquals(first,releases.create(f.admin,f.project,releaseBody("First"),createKey));
         assertEquals(1,first.displayNumber());assertEquals(1,first.rowVersion());assertEquals(0,first.scopeVersion());assertEquals("PLANNED",first.status());
-        assertEquals(20,owner().queryForObject("SELECT count(*) FROM flyway_schema_history WHERE success",Integer.class),"empty isolated database must migrate through V20");
+        assertEquals(21,owner().queryForObject("SELECT count(*) FROM flyway_schema_history WHERE success",Integer.class),"empty isolated database must migrate through V21");
         String cycleKey=key();var cycle=releases.createCycle(f.admin,f.project,first.id(),cycleBody("Cycle"),cycleKey);
         assertEquals(cycle,releases.createCycle(f.admin,f.project,first.id(),cycleBody("Cycle"),cycleKey));
         var edited=releases.edit(f.admin,f.project,first.id(),json("{\"name\":\"Edited\"}"),tag(1),key());
