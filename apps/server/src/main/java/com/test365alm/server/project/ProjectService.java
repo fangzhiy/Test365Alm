@@ -343,9 +343,11 @@ public class ProjectService {
         permissions.add("test-set:read");
         permissions.add("run:read");
         permissions.add("run:history:read");
+        permissions.addAll(List.of("defect:read","defect:history:read"));
         if (isAdminRoles(roles, PROJECT_ADMINS) || roles.contains("PROJECT_MEMBER")) {
             permissions.addAll(List.of("requirement:create", "requirement:update", "test:create", "test:update",
                     "test-set:create", "test-set:update", "run:write", "test:run"));
+            permissions.addAll(List.of("defect:create","defect:update","defect:transition"));
         }
         return new PermissionView(project.tenantId(), project.id(), actor, List.copyOf(roles), List.copyOf(permissions));
     }
@@ -365,6 +367,14 @@ public class ProjectService {
         if (!hasRole(actor, project.tenantId(), project.id(), Set.of("PROJECT_ADMIN", "PROJECT_MEMBER"), true)) {
             throw ProjectAccessException.forbidden();
         }
+        return project;
+    }
+
+    /** Manual test case reads share the project membership boundary. */
+    @Transactional(readOnly = true)
+    public ProjectView requireDefectWriteAccess(UUID actor, UUID projectId) {
+        ProjectView project = getProject(actor, projectId);
+        if (!permissions(actor, projectId).permissions().contains("defect:update")) throw ProjectAccessException.forbidden();
         return project;
     }
 
