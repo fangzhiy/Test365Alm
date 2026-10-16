@@ -191,6 +191,86 @@ class AssetDatabaseIT {
         assertEquals(List.of(1L,2L,3L),owner().query("SELECT revision_no FROM asset_revision WHERE asset_id=? ORDER BY revision_no",(r,i)->r.getLong(1),first.assetId()));
         assertEquals(3,assets.get(f.viewer,f.project,first.assetId()).currentRevision().revisionNumber());
     }
+    @Test void publishedAssetAllocatorAndCurrentPointerCannotMoveBackwardOrGap() throws Exception {
+        // Each attack owns a distinct published asset and transaction: a vulnerable successful
+        // commit cannot contaminate another negative case or masquerade as rollback protection.
+        assertAll("published asset commit invariants",
+            ()->assertPublishedMutationRejected("allocator-backward"),
+            ()->assertPublishedMutationRejected("allocator-jump"),
+            ()->assertPublishedMutationRejected("allocator-and-pointer-backward"),
+            ()->assertPublishedMutationRejected("pointer-backward"),
+            ()->assertPublishedMutationRejected("allocator-without-revision"),
+            ()->assertPublishedMutationRejected("revision-gap"));
+
+        var f=fixture();var first=publish(f,TEXT,null);var second=publish(f,TEXT,first.assetId());
+        var third=assets.createUpload(f.member,f.project,body(TEXT,"third.txt",first.assetId()),key());
+        var fourth=assets.createUpload(f.member,f.project,body(TEXT,"fourth.txt",first.assetId()),key());
+        put(f,third,TEXT);put(f,fourth,TEXT);
+        var pair=concurrent(i->assets.complete(f.member,f.project,i==0?third.id():fourth.id(),EMPTY,key()));
+        assertNotEquals(((AssetService.Upload)pair.get(0)).revisionId(),((AssetService.Upload)pair.get(1)).revisionId());
+        assertEquals(List.of(1L,2L,3L,4L),owner().query("SELECT revision_no FROM asset_revision WHERE asset_id=? ORDER BY revision_no",(r,i)->r.getLong(1),first.assetId()));
+        assertEquals(5L,owner().queryForObject("SELECT next_revision_no FROM asset WHERE id=?",Long.class,first.assetId()));
+        assertEquals(4,assets.get(f.member,f.project,first.assetId()).currentRevision().revisionNumber());
+        assertArrayEquals(TEXT,download(f.viewer,f.project,first.assetId(),first.revisionId()));
+        assertArrayEquals(TEXT,download(f.viewer,f.project,second.assetId(),second.revisionId()));
+    }
+
+    private void assertPublishedMutationRejected(String attack) throws Exception {
+        var f=fixture();var first=publish(f,TEXT,null);var second=publish(f,TEXT,first.assetId());
+        assertEquals(second.revisionId(),assets.get(f.member,f.project,first.assetId()).currentRevisionId());
+        assertEquals(3L,owner().queryForObject("SELECT next_revision_no FROM asset WHERE id=?",Long.class,first.assetId()));
+        assertEquals(List.of(1L,2L),owner().query("SELECT revision_no FROM asset_revision WHERE asset_id=? ORDER BY revision_no",(r,i)->r.getLong(1),first.assetId()));
+
+        AssetService.Upload gapUpload=null;UUID gapScan=null;
+        if(attack.equals("revision-gap")) {
+            gapUpload=assets.createUpload(f.member,f.project,body(TEXT,"gap.txt",first.assetId()),key());put(f,gapUpload,TEXT);
+            var clean=scanner.scan(new ByteArrayInputStream(TEXT));assertEquals(MalwareScanner.Status.CLEAN,clean.status());
+            gapScan=scanWriter.record(f.tenant,f.project,gapUpload.id(),f.member,sha(TEXT),clean);
+            blobs.publish(internal(gapUpload.id(),"quarantine_key"),internal(gapUpload.id(),"published_key"));
+        }
+        var before=snapshot(f.project);
+        final var confirmedGapUpload=gapUpload;final var confirmedGapScan=gapScan;
+        try(var c=connection(f,f.member)) {
+            c.setAutoCommit(false);context(c,f,f.member);
+            assertEquals("test365alm_runtime",scalar(c,"SELECT current_user"));
+            assertEquals(f.tenant.toString(),scalar(c,"SELECT current_setting('test365alm.tenant_id')"));
+            assertEquals(f.project.toString(),scalar(c,"SELECT current_setting('test365alm.project_id')"));
+            assertEquals(f.member.toString(),scalar(c,"SELECT current_setting('test365alm.principal_id')"));
+            assertEquals("false",scalar(c,"SELECT (rolsuper OR rolbypassrls)::text FROM pg_roles WHERE rolname=current_user"));
+            assertEquals("true",scalar(c,"SELECT app_has_active_project_writer(current_setting('test365alm.tenant_id')::uuid,current_setting('test365alm.project_id')::uuid,current_setting('test365alm.principal_id')::uuid)::text"));
+            boolean[] reachedCommit={false};
+            try {
+                var failure=assertThrows(SQLException.class,()->{
+                    switch(attack) {
+                        case "allocator-backward" -> assertEquals(1,sql(c,"UPDATE asset SET next_revision_no=2 WHERE id=?",first.assetId()));
+                        case "allocator-jump" -> assertEquals(1,sql(c,"UPDATE asset SET next_revision_no=103 WHERE id=?",first.assetId()));
+                        case "allocator-and-pointer-backward" -> {
+                            assertEquals(1,sql(c,"UPDATE asset SET next_revision_no=2 WHERE id=?",first.assetId()));
+                            assertEquals(1,sql(c,"UPDATE asset SET current_revision_id=? WHERE id=?",first.revisionId(),first.assetId()));
+                        }
+                        case "pointer-backward" -> sql(c,"UPDATE asset SET current_revision_id=? WHERE id=?",first.revisionId(),first.assetId());
+                        case "allocator-without-revision" -> assertEquals(1,sql(c,"UPDATE asset SET next_revision_no=4 WHERE id=?",first.assetId()));
+                        case "revision-gap" -> {
+                            UUID revision=UUID.fromString(internal(confirmedGapUpload.id(),"candidate_revision_id"));
+                            assertEquals(1,sql(c,"UPDATE asset SET next_revision_no=5 WHERE id=?",first.assetId()));
+                            assertEquals(1,sql(c,"INSERT INTO asset_revision(tenant_id,project_id,asset_id,id,revision_no,upload_id,scan_result_id,object_key,size,sha256,mime,filename,created_by) VALUES(?,?,?,?,4,?,?,?,?,?,'text/plain','gap.txt',?)",f.tenant,f.project,first.assetId(),revision,confirmedGapUpload.id(),confirmedGapScan,internal(confirmedGapUpload.id(),"published_key"),TEXT.length,sha(TEXT),f.member));
+                            assertEquals(1,sql(c,"UPDATE asset SET current_revision_id=? WHERE id=?",revision,first.assetId()));
+                            assertEquals(1,sql(c,"UPDATE upload_session SET state='PUBLISHED',row_version=row_version+1 WHERE id=?",confirmedGapUpload.id()));
+                        }
+                        default -> throw new AssertionError("Unknown attack fixture");
+                    }
+                    reachedCommit[0]=true;
+                    c.commit();
+                },attack+" unexpectedly committed as a legitimate MEMBER runtime transaction");
+                assertEquals("23514",failure.getSQLState(),attack+": "+failure.getMessage());
+                String expected=attack.equals("pointer-backward")?"asset pointer must advance to allocated published revision":"asset committed revisions must be contiguous and current must be latest";
+                assertTrue(failure.getMessage().contains(expected),attack+": "+failure.getMessage());
+                assertEquals(!attack.equals("pointer-backward"),reachedCommit[0],attack+" must reach its intended statement/COMMIT boundary");
+            } finally {c.rollback();}
+        }
+        assertEquals(before,snapshot(f.project),attack+" must leave committed asset, revision, scan, upload, audit, Outbox and idempotency unchanged");
+        assertEquals(second.revisionId(),assets.get(f.viewer,f.project,first.assetId()).currentRevisionId());
+    }
     @Test void quarantinePutThenReceiptFailureHasNoDownloadAndSafelyRetries() throws Exception {
         var f=fixture();var u=assets.createUpload(f.member,f.project,body(TEXT,"receipt-failure.txt",null),key());var before=snapshot(f.project);
         int unavailablePort;try(var socket=new ServerSocket(0,1,InetAddress.getLoopbackAddress())){unavailablePort=socket.getLocalPort();}
