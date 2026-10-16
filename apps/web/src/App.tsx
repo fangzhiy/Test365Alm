@@ -5,6 +5,7 @@ import ProjectAccessPanel from './ProjectAccessPanel'
 import RequirementsPanel from './RequirementsPanel'
 import TestCasesPanel from './TestCasesPanel'
 import TestExecutionPanel from './TestExecutionPanel'
+import FieldMetadataPanel from './FieldMetadataPanel'
 import type { ProjectAccess } from './projectAccess'
 
 type CheckState = 'loading' | 'up' | 'down' | 'unavailable'
@@ -136,6 +137,7 @@ function App() {
     <header className="hero-header"><div><p className="eyebrow">TEST365ALM · ENGINEERING FOUNDATION</p><h1>{version?.productName ?? 'Test365Alm'} 工作台</h1><p className="lede">查看当前应用构建信息与运行状态，数据来自真实后端接口。</p></div><button className="refresh-button" type="button" onClick={() => void refresh()}>刷新状态</button></header>
     <AuthPanel onLogout={() => setSessionGeneration((generation) => generation + 1)} />
     <ProjectAccessPanel resetSignal={sessionGeneration} onSelectionChange={handleProjectSelection} />
+    <FieldMetadataPanel projectId={selectedProjectId} access={selectedProjectAccess} resetSignal={sessionGeneration} />
     <RequirementsPanel projectId={selectedProjectId} access={selectedProjectAccess} resetSignal={sessionGeneration} />
     <TestCasesPanel projectId={selectedProjectId} access={selectedProjectAccess} resetSignal={sessionGeneration} />
     <TestExecutionPanel projectId={selectedProjectId} access={selectedProjectAccess} resetSignal={sessionGeneration} />

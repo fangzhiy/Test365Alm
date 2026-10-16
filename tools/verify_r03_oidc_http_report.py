@@ -23,6 +23,8 @@ REQUIRED_TESTS = {
     "realOidcTestCaseHttpEnforcesStrongEtagsCsrfAndInputBoundary",
     "realOidcTestCaseHttpScopesReferencesAndRefreshesOldSessionPermissions",
     "realOidcManualExecutionHttpRunsAndRejectsViewerWrites",
+    "realOidcFieldMetadataHttpAdminViewerCsrfTypesVersionsAndScope",
+    "realOidcTraceHttpTypedEndpointsViewerCsrfRevokeAndNoIllegalEffects",
 }
 
 

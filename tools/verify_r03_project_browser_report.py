@@ -15,12 +15,14 @@ REQUIRED_UI_TEST = "real Keycloak UI project flow shows scoped viewer controls a
 REQUIRED_REQUIREMENT_UI_TEST = "real Keycloak UI requirement flow creates edits and keeps viewer read-only"
 REQUIRED_MANUAL_TEST_CASE_UI_TEST = "real Keycloak UI manual test case flow creates steps, edits order, and keeps viewer read-only"
 REQUIRED_MANUAL_EXECUTION_UI_TEST = "real Keycloak UI manual execution creates, resumes, finishes and reruns a two-step run"
+REQUIRED_CORE_UI_TEST = "real Keycloak UI field metadata validates and member trace coverage changes only after PASS"
 REQUIRED_BROWSER_TESTS = (
     REQUIRED_TEST,
     REQUIRED_UI_TEST,
     REQUIRED_REQUIREMENT_UI_TEST,
     REQUIRED_MANUAL_TEST_CASE_UI_TEST,
     REQUIRED_MANUAL_EXECUTION_UI_TEST,
+    REQUIRED_CORE_UI_TEST,
 )
 
 
@@ -45,6 +47,9 @@ def verify(path: Path) -> tuple[bool, str]:
         return False, summary + " duplicate-or-count-mismatch"
     if failures or errors or skipped:
         return False, summary
+    root = ET.parse(path).getroot()
+    if any(case.find(tag) is not None for case in root.iter('testcase') for tag in ('failure', 'error', 'skipped')):
+        return False, summary + ' testcase-failure-error-or-skip'
     return True, summary
 
 

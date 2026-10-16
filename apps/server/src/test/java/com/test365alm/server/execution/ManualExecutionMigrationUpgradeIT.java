@@ -47,10 +47,11 @@ class ManualExecutionMigrationUpgradeIT {
             "test_case", "test_case_number_allocator", "test_revision", "test_step", "test_set", "test_instance", "execution_manifest", "execution_manifest_step",
             "execution_run", "run_attempt", "run_step", "execution_event", "execution_outbox_event", "execution_idempotency", "audit_event");
 
-    @Test void v13NonEmptyExecutionDatabaseUpgradesToV16() throws Exception { verifyUpgrade(13); }
-    @Test void v14NonEmptyExecutionDatabaseUpgradesToV16() throws Exception { verifyUpgrade(14); }
+    @Test void v13NonEmptyExecutionDatabaseUpgradesToV16() throws Exception { verifyUpgrade(13,16,false); }
+    @Test void v14NonEmptyExecutionDatabaseUpgradesToV16() throws Exception { verifyUpgrade(14,16,false); }
+    @Test void v16NonEmptyExecutionDatabaseUpgradesToV17WithoutLosingHistoryOrReplay() throws Exception { verifyUpgrade(14,17,true); }
 
-    private void verifyUpgrade(int version) throws Exception {
+    private void verifyUpgrade(int version,int target,boolean via16) throws Exception {
         try (var pg = new PostgreSQLContainer<>(DockerImageName.parse(IMAGE).asCompatibleSubstituteFor("postgres"))
                 .withDatabaseName("r07_owned_upgrade").withUsername("r07_owner").withPassword(UUID.randomUUID().toString())
                 .withLabel("test365alm.r07.run", UUID.randomUUID().toString()).withInitScript("r03-test-role.sql")) {
@@ -68,10 +69,15 @@ class ManualExecutionMigrationUpgradeIT {
                 assertEquals(13, before.get("execution_outbox_event").size());
                 assertEquals(1, before.get("execution_idempotency").size());
 
-                Flyway latest = flyway(pg, null);
-                assertEquals(16 - version, latest.migrate().migrationsExecuted);
+                if(via16){
+                    assertEquals(16-version,flyway(pg,"16").migrate().migrationsExecuted);
+                    assertEquals(before,snapshot(owner,version,null));
+                    assertEquals("16",scalar(owner,"SELECT max(version::int)::text FROM flyway_schema_history WHERE success"));
+                }
+                Flyway latest = flyway(pg, Integer.toString(target));
+                assertEquals(target - (via16?16:version), latest.migrate().migrationsExecuted);
                 assertEquals(before, snapshot(owner, version, null), "all pre-existing columns and rows must survive the upgrade");
-                assertEquals("16", scalar(owner, "SELECT max(version::int)::text FROM flyway_schema_history WHERE success"));
+                assertEquals(Integer.toString(target), scalar(owner, "SELECT max(version::int)::text FROM flyway_schema_history WHERE success"));
                 assertEquals("4", scalar(owner, "SELECT count(*)::text FROM execution_manifest WHERE build_complete"));
                 assertEquals("4", scalar(owner, "SELECT count(*)::text FROM run_attempt a JOIN execution_run r ON r.id=a.run_id WHERE a.manifest_id=r.manifest_id"));
                 assertEquals("8", scalar(owner, "SELECT count(*)::text FROM run_step s JOIN run_attempt a ON a.id=s.attempt_id WHERE s.manifest_id=a.manifest_id"));
@@ -94,7 +100,7 @@ class ManualExecutionMigrationUpgradeIT {
                         verifyRuntime(pg, owner, context.getBean(ExecutionService.class), f, version);
                     }
                 }
-                System.out.printf("R07 upgrade V%d->V16: PASS; original runs=4 attempts=4 steps=8 events=13 outbox=13 idempotency=1; runtime/history/terminal/replay/isolation verified%n", version);
+                System.out.printf("Upgrade V%d%s->V%d: PASS; original runs=4 attempts=4 steps=8 events=13 outbox=13 idempotency=1; runtime/history/terminal/replay/isolation verified%n", version,via16?"->V16":"",target);
             }
         }
     }

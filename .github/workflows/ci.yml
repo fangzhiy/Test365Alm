@@ -190,6 +190,11 @@ jobs:
         run: |
           set -o pipefail
           python ../../tools/verify_r07_execution_upgrade_report.py target/failsafe-reports 2>&1 | tee execution-upgrade-report.txt
+      - name: Require M04 M11 runtime database HTTP and V16 upgrade evidence
+        if: always()
+        run: |
+          set -o pipefail
+          python ../../tools/verify_r08_core_report.py target/failsafe-reports 2>&1 | tee core-r08-report.txt
       - name: Upload backend evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -209,6 +214,7 @@ jobs:
             apps/server/execution-upgrade-tests.txt
             apps/server/execution-upgrade-first-report.txt
             apps/server/execution-upgrade-report.txt
+            apps/server/core-r08-report.txt
             apps/server/target/surefire-reports/**
             apps/server/target/failsafe-reports/**
           if-no-files-found: error
@@ -308,7 +314,7 @@ jobs:
         run: |
           set -o pipefail
           ./mvnw -B -ntp package -DskipTests "-Dbuild.commit=${GITHUB_SHA}" 2>&1 | tee migration-build.txt
-      - name: Verify formal V16 then intentional V17 migration startup failure
+      - name: Verify formal V17 then intentional V18 migration startup failure
         run: |
           set +e
           python -u tools/verify_r02_migration_failure.py --env-file .env.r02-test --compose-project "test365alm-r02-migration-${GITHUB_RUN_ID}" --server-port 18082 --wait-seconds 90 2>&1 | tee migration-failure.txt
@@ -321,7 +327,7 @@ jobs:
             summary=$(tr '\n' ' ' < migration-failure.txt | cut -c1-4000)
             echo "::error title=migration-failure::${summary:-no output captured}"
           else
-            echo "Formal V16 migration and intentional V17 failure were detected for ${GITHUB_SHA}"
+            echo "Formal V17 migration and intentional V18 failure were detected for ${GITHUB_SHA}"
           fi
           exit "$status"
       - name: Upload migration evidence
