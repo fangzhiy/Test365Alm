@@ -67,6 +67,9 @@ jobs:
           node-version: '24.x'
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: Record frontend runtime
         run: |
           set -o pipefail
@@ -80,7 +83,13 @@ jobs:
           npm run lint 2>&1 | tee lint.txt
       - run: |
           set -o pipefail
-          npm run test:run -- --reporter=verbose 2>&1 | tee test-results.txt
+          npm run test:run -- --reporter=verbose --reporter=json --outputFile.json=../../local-evidence/r10/vitest.json 2>&1 | tee test-results.txt
+      - name: Require exact M06 frontend request lifecycle evidence
+        if: always()
+        run: |
+          set -o pipefail
+          python --version
+          python ../../tools/verify_r10_release_web_report.py ../../local-evidence/r10/vitest.json 2>&1 | tee release-web-report.txt
       - name: Summarize frontend failures
         if: failure()
         run: |
@@ -106,6 +115,8 @@ jobs:
             apps/web/npm-ci.txt
             apps/web/lint.txt
             apps/web/test-results.txt
+            apps/web/release-web-report.txt
+            local-evidence/r10/vitest.json
             apps/web/build.txt
           if-no-files-found: error
 

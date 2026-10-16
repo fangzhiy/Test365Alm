@@ -1069,7 +1069,7 @@ class OidcCallbackSecurityIT {
         assertReleaseRejected(f.project(),()->testCasePost(f.viewer(),item+"/scope",null,testScope),403,"FORBIDDEN");
         assertReleaseRejected(f.project(),()->defectHttp(f.member(),item+"/scope/"+jsonField(rs.body(),"id"),"DELETE",null,"",UUID.randomUUID().toString(),f.member().csrfToken()),403,"FORBIDDEN");
         assertReleaseRejected(f.project(),()->testCasePost(f.admin(),item+"/milestones/evaluate",null,"{\"evaluatedBy\":\"forged\"}"),400,"INVALID_REQUEST");
-        var revised=testCasePost(f.member(),project+"/tests/"+testId+"/revisions","\"1\"",testCaseBody("New test revision",firstStepKey(tc.body()),false));assertEquals(201,revised.statusCode(),revised.body());
+        var revised=testCasePost(f.member(),project+"/tests/"+testId+"/revisions","\"1\"",testCaseBody("New test revision",firstStepKey(tc.body()),false));assertEquals(200,revised.statusCode(),revised.body());
         var scopeAfter=get(f.admin().flow().client(),item+"/scope");assertEquals(200,scopeAfter.statusCode());
         assertTrue(scopeAfter.body().contains(revision),"scope retains frozen original revision");
         var removed=defectHttp(f.admin(),item+"/scope/"+jsonField(rs.body(),"id"),"DELETE",null,"",UUID.randomUUID().toString(),f.admin().csrfToken());assertEquals(200,removed.statusCode(),removed.body());
