@@ -48,7 +48,7 @@ class ReleaseCycleDatabaseIT {
         assertEquals("test365alm_runtime",runtime.queryForObject("SELECT current_user",String.class));
         String createKey=key();var first=releases.create(f.admin,f.project,releaseBody("First"),createKey);
         assertEquals(first,releases.create(f.admin,f.project,releaseBody("First"),createKey));
-        assertEquals(1,first.displayNumber());assertEquals(1,first.rowVersion());assertEquals("PLANNED",first.status());
+        assertEquals(1,first.displayNumber());assertEquals(1,first.rowVersion());assertEquals(0,first.scopeVersion());assertEquals("PLANNED",first.status());
         assertEquals(19,owner().queryForObject("SELECT count(*) FROM flyway_schema_history WHERE success",Integer.class),"empty isolated database must migrate through V19");
         String cycleKey=key();var cycle=releases.createCycle(f.admin,f.project,first.id(),cycleBody("Cycle"),cycleKey);
         assertEquals(cycle,releases.createCycle(f.admin,f.project,first.id(),cycleBody("Cycle"),cycleKey));
@@ -102,7 +102,9 @@ class ReleaseCycleDatabaseIT {
         var f=fixture();var foreign=fixture();var sibling=sibling(f);var r=releases.create(f.admin,f.project,releaseBody("Scope"),key());
         var req=requirement(f);var deletedReq=requirement(f);var tc=test(f);var otherReq=requirement(foreign);var siblingTest=test(sibling);
         var rq=releases.addScope(f.admin,f.project,r.id(),scopeBody("REQUIREMENT",req.id(),null),key());
+        assertEquals(1,releases.get(f.member,f.project,r.id()).scopeVersion(),"DB scope trigger must advance once per membership");
         var ts=releases.addScope(f.admin,f.project,r.id(),scopeBody("TEST_CASE",tc.id(),null),key());
+        assertEquals(2,releases.get(f.member,f.project,r.id()).scopeVersion(),"service must not double-count the DB-triggered version");
         assertEquals(req.currentRevisionId(),rq.requirementRevisionId());assertEquals(tc.currentRevision().id(),ts.testRevisionId());
         requirements.update(f.member,f.project,req.id(),new RequirementService.UpdateCommand("Changed",null,null),tag(1),key());
         reviseTest(f,tc);assertEquals(rq,releases.scope(f.viewer,f.project,r.id(),null,25).items().stream().filter(x->x.id().equals(rq.id())).findFirst().orElseThrow());
