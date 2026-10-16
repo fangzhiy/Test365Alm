@@ -16,6 +16,8 @@ Release `{id,projectId,displayNumber,name,description,startDate,endDate,status,r
 
 Snapshot `{id,projectId,releaseId,evaluatedAt,evaluatedBy,metricVersion,rule,scopeVersion,scopeFingerprint,requirementCount,coverage,plannedTests,completed,effectivePass,openDefects,evidence}`. Each metric is `{numerator,denominator}` (requirementCount is an integer). No combined quality score; zero denominator shown as not applicable, not 100%. Evidence is server-generated frozen IDs/revisions/trace IDs/attempt states and defect states, not arbitrary client references. Maximum 1000 active scope memberships per release; exceeding this finite bound returns 409 SCOPE_LIMIT, not truncated metrics. Detail/list evidence size remains bounded; snapshot summaries omit evidence.
 
+At most 10000 related defects are included in an evaluation; more returns 409 SNAPSHOT_EVIDENCE_LIMIT and rolls back the evaluation, never saves truncated metrics. This is a finite synchronous first slice, not an unbounded reporting service.
+
 ## Dates and finite lifecycle
 
 startDate <= endDate; Cycle dates inclusive inside parent Release. Parent shrinking past any existing cycle is rejected 422 CYCLE_OUTSIDE_RELEASE, never silently truncated. Invalid business date/range 422 VALIDATION_FAILED; malformed JSON/types/unknown fields/enum 400 INVALID_REQUEST (existing error structure).

@@ -344,6 +344,10 @@ public class ProjectService {
         permissions.add("run:read");
         permissions.add("run:history:read");
         permissions.addAll(List.of("defect:read","defect:history:read"));
+        permissions.addAll(List.of("release:read","milestone:read"));
+        if (isAdminRoles(roles, PROJECT_ADMINS)) {
+            permissions.addAll(List.of("release:create","release:update","release:archive","cycle:create","cycle:update","scope:update","milestone:evaluate"));
+        }
         if (isAdminRoles(roles, PROJECT_ADMINS) || roles.contains("PROJECT_MEMBER")) {
             permissions.addAll(List.of("requirement:create", "requirement:update", "test:create", "test:update",
                     "test-set:create", "test-set:update", "run:write", "test:run"));

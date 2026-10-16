@@ -3,6 +3,7 @@ package com.test365alm.server.identity;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -988,6 +989,114 @@ class OidcCallbackSecurityIT {
         assertEquals("CLOSED",JSON.readTree(closed.body()).get("currentRevision").get("status").textValue());
         var original=get(f.viewer().flow().client(),project+"/runs/"+runId+"/attempts/"+attempt);assertEquals(200,original.statusCode());assertEquals("FAIL",JSON.readTree(original.body()).get("conclusion").textValue());
         assertEquals(200,get(f.viewer().flow().client(),item+"/retests").statusCode());assertEquals(3,JSON.readTree(get(f.viewer().flow().client(),item+"/revisions").body()).get("items").size());
+    }
+    @Test
+    void realOidcReleaseHttpAdminDatesEtagsCsrfAndRoleBoundary() throws Exception {
+        var f=testCaseHttpFixture();String root="/api/v1/projects/"+f.project()+"/releases";
+        String body=releaseBody("HTTP release"),key=UUID.randomUUID().toString();
+        var created=defectHttp(f.admin(),root,"POST",null,body,key,f.admin().csrfToken());
+        assertEquals(201,created.statusCode(),created.body());
+        String item=root+"/"+jsonField(created.body(),"id");
+        assertEquals(created.body(),defectHttp(f.admin(),root,"POST",null,body,key,f.admin().csrfToken()).body());
+        assertEquals("\"1\"",get(f.admin().flow().client(),item).headers().firstValue("ETag").orElseThrow());
+        assertEquals(f.admin().principalId().toString(),jsonField(created.body(),"createdBy"));
+        assertEquals(200,get(f.member().flow().client(),item).statusCode());
+        assertEquals(200,get(f.viewer().flow().client(),root).statusCode());
+        for(var actor:List.of(f.member(),f.viewer())) {
+            assertReleaseRejected(f.project(),()->testCasePost(actor,root,null,body),403,"FORBIDDEN");
+            assertReleaseRejected(f.project(),()->defectHttp(actor,item,"PATCH","\"999\"","{\"name\":\"denied\"}",UUID.randomUUID().toString(),actor.csrfToken()),403,"FORBIDDEN");
+            assertReleaseRejected(f.project(),()->testCasePost(actor,item+"/milestones/evaluate",null,"{}"),403,"FORBIDDEN");
+        }
+        assertReleaseRejected(f.project(),()->get(f.outsider().flow().client(),item),404,"NOT_FOUND");
+        assertReleaseRejected(f.project(),()->get(newClientFixture().client(),item),401,"UNAUTHENTICATED");
+        for(String csrf:new String[]{null,"wrong"})
+            assertReleaseRejected(f.project(),()->defectHttp(f.admin(),root,"POST",null,body,UUID.randomUUID().toString(),csrf),403,"CSRF_REJECTED");
+        for(String tag:new String[]{null,"","*"})
+            assertReleaseRejected(f.project(),()->defectHttp(f.admin(),item,"PATCH",tag,"{\"name\":\"edited\"}",UUID.randomUUID().toString(),f.admin().csrfToken()),428,"PRECONDITION_REQUIRED");
+        for(String tag:List.of("1","W/\"1\"","\"0\"","\"1\",\"2\"","\"999999999999999999999999999\""))
+            assertReleaseRejected(f.project(),()->defectHttp(f.admin(),item,"PATCH",tag,"{\"name\":\"edited\"}",UUID.randomUUID().toString(),f.admin().csrfToken()),400,"INVALID_REQUEST");
+        for(String bad:List.of(body.replace("\"HTTP release\"","7"),body.replace("\"2026-01-01\"","20260101"),body.substring(0,body.length()-1)+",\"createdBy\":\"forged\"}","null","[]"))
+            assertReleaseRejected(f.project(),()->testCasePost(f.admin(),root,null,bad),400,"INVALID_REQUEST");
+        for(String bad:List.of(body.replace("HTTP release",""),body.replace("HTTP release","x".repeat(201)),body.replace("2026-01-01","2026-02-30"),body.replace("2026-12-31","2025-12-31")))
+            assertReleaseRejected(f.project(),()->testCasePost(f.admin(),root,null,bad),422,"VALIDATION_FAILED");
+        assertReleaseRejected(f.project(),()->defectHttp(f.admin(),root,"POST",null,releaseBody("other"),key,f.admin().csrfToken()),409,"IDEMPOTENCY_KEY_REUSED");
+        assertReleaseRejected(f.project(),()->defectHttp(f.admin(),item,"PATCH","\"1\"","{\"status\":\"UNKNOWN\"}",UUID.randomUUID().toString(),f.admin().csrfToken()),400,"INVALID_REQUEST");
+        String cycleBody="{\"name\":\"cycle\",\"startDate\":\"2026-03-01\",\"endDate\":\"2026-05-31\"}";
+        var cycle=testCasePost(f.admin(),item+"/cycles",null,cycleBody);assertEquals(201,cycle.statusCode(),cycle.body());
+        String cycleItem=item+"/cycles/"+jsonField(cycle.body(),"id");
+        assertEquals("\"1\"",get(f.viewer().flow().client(),cycleItem).headers().firstValue("ETag").orElseThrow());
+        assertReleaseRejected(f.project(),()->testCasePost(f.admin(),item+"/cycles",null,cycleBody.replace("2026-05-31","2027-05-31")),422,"CYCLE_OUTSIDE_RELEASE");
+        assertReleaseRejected(f.project(),()->defectHttp(f.admin(),item,"PATCH","\"1\"","{\"endDate\":\"2026-04-01\"}",UUID.randomUUID().toString(),f.admin().csrfToken()),422,"CYCLE_OUTSIDE_RELEASE");
+        var updated=defectHttp(f.admin(),item,"PATCH","\"1\"","{\"name\":\"edited\",\"status\":\"ACTIVE\"}",UUID.randomUUID().toString(),f.admin().csrfToken());assertEquals(200,updated.statusCode(),updated.body());
+        assertReleaseRejected(f.project(),()->defectHttp(f.admin(),item,"PATCH","\"1\"","{\"name\":\"stale\"}",UUID.randomUUID().toString(),f.admin().csrfToken()),412,"STALE_VERSION");
+        assertReleaseRejected(f.project(),()->defectHttp(f.admin(),item,"PATCH","\"2\"","{\"status\":\"PLANNED\"}",UUID.randomUUID().toString(),f.admin().csrfToken()),409,"INVALID_TRANSITION");
+        var cycleUpdated=defectHttp(f.admin(),cycleItem,"PATCH","\"1\"","{\"name\":\"cycle revised\"}",UUID.randomUUID().toString(),f.admin().csrfToken());assertEquals(200,cycleUpdated.statusCode(),cycleUpdated.body());
+        assertReleaseRejected(f.project(),()->defectHttp(f.admin(),cycleItem,"PATCH","\"1\"","{\"name\":\"old\"}",UUID.randomUUID().toString(),f.admin().csrfToken()),412,"STALE_VERSION");
+        var archived=defectHttp(f.admin(),item,"PATCH","\"2\"","{\"status\":\"ARCHIVED\"}",UUID.randomUUID().toString(),f.admin().csrfToken());assertEquals(200,archived.statusCode(),archived.body());
+        assertReleaseRejected(f.project(),()->testCasePost(f.admin(),item+"/cycles",null,cycleBody),409,"RELEASE_READ_ONLY");
+        assertReleaseRejected(f.project(),()->testCasePost(f.admin(),item+"/milestones/evaluate",null,"{}"),409,"RELEASE_READ_ONLY");
+        assertEquals(200,get(f.viewer().flow().client(),item).statusCode());
+    }
+
+    @Test
+    void realOidcReleaseHttpTypedScopeSnapshotsAndOldSessionRevocation() throws Exception {
+        var f=testCaseHttpFixture();String project="/api/v1/projects/"+f.project(),root=project+"/releases";
+        String body=releaseBody("Scope release"),originalKey=UUID.randomUUID().toString();
+        var release=defectHttp(f.admin(),root,"POST",null,body,originalKey,f.admin().csrfToken());assertEquals(201,release.statusCode(),release.body());
+        String item=root+"/"+jsonField(release.body(),"id");
+        var req=testCasePost(f.member(),project+"/requirements",null,"{\"title\":\"scoped requirement\",\"body\":\"initial\",\"priority\":\"MEDIUM\"}");assertEquals(201,req.statusCode(),req.body());
+        var tc=testCasePost(f.member(),project+"/tests",null,testCaseBody("Scoped test",null,true));assertEquals(201,tc.statusCode(),tc.body());
+        String reqId=jsonField(req.body(),"id"),testId=jsonField(tc.body(),"id"),revision=JSON.readTree(tc.body()).get("currentRevision").get("id").textValue();
+        var trace=testCasePost(f.member(),project+"/trace-links",null,"{\"requirementId\":\""+reqId+"\",\"testCaseId\":\""+testId+"\"}");assertEquals(201,trace.statusCode(),trace.body());
+        String requirementScope="{\"kind\":\"REQUIREMENT\",\"requirementId\":\""+reqId+"\"}",testScope="{\"kind\":\"TEST_CASE\",\"testCaseId\":\""+testId+"\"}";
+        var rs=testCasePost(f.admin(),item+"/scope",null,requirementScope);assertEquals(201,rs.statusCode(),rs.body());
+        var ts=testCasePost(f.admin(),item+"/scope",null,testScope);assertEquals(201,ts.statusCode(),ts.body());assertEquals(revision,jsonField(ts.body(),"testRevisionId"));
+        assertReleaseRejected(f.project(),()->testCasePost(f.admin(),item+"/scope",null,testScope),409,"DUPLICATE_SCOPE");
+        assertReleaseRejected(f.project(),()->testCasePost(f.admin(),item+"/scope",null,testScope.replace(testId,reqId)),404,"NOT_FOUND");
+        assertReleaseRejected(f.project(),()->testCasePost(f.admin(),item+"/scope",null,requirementScope.replace(reqId,testId)),404,"NOT_FOUND");
+        for(String bad:List.of("{\"kind\":\"DEFECT\",\"testCaseId\":\""+testId+"\"}",testScope.substring(0,testScope.length()-1)+",\"testRevisionId\":\""+revision+"\"}","{\"kind\":\"TEST_CASE\",\"testCaseId\":123}"))
+            assertReleaseRejected(f.project(),()->testCasePost(f.admin(),item+"/scope",null,bad),400,"INVALID_REQUEST");
+        for(UUID foreign:List.of(f.otherProject(),f.otherTenantProject())) {
+            String foreignRoot="/api/v1/projects/"+foreign;
+            var fr=testCasePost(f.admin(),foreignRoot+"/requirements",null,"{\"title\":\"foreign\",\"body\":\"private\",\"priority\":\"MEDIUM\"}");assertEquals(201,fr.statusCode(),fr.body());
+            var ft=testCasePost(f.admin(),foreignRoot+"/tests",null,testCaseBody("Foreign",null,true));assertEquals(201,ft.statusCode(),ft.body());
+            assertReleaseRejected(f.project(),()->testCasePost(f.admin(),item+"/scope",null,requirementScope.replace(reqId,jsonField(fr.body(),"id"))),404,"NOT_FOUND");
+            assertReleaseRejected(f.project(),()->testCasePost(f.admin(),item+"/scope",null,testScope.replace(testId,jsonField(ft.body(),"id"))),404,"NOT_FOUND");
+        }
+        var snapshot=testCasePost(f.admin(),item+"/milestones/evaluate",null,"{}");assertEquals(201,snapshot.statusCode(),snapshot.body());
+        String frozen=snapshot.body(),snapshotItem=item+"/snapshots/"+jsonField(frozen,"id");
+        assertEquals(1,JSON.readTree(frozen).get("requirementCount").intValue());assertEquals(1,JSON.readTree(frozen).get("coverage").get("numerator").intValue());
+        assertReleaseRejected(f.project(),()->testCasePost(f.viewer(),item+"/scope",null,testScope),403,"FORBIDDEN");
+        assertReleaseRejected(f.project(),()->defectHttp(f.member(),item+"/scope/"+jsonField(rs.body(),"id"),"DELETE",null,"",UUID.randomUUID().toString(),f.member().csrfToken()),403,"FORBIDDEN");
+        assertReleaseRejected(f.project(),()->testCasePost(f.admin(),item+"/milestones/evaluate",null,"{\"evaluatedBy\":\"forged\"}"),400,"INVALID_REQUEST");
+        var revised=testCasePost(f.member(),project+"/tests/"+testId+"/revisions","\"1\"",testCaseBody("New test revision",firstStepKey(tc.body()),false));assertEquals(201,revised.statusCode(),revised.body());
+        var scopeAfter=get(f.admin().flow().client(),item+"/scope");assertEquals(200,scopeAfter.statusCode());
+        assertTrue(scopeAfter.body().contains(revision),"scope retains frozen original revision");
+        var removed=defectHttp(f.admin(),item+"/scope/"+jsonField(rs.body(),"id"),"DELETE",null,"",UUID.randomUUID().toString(),f.admin().csrfToken());assertEquals(200,removed.statusCode(),removed.body());
+        assertEquals(JSON.readTree(frozen),JSON.readTree(get(f.viewer().flow().client(),snapshotItem).body()),"read returns frozen snapshot after source/scope change");
+        var newer=testCasePost(f.admin(),item+"/milestones/evaluate",null,"{}");assertEquals(201,newer.statusCode(),newer.body());assertEquals(0,JSON.readTree(newer.body()).get("requirementCount").intValue());
+        assertNotEquals(jsonField(frozen,"id"),jsonField(newer.body(),"id"));
+        assertEquals(200,get(f.member().flow().client(),item+"/snapshots").statusCode());
+        // Every boundary uses the original authenticated session; no intervening /me refresh.
+        try(var c=ownerConnection();var s=c.prepareStatement("UPDATE project_member SET roles='{PROJECT_MEMBER}',authorization_version=authorization_version+1 WHERE project_id=? AND principal_id=?")){s.setObject(1,f.project());s.setObject(2,f.admin().principalId());assertEquals(1,s.executeUpdate());}
+        assertEquals(200,get(f.admin().flow().client(),snapshotItem).statusCode());
+        assertReleaseRejected(f.project(),()->defectHttp(f.admin(),root,"POST",null,body,originalKey,f.admin().csrfToken()),403,"FORBIDDEN");
+        try(var c=ownerConnection();var s=c.prepareStatement("UPDATE project_member SET revoked_at=CURRENT_TIMESTAMP,authorization_version=authorization_version+1 WHERE project_id=? AND principal_id=?")){s.setObject(1,f.project());s.setObject(2,f.member().principalId());assertEquals(1,s.executeUpdate());}
+        assertReleaseRejected(f.project(),()->get(f.member().flow().client(),snapshotItem),404,"NOT_FOUND");
+        try(var c=ownerConnection();var s=c.prepareStatement("UPDATE principal SET disabled_at=CURRENT_TIMESTAMP WHERE id=?")){s.setObject(1,f.viewer().principalId());assertEquals(1,s.executeUpdate());}
+        assertReleaseRejected(f.project(),()->get(f.viewer().flow().client(),item),403,"FORBIDDEN");
+        try(var c=ownerConnection();var s=c.prepareStatement("UPDATE tenant_member SET valid_until=CURRENT_TIMESTAMP WHERE tenant_id=? AND principal_id=?")){s.setObject(1,f.tenant());s.setObject(2,f.admin().principalId());assertEquals(1,s.executeUpdate());}
+        assertReleaseRejected(f.project(),()->get(f.admin().flow().client(),item),404,"NOT_FOUND");
+    }
+    private String releaseBody(String name) {return "{\"name\":\""+name+"\",\"description\":\"plan\",\"startDate\":\"2026-01-01\",\"endDate\":\"2026-12-31\"}";}
+    private void assertReleaseRejected(UUID project,HttpCall call,int status,String code)throws Exception {
+        var before=releaseRows(project);assertTestCaseRejected(call,status,code);assertEquals(before,releaseRows(project),"denial cannot mutate release/scope/snapshot/events/idempotency");
+    }
+    private Map<String,List<String>> releaseRows(UUID project)throws Exception {
+        var result=new java.util.TreeMap<String,List<String>>();try(var c=ownerConnection()){
+            for(String table:List.of("release_plan","release_cycle","release_scope","quality_snapshot","release_number_allocator","release_outbox_event","audit_event","core_command_idempotency"))
+                try(var s=c.prepareStatement("SELECT to_jsonb(t)::text FROM "+table+" t WHERE project_id=? ORDER BY to_jsonb(t)::text")){s.setObject(1,project);try(var r=s.executeQuery()){var rows=new ArrayList<String>();while(r.next())rows.add(r.getString(1));result.put(table,rows);}}
+        }return result;
     }
     private void completeDefectHttpAttempt(HttpActor actor,String project,String run,String attempt,String step,String outcome)throws Exception{
         String path=project+"/runs/"+run+"/attempts/"+attempt;
