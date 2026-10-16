@@ -1,7 +1,42 @@
 # Test365Alm
 企业级应用质量管理平台研发规划基线。对标原 ALM/Quality Center 产品体系；具体目标版本、Edition、扩展和旧生态兼容范围须在 P0 冻结。
 
-> **当前状态：R08-CORE-BATCH01。** PR #1～#6 已按授权进入默认分支；主线 `1e49617f283ffa54673d590a1aba3e72fcfbe14e` 的六 Job CI 已通过。新分支提供 M04 字段定义、M11 需求→用例关联最小切片，仍须独立审核，不代表完整模块或 ALM 完成。
+> **当前状态：R09-CORE-BATCH02。** PR #1～#6 已进入默认分支；PR #7 的 M04/M11 阶段 A 修复通过后，独立 PR #8（base PR #7 分支）实现 M10 缺陷核心与相关复测切片。两条 PR 均不自动合并；不代表完整模块或 ALM 完成。实际代码/交付与 CI 身份见最新轮次记录及交付回复。
+
+## R09 缺陷与失败步骤复测
+
+沿用下文 R03 本机隔离启动方式，不覆盖已有 `.env.r03`。登录普通 PROJECT_MEMBER 并选择项目：
+
+1. 用现有需求/用例页面创建数据，可建立需求→用例追踪；在手工运行中保存 FAIL/BLOCKED 步骤并完成尝试。
+2. 点击失败步骤的“从失败步骤创建缺陷”，填写纯文本标题/描述、严重度/优先级。服务端冻结真实 test/revision/run/attempt/step、原实际/预期和有效需求关系，不能手填派生来源。
+3. 在“缺陷工作台”刷新、查询或继续游标分页，打开 BUG 编号。编辑追加修订；转为 IN_PROGRESS→RESOLVED，填写修复说明。无关或旧周期 PASS 不允许关闭来源缺陷。
+4. 从缺陷详情“开始复测”，通过原执行服务保存复测步骤 PASS 并完成；“刷新缺陷详情”重新读取验证，合格后转为 CLOSED。
+5. 真实重载页面并重新选择项目，打开原失败尝试、复测 PASS 与各状态历史；旧 FAIL 永不覆盖。独立 VIEWER 只能读取，不能写入。普通非执行来源缺陷可新建，RESOLVED有说明后按有限契约关闭。
+
+请求超时或网络断开时，未知写意图锁定原内容/版本/幂等键，用“重试原意图”确认；不要换新键重复创建。412 保留旧草稿及基础版本；读取最新后明确采用或放弃，不自动重发覆盖。已确认写成功后读取失败，仅刷新 GET。项目/身份/读取权限失效清理原范围。附件/通知/自定义工作流/SLA/复杂树/同步/AI/完整报表未实现。
+
+契约：[缺陷](contracts/defects.md)；决策：[ADR023](docs/adr/023-r09-defect-core-and-related-retest.md)；输入与实际失败/验证：[R09记录](docs/progress/runs/R09-CORE-BATCH02.md)。正式迁移当前V18、专用失败探针V19；下面R08/R06段落中的版本为历史切片说明。
+
+```powershell
+cd apps/server
+mvn -B -ntp test
+# 独立 Windows Wrapper 调用：.\mvnw.cmd -B -ntp test
+# 真实数据库（需本机Docker）：mvn -B -ntp -Pintegration verify
+# Linux CI：./mvnw -B -ntp -Pintegration verify
+cd ../..
+python tools/verify_r09_defect_report.py apps/server/target/failsafe-reports
+python -m unittest discover -s tools/tests -v
+python tools/validate_package.py
+cd apps/web
+npm ci
+npm run lint
+npm run test:run
+npm run build
+# 真实页面须本轮CI-owned PostgreSQL/Keycloak及三用户，不可指向日常开发数据库：
+# npx playwright test e2e/defects.spec.ts --workers=1 --retries=0
+```
+
+缺少 Docker 时真实集成不得视为通过；本轮Ubuntu六Job CI包含精确名称门禁、实际OIDC/Keycloak及安全资源清理。不改全局权限/默认工具链、不部署。报告目录/数量与实际checkout以轮次记录为准；规划校验不是业务验收。
 
 ## R08 字段元数据与需求测试追踪
 

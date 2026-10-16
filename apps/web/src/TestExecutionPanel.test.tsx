@@ -3,6 +3,9 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { StrictMode } from 'react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import TestExecutionPanel from './TestExecutionPanel'
+import userEvent from '@testing-library/user-event'
+import { defectsApi } from './defectsApi'
+vi.mock('./defectsApi',async()=>({...await vi.importActual<typeof import('./defectsApi')>('./defectsApi'),defectsApi:{create:vi.fn()}}))
 import { executionApi } from './testExecution'
 import { testsApi } from './tests'
 import type { Run, RunAttempt, RunStep, TestInstance, TestSet } from './testExecution'
@@ -27,6 +30,14 @@ const run: Run = { id: 'run-1', projectId: 'project-1', instanceId: instance.id,
 afterEach(() => { cleanup(); vi.resetAllMocks() })
 
 describe('TestExecutionPanel', () => {
+  it('two opened failed-source forms retain the other pending lock when one creation completes',async()=>{
+    const failed={...attempt,state:'FINISHED' as const,outcome:'FAIL' as const,steps:[{...step,actual:'failure one',outcome:'FAIL' as const},{...step,stepKey:'step-2',ordinal:2,actual:'failure two',outcome:'FAIL' as const}]};const finished={...run,state:'FINISHED' as const,attempt:failed}
+    vi.mocked(executionApi.pageSets).mockResolvedValue({items:[set],nextCursor:null});vi.mocked(executionApi.getSet).mockResolvedValue(set);vi.mocked(executionApi.pageInstances).mockResolvedValue({items:[instance],nextCursor:null});vi.mocked(executionApi.pageRuns).mockResolvedValue({items:[finished],nextCursor:null});vi.mocked(executionApi.getRun).mockResolvedValue(finished);vi.mocked(executionApi.pageAttempts).mockResolvedValue({items:[{...failed,steps:[]}],nextCursor:null})
+    let resolve!: (d:Awaited<ReturnType<typeof defectsApi.create>>)=>void;vi.mocked(defectsApi.create).mockImplementationOnce(()=>new Promise(r=>{resolve=r})).mockResolvedValueOnce({displayNumber:2} as Awaited<ReturnType<typeof defectsApi.create>>)
+    const u=userEvent.setup();render(<TestExecutionPanel projectId="project-1" access={{...access,permissions:[...access.permissions,'defect:create']}}/>);await u.click(await screen.findByRole('button',{name:/登录冒烟/}));await u.click(await screen.findByRole('button',{name:/运行 run-1/}));await u.click((await screen.findAllByRole('button',{name:'从失败步骤创建缺陷'}))[0]);await u.click(screen.getByRole('button',{name:'从失败步骤创建缺陷'}))
+    await u.type(screen.getAllByLabelText('缺陷标题')[0],'One');await u.type(screen.getAllByLabelText('缺陷标题')[1],'Two');await u.click(screen.getAllByRole('button',{name:'创建缺陷'})[0]);await u.click(screen.getAllByRole('button',{name:'创建缺陷'})[1]);await screen.findByText(/BUG-2/);expect(screen.getByRole('button',{name:'刷新运行详情'})).toBeDisabled();expect(screen.getByRole('button',{name:/登录冒烟/})).toBeDisabled()
+    await act(async()=>resolve({displayNumber:1} as Awaited<ReturnType<typeof defectsApi.create>>));await waitFor(()=>expect(screen.getByRole('button',{name:'刷新运行详情'})).toBeEnabled())
+  })
   it('loads full current steps instead of using the bounded history summary as detail', async () => {
     vi.mocked(executionApi.pageSets).mockResolvedValue({ items: [set], nextCursor: null })
     vi.mocked(executionApi.getSet).mockResolvedValue(set)

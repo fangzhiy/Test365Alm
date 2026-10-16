@@ -25,6 +25,8 @@ REQUIRED_TESTS = {
     "realOidcManualExecutionHttpRunsAndRejectsViewerWrites",
     "realOidcFieldMetadataHttpAdminViewerCsrfTypesVersionsAndScope",
     "realOidcTraceHttpTypedEndpointsViewerCsrfRevokeAndNoIllegalEffects",
+    "realOidcDefectHttpMemberEtagsCsrfStrictInputAndViewerBoundary",
+    "realOidcDefectHttpFailedSourceRetestAndClosePreserveOriginalEvidence",
 }
 
 

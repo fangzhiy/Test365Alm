@@ -1,5 +1,19 @@
 # Test365Alm 开发状态
 
+## R09-CORE-BATCH02 当前状态（A通过，B代码验证通过；最终文档交付CI见交付回复）
+
+- 全文：[R09输入](progress/inputs/R09-CORE-BATCH02.md)；[连续实施/失败修复/验收记录](progress/runs/R09-CORE-BATCH02.md)。原R08及更早记录保留为当时事实，不恢复已合并PR或把历史本机Docker可用当作今天可用。
+- 阶段A在PR #7修复NUMBER零边界，补真实FAIL→PASS→失效/修订变化、字段编辑回滚和停用旧会话直接HTTP证据。head `aaf18e5726037afe5c6cf693ca1eb7449faa8141`，Push38859691958/PR38859696614六Job成功，PR checkout `218692a30ded9e44a91a3adfc89ba1064cc6cc75`；42单元/98集成/145前端/80Python/11浏览器，独立项目UI另1。PR7仍Open未合并。
+- A门通过后从该head创建`feat/r09-m10-001` / [PR #8](https://github.com/fangzhiy/Test365Alm/pull/8)，base `feat/r08-m04-m11-001`，M10没有写入PR7。默认分支仍`chore/r01-status-001@1e49617f283ffa54673d590a1aba3e72fcfbe14e`。
+- M10最小切片：稳定缺陷/BUG编号/追加修订、有限状态机、强类型冻结失败与需求来源、项目权限/runtime RLS、强ETag/412、持久化幂等、业务/审计/Outbox原子事务、原M09相关复测与当前解决周期PASS关闭。正式新增V18，V1—V17不改，故意失败探针V19。契约[defects.md](../contracts/defects.md)、[ADR023](adr/023-r09-defect-core-and-related-retest.md)。
+- 已修复自审发现的失权父范围残留、REOPENED旧PASS显示、多失败表单锁互相释放、旧列表覆盖新创建，以及真实页面编辑误发只读元数据。新增确定性回归与实际CI红/绿历史均记录，不弱化后端校验或增加retry。
+- 代码本地/远端均`b8134c330a20260200ce69735578757ba505b443`。[Push38865148036](https://github.com/fangzhiy/Test365Alm/actions/runs/38865148036) / [PR38865154723](https://github.com/fangzhiy/Test365Alm/actions/runs/38865154723)六Job均success；PR实际checkout `65cbf404f04dc4bb6e21e0c3a75602dd050b0ed5`，tree与head一致。44单元、110真实集成（新缺陷DB9/非空升级1/HTTP2；整个OIDC19不是19个缺陷矩阵）、160前端、85Python、12浏览器（M10一项）、独立项目UI另1，无失败/错误/跳过。
+- L01—L09代码证据通过；L10最终文档交付的新SHA/CI由交付回复核对，本文不追写自身SHA。精确名称门禁拒绝缺失/失败/错误/跳过/重复。真实MEMBER DOM完成FAIL→缺陷→解决→相关PASS→关闭→reload历史，独立VIEWER只读/直接写拒绝。
+- 本机Java17/Node26，CI Java21/Node24；编译target17不变。系统Maven及Windows Wrapper各自44单元、npm ci/160前端/类型构建/lint、85Python/规划均实际成功。本机Docker命名管道不存在，真实集成/浏览器本机复跑BLOCKED，UbuntuCI通过不等于本机通过。npm production官方registry audit报告0漏洞，不代表全量安全审计。
+- 仍仅最小切片，完整M04/M05/M10/M11未交付；附件/通知/SLA/复杂树/批量/同步/AI/报表不含本轮。M01/G0缺失输入、WBS PLANNED、完整AC NOT_RUN保留。PR7/8均待独立审核，不自动合并/部署/恢复定时任务或进入后续模块。
+
+最后更新：2026-10-16；本节为已存在代码CI的冻结证据，最终文档交付结果在交付回复核对。
+
 ## R08-CORE-BATCH01 当前状态（主线集成通过，M04/M11 最小切片待独立审核）
 
 - 原文：[R08 输入](progress/inputs/R08-CORE-BATCH01.md)；完整身份、命令、失败历史及范围：[执行记录](progress/runs/R08-CORE-BATCH01.md)。下文各轮“未合并/pending”是历史快照，不代表本轮当前状态。
