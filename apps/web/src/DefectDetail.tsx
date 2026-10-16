@@ -6,6 +6,7 @@ import { newIdempotencyKey } from './requirements'
 import { useCoreRequest } from './useCoreRequest'
 import DefectForm from './DefectForm'
 import DefectAttempt from './DefectAttempt'
+import AttachmentsPanel from './AttachmentsPanel'
 type Intent={key:string;target:Defect;kind:'edit'|'transition'|'retest';content:DefectContent;status:DefectStatus;reason:string}
 const edges:Record<DefectStatus,DefectStatus[]>={OPEN:['IN_PROGRESS','RESOLVED'],IN_PROGRESS:['RESOLVED'],RESOLVED:['CLOSED','REOPENED'],REOPENED:['IN_PROGRESS','RESOLVED'],CLOSED:[]}
 export default function DefectDetail({projectId,id,access,onLockChange,onDenied}:{projectId:string;id:string;access:ProjectAccess;onLockChange:(v:boolean)=>void;onDenied:()=>void}) {
@@ -50,6 +51,7 @@ export default function DefectDetail({projectId,id,access,onLockChange,onDenied}
   {viewed&&<article aria-label="缺陷历史快照"><h4>历史 v{viewed.revisionNo} · {viewed.status}</h4><p>{viewed.title}</p><p>{viewed.description}</p><p>{viewed.reason}</p></article>}
   <h4>明确复测记录</h4>{retests.map(r=><button disabled={locked} key={r.id} onClick={()=>setAttempt({runId:r.runId,attemptId:r.attemptId})}>打开复测尝试 {r.attemptNo} · {r.conclusion??r.status}</button>)}
   {retestCursor&&<button disabled={locked} onClick={()=>void run(signal=>defectsApi.retests(projectId,id,retestCursor,{signal}),p=>{setRetests(old=>[...old,...p.items]);setRetestCursor(p.nextCursor)})}>更多复测记录</button>}
+  <AttachmentsPanel projectId={projectId} target={{kind:'DEFECT',id}} access={access} onDenied={onDenied}/>
   {attempt&&<DefectAttempt key={attempt.attemptId} projectId={projectId} target={attempt} writable={!closed&&access.permissions.includes('run:write')} onDenied={onDenied} onLockChange={setAttemptLocked}/>}
  </section>
 }
