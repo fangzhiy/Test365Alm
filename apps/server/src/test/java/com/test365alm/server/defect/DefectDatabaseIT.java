@@ -29,11 +29,104 @@ class DefectDatabaseIT {
   var changed=defects.edit(f.member,f.project,d.id(),content("Edited"),"\"1\"",key());
   assertEquals(2,changed.rowVersion());assertEquals("First",defects.revision(f.viewer,f.project,d.id(),d.currentRevision().id()).title());
   assertEquals(d,defects.create(f.member,f.project,content("First"),null,key));
-  assertEquals(2,count("defect_revision",f.project));assertEquals(2,count("defect_outbox_event",f.project));assertEquals(2,count("audit_event",f.project));
+  assertEquals(2,count("defect_revision",f.project));assertEquals(2,count("defect_outbox_event",f.project));
+  assertEquals(2,owner().queryForObject("SELECT count(*) FROM audit_event WHERE project_id=? AND object_type='defect'",Integer.class,f.project));
   var before=snapshot(f.project);
   assertEquals("IDEMPOTENCY_KEY_REUSED",assertThrows(ProjectAccessException.class,()->defects.create(f.member,f.project,content("Other"),null,key)).code());
   assertEquals(before,snapshot(f.project));
  }
+ @Test void concurrentEditsAndTransitionsHaveOneExactStaleLoser() throws Exception {
+  var f=fixture();var d=defects.create(f.member,f.project,content("Concurrent"),null,key());
+  var results=concurrent(()->defects.edit(f.member,f.project,d.id(),content("Winner"),"\"1\"",key()));
+  assertOneWinner(results);var current=defects.get(f.viewer,f.project,d.id());assertEquals(2,current.rowVersion());
+  assertEquals("Winner",current.currentRevision().title());assertEquals(2,defects.history(f.viewer,f.project,d.id(),null,25).items().size());
+  results=concurrent(()->defects.transition(f.member,f.project,d.id(),"RESOLVED","fixed","\"2\"",key()));assertOneWinner(results);
+  assertEquals("RESOLVED",defects.get(f.viewer,f.project,d.id()).currentRevision().status());
+  assertEquals(3,count("defect_revision",f.project));assertEquals(3,count("defect_outbox_event",f.project));
+ }
+ @Test void lifecycleRejectsIllegalTransitionsAndClosedHistoryCannotBeRewritten() throws Exception {
+  var f=fixture();var d=defects.create(f.member,f.project,content("Lifecycle"),null,key());UUID id=d.id();var before=snapshot(f.project);
+  assertEquals("INVALID_TRANSITION",assertThrows(ProjectAccessException.class,()->defects.transition(f.member,f.project,id,"CLOSED","x","\"1\"",key())).code());assertEquals(before,snapshot(f.project));
+  d=defects.transition(f.member,f.project,d.id(),"IN_PROGRESS","investigating","\"1\"",key());
+  d=defects.transition(f.member,f.project,d.id(),"RESOLVED","fixed","\"2\"",key());
+  d=defects.transition(f.member,f.project,d.id(),"REOPENED","still broken","\"3\"",key());
+  d=defects.transition(f.member,f.project,d.id(),"RESOLVED","second fix","\"4\"",key());
+  var closed=defects.transition(f.member,f.project,d.id(),"CLOSED","verified manually","\"5\"",key());
+  before=snapshot(f.project);assertEquals("DEFECT_CLOSED",assertThrows(ProjectAccessException.class,()->defects.edit(f.member,f.project,closed.id(),content("rewrite"),"\"6\"",key())).code());
+  try(var c=runtimeConnection(f,f.member)){
+   for(String sql:List.of("UPDATE defect_revision SET title='rewrite'","DELETE FROM defect_link","TRUNCATE defect_revision")){
+    var ex=assertThrows(java.sql.SQLException.class,()->c.createStatement().executeUpdate(sql));assertEquals("42501",ex.getSQLState());
+   }
+  }
+  assertEquals(before,snapshot(f.project));assertEquals(6,defects.history(f.viewer,f.project,closed.id(),null,25).items().size());
+ }
+ @Test void failingStepSourceAndExplicitRetestsPreserveFailureAndRequireRelatedPass() {
+  var f=fixture();var run=failingRun(f);var original=run.currentAttempt();var source=original.steps().get(0);String intent=key();
+  var d=defects.fromStep(f.member,f.project,content("Failure"),run.run().id(),original.id(),source.stepKey(),intent);
+  assertEquals(d,defects.fromStep(f.member,f.project,content("Failure"),run.run().id(),original.id(),source.stepKey(),intent));
+  assertEquals(2,d.links().size());var link=d.links().stream().filter(l->l.kind().equals("RUN_STEP")).findFirst().orElseThrow();
+  assertEquals(run.manifest().sourceRevisionId(),link.testRevisionId());assertEquals("observed FAIL",link.actualResult());
+  assertEquals("FAIL",link.sourceConclusion());assertEquals("Expected",link.expectedResult());
+  d=defects.transition(f.member,f.project,d.id(),"RESOLVED","repair","\"1\"",key());var resolved=d;
+  assertEquals("RETEST_PASS_REQUIRED",assertThrows(ProjectAccessException.class,()->defects.transition(f.member,f.project,resolved.id(),"CLOSED","x","\"2\"",key())).code());
+  var retry=defects.retest(f.member,f.project,d.id(),"\"2\"",key());complete(f,retry.runId(),retry.attemptId(),"FAIL");
+  assertFalse(defects.verification(f.viewer,f.project,d.id()).eligible());
+  assertEquals("RETEST_PASS_REQUIRED",assertThrows(ProjectAccessException.class,()->defects.transition(f.member,f.project,resolved.id(),"CLOSED","x","\"2\"",key())).code());
+  String retryKey=key();retry=defects.retest(f.member,f.project,d.id(),"\"2\"",retryKey);assertEquals(retry,defects.retest(f.member,f.project,d.id(),"\"2\"",retryKey));
+  assertFalse(defects.verification(f.viewer,f.project,d.id()).eligible());complete(f,retry.runId(),retry.attemptId(),"PASS");
+  assertEquals(retry.attemptId(),defects.verification(f.viewer,f.project,d.id()).attemptId());
+  var closed=defects.transition(f.member,f.project,d.id(),"CLOSED","verified","\"2\"",key());assertEquals("CLOSED",closed.currentRevision().status());
+  assertEquals(d.links(),closed.links());assertEquals("FAIL",execution.attempt(f.viewer,f.project,run.run().id(),original.id()).conclusion());
+  assertEquals("PASS",execution.attempt(f.viewer,f.project,retry.runId(),retry.attemptId()).conclusion());
+  assertEquals(2,defects.retests(f.viewer,f.project,d.id(),null,25).items().size());
+ }
+ @Test void invalidSourceForeignEndpointsAndViewerSqlWritesHaveNoEffects() throws Exception {
+  var f=fixture();var foreign=fixture();var run=failingRun(f);var a=run.currentAttempt();var step=a.steps().get(0);var before=snapshot(f.project);
+  assertEquals("NOT_FOUND",assertThrows(ProjectAccessException.class,()->defects.fromStep(f.member,f.project,content("Wrong step"),run.run().id(),a.id(),UUID.randomUUID(),key())).code());
+  assertEquals("NOT_FOUND",assertThrows(ProjectAccessException.class,()->defects.fromStep(foreign.member,foreign.project,content("Wrong scope"),run.run().id(),a.id(),step.stepKey(),key())).code());
+  assertEquals("FORBIDDEN",assertThrows(ProjectAccessException.class,()->defects.create(f.viewer,f.project,content("Denied"),null,key())).code());
+  assertEquals(before,snapshot(f.project));
+  var d=defects.create(f.member,f.project,content("Own"),null,key());before=snapshot(f.project);
+  try(var c=runtimeConnection(f,f.viewer)){
+   // SELECT is allowed, UPDATE USING hides the row from the viewer.
+   assertEquals(0,c.createStatement().executeUpdate("UPDATE defect SET row_version=row_version+1 WHERE id='"+d.id()+"'"));
+  }
+  assertEquals(before,snapshot(f.project));projects.revokeMember(f.admin,f.project,f.member,1L);
+  assertEquals("NOT_FOUND",assertThrows(ProjectAccessException.class,()->defects.get(f.member,f.project,d.id())).code());
+ }
+ @Test void auditAndOutboxFailuresRollbackCreateEditAndTransitionExactly() {
+  var f=fixture();
+  for(String table:List.of("audit_event","defect_outbox_event")){
+   var before=snapshot(f.project);fault(table,()->defects.create(f.member,f.project,content("rollback"),null,key()));assertEquals(before,snapshot(f.project));
+  }
+  var d=defects.create(f.member,f.project,content("Baseline"),null,key());d=defects.edit(f.member,f.project,d.id(),content("Nonempty history"),"\"1\"",key());var current=d;
+  for(String table:List.of("audit_event","defect_outbox_event")){
+   var before=snapshot(f.project);fault(table,()->defects.edit(f.member,f.project,current.id(),content("rollback edit"),"\"2\"",key()));assertEquals(before,snapshot(f.project));
+   fault(table,()->defects.transition(f.member,f.project,current.id(),"RESOLVED","repair","\"2\"",key()));assertEquals(before,snapshot(f.project));
+  }
+  assertEquals("RESOLVED",defects.transition(f.member,f.project,d.id(),"RESOLVED","repair","\"2\"",key()).currentRevision().status());
+ }
+ @Test void concurrentSameKeyCreationAndBoundedPagesHaveNoDuplicateNumbers() throws Exception {
+  var f=fixture();String same=key();var results=concurrent(()->defects.create(f.member,f.project,content("Same"),null,same));assertEquals(results.get(0),results.get(1));
+  results=concurrent(()->defects.create(f.member,f.project,content("Different"),null,key()));assertEquals(2,results.stream().map(v->((DefectService.DefectView)v).displayNumber()).distinct().count());
+  for(int i=0;i<24;i++)defects.create(f.member,f.project,content("Page "+i),null,key());
+  var a=defects.list(f.viewer,f.project,"",null,25);var b=defects.list(f.viewer,f.project,"",a.nextCursor(),25);
+  assertEquals(25,a.items().size());assertEquals(2,b.items().size());assertNull(b.nextCursor());
+  assertEquals(27,java.util.stream.Stream.concat(a.items().stream(),b.items().stream()).map(DefectService.DefectView::id).distinct().count());
+ }
+ private void fault(String table,Runnable call){owner().execute("REVOKE INSERT ON "+table+" FROM test365alm_runtime");try{var e=assertThrows(org.springframework.dao.DataAccessException.class,call::run);assertTrue(e.getMostSpecificCause().getMessage().contains("permission denied for table "+table));}finally{owner().execute("GRANT INSERT ON "+table+" TO test365alm_runtime");}}
+ private static void assertOneWinner(List<Object> result){assertEquals(1,result.stream().filter(v->v instanceof DefectService.DefectView).count());assertEquals(1,result.stream().filter(v->v instanceof ProjectAccessException e&&e.status().value()==412&&e.code().equals("STALE_VERSION")).count());}
+ private List<Object> concurrent(java.util.concurrent.Callable<?> call)throws Exception{
+  var pool=java.util.concurrent.Executors.newFixedThreadPool(2);var start=new java.util.concurrent.CountDownLatch(1);
+  try{var tasks=new ArrayList<java.util.concurrent.Future<Object>>();for(int i=0;i<2;i++)tasks.add(pool.submit(()->{assertTrue(start.await(10,java.util.concurrent.TimeUnit.SECONDS));try{return call.call();}catch(ProjectAccessException e){return e;}}));start.countDown();return List.of(tasks.get(0).get(30,java.util.concurrent.TimeUnit.SECONDS),tasks.get(1).get(30,java.util.concurrent.TimeUnit.SECONDS));}finally{pool.shutdownNow();}
+ }
+ private com.test365alm.server.execution.ExecutionService.RunDetail failingRun(Fixture f){
+  var req=requirements.create(f.member,f.project,new com.test365alm.server.requirement.RequirementService.CreateCommand("Requirement","body","HIGH"),key());
+  var tc=tests.create(f.member,f.project,new com.test365alm.server.testcase.TestCaseService.CreateCommand("MANUAL","Source","","",List.of(new com.test365alm.server.testcase.TestCaseService.StepCommand(null,1,"Act","Expected"))),key());trace.create(f.member,f.project,req.id(),tc.id(),key());
+  var set=execution.createSet(f.member,f.project,"R09 set","",key());var instance=execution.addInstance(f.member,f.project,set.id(),tc.id(),tc.currentRevision().id(),key());var run=execution.createRun(f.member,f.project,instance.id(),key());complete(f,run.run().id(),run.currentAttempt().id(),"FAIL");return execution.run(f.member,f.project,run.run().id());
+ }
+ private void complete(Fixture f,UUID run,UUID attempt,String outcome){var a=execution.attempt(f.member,f.project,run,attempt);for(var s:a.steps())execution.saveStep(f.member,f.project,run,attempt,s.stepKey(),"observed "+outcome,outcome,s.rowVersion(),key());execution.finish(f.member,f.project,run,attempt,execution.attempt(f.member,f.project,run,attempt).rowVersion(),key());}
+ private java.sql.Connection runtimeConnection(Fixture f,UUID actor)throws java.sql.SQLException{var c=java.sql.DriverManager.getConnection(PG.getJdbcUrl(),"test365alm_runtime","r03_isolated_test_role_only");for(var e:Map.of("tenant_id",f.tenant,"project_id",f.project,"principal_id",actor).entrySet())try(var s=c.prepareStatement("SELECT set_config(?,?,false)")){s.setString(1,"test365alm."+e.getKey());s.setString(2,e.getValue().toString());s.executeQuery().close();}return c;}
  private record Fixture(UUID admin,UUID member,UUID viewer,UUID tenant,UUID project){}
  private Fixture fixture(){
   var o=owner();UUID admin=principal(),member=principal(),viewer=principal(),tenant=UUID.randomUUID(),domain=UUID.randomUUID();
