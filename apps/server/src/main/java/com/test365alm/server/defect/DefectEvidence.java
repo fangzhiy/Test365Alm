@@ -42,7 +42,8 @@ public class DefectEvidence {
  }
  public List<Link> links(ProjectService.ProjectView p,UUID id){return jdbc.query("SELECT * FROM defect_link WHERE tenant_id=? AND project_id=? AND defect_id=? ORDER BY kind,id LIMIT 101",DefectEvidence::link,p.tenantId(),p.id(),id);}
  public Verification verification(ProjectService.ProjectView p,UUID id){
-  UUID verified=jdbc.queryForObject("SELECT app_defect_pass(tenant_id,project_id,id,resolved_revision_id) FROM defect WHERE tenant_id=? AND project_id=? AND id=?",UUID.class,p.tenantId(),p.id(),id);
+  // REOPENED retains the old resolution as history, not as current eligibility.
+  UUID verified=jdbc.queryForObject("SELECT CASE WHEN status IN ('RESOLVED','CLOSED') THEN app_defect_pass(tenant_id,project_id,id,resolved_revision_id) ELSE NULL END FROM defect WHERE tenant_id=? AND project_id=? AND id=?",UUID.class,p.tenantId(),p.id(),id);
   var source=links(p,id).stream().filter(l->l.kind().equals("RUN_STEP")).findFirst();
   return new Verification(verified!=null,source.map(Link::runId).orElse(null),verified,verified==null?"No completed related PASS in current resolution cycle":"Related retest PASS confirmed");
  }
