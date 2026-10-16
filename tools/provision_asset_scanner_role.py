@@ -25,6 +25,21 @@ _CONNECTION = ("PGHOST", "PGPORT", "PGDATABASE", "PGUSER", "PGPASSWORD", "PGPASS
                "PGSSLMODE", "PGSSLROOTCERT", "PGSSLCERT", "PGSSLKEY", "PGCHANNELBINDING")
 _RUNTIME = ("PATH", "SystemRoot", "SYSTEMROOT", "WINDIR", "TMP", "TEMP", "TMPDIR", "LANG", "LC_ALL")
 _DOCKER = ("DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH")
+_SQLSTATES = frozenset({"08001", "08006", "28P01", "28000", "42501", "42601", "42703", "42P01", "42883", "22023", "23505", "P0001", "57014", "55P03"})
+_STAGES = {"SCANNER_STAGE_CONNECTED": "SESSION_GUARD", "SCANNER_STAGE_SESSION_READY": "ROLE_SQL",
+           "SCANNER_STAGE_ROLE_APPLIED": "COMMIT", "SCANNER_STAGE_COMMITTED": "VERIFY"}
+
+
+def safe_diagnostic(result) -> str:
+    # Never print subprocess output. Both tokens come from closed allowlists,
+    # including when an external process sends malicious or credential-bearing text.
+    phase = "PROCESS"
+    for line in (result.stdout or "").splitlines():
+        if line in _STAGES:
+            phase = _STAGES[line]
+    matches = re.findall(r"(?:ERROR|FATAL):\s+([A-Z0-9]{5})(?:\s|$)", result.stderr or "")
+    state = next((value for value in matches if value in _SQLSTATES), "UNKNOWN")
+    return f"SCANNER_PROVISION_DIAGNOSTIC phase={phase} sqlstate={state}"
 
 
 def scram_verifier(password: str, salt: bytes | None = None) -> str:
@@ -44,7 +59,7 @@ def build_sql(login: str, password: str) -> str:
         raise ValueError("A dedicated scanner child login is required")
     verifier = scram_verifier(password)
     # Both substitutions have closed alphabets; SQL role creation uses format(%I/%L).
-    return ("BEGIN;\nSET LOCAL search_path = pg_catalog;\nSET LOCAL statement_timeout = '15s';\n"
+    return ("\\echo SCANNER_STAGE_CONNECTED\nBEGIN;\nSET LOCAL search_path = pg_catalog;\nSET LOCAL statement_timeout = '15s';\n"
             "SET LOCAL lock_timeout = '5s';\n"
             "SET LOCAL log_statement = 'none';\n"
             "SET LOCAL log_min_error_statement = 'panic';\n"
@@ -61,9 +76,10 @@ def build_sql(login: str, password: str) -> str:
             " AND setting <> '') THEN\n"
             " RAISE EXCEPTION 'Provisioning needs an unmodified authorized session without extension hooks';\n"
             " END IF; END $private_session$;\n"
+            "\\echo SCANNER_STAGE_SESSION_READY\n"
             f"SELECT pg_catalog.set_config('test365alm.provision_scanner_login','{login}',true);\n"
             f"SELECT pg_catalog.set_config('test365alm.provision_scanner_verifier','{verifier}',true);\n"
-            + SQL_FILE.read_text(encoding="utf-8").strip() + "\nCOMMIT;\n")
+            + SQL_FILE.read_text(encoding="utf-8").strip() + "\n\\echo SCANNER_STAGE_ROLE_APPLIED\nCOMMIT;\n\\echo SCANNER_STAGE_COMMITTED\n")
 
 
 def main(environment=None, run=subprocess.run) -> int:
@@ -80,7 +96,7 @@ def main(environment=None, run=subprocess.run) -> int:
         payload = build_sql(login, password)
         env = {key: source[key] for key in (*_RUNTIME, *_CONNECTION) if key in source}
         env.update(PGPORT=str(port), PGCONNECT_TIMEOUT="5", PGAPPNAME="test365alm-scanner-provision")
-        command = ["psql", "-X", "-w", "-q", "-t", "-A", "--set=ON_ERROR_STOP=1", "--set=ECHO=none", "--set=VERBOSITY=terse"]
+        command = ["psql", "-X", "-w", "-q", "-t", "-A", "--set=ON_ERROR_STOP=1", "--set=ECHO=none", "--set=VERBOSITY=sqlstate"]
         container = source.get("TEST365ALM_PROVISION_CONTAINER_ID")
         if container:
             if not re.fullmatch(r"[a-f0-9]{64}", container) or env["PGHOST"] != "127.0.0.1" or port != 5432:
@@ -89,10 +105,13 @@ def main(environment=None, run=subprocess.run) -> int:
             # Docker reads each value from its own environment; credentials never appear in argv.
             # The operator/test harness is responsible for selecting an authorized owned resource.
             forward = [value for key in (*_CONNECTION, "PGCONNECT_TIMEOUT", "PGAPPNAME") for value in ("--env", key)]
-            clear = [value for key in ("PGOPTIONS", "PGSERVICE", "PGSERVICEFILE", "PGHOSTADDR", "PSQLRC") for value in ("--env", key+"=")]
-            command = ["docker", "exec", "-i", *forward, *clear, container, *command]
+            # libpq distinguishes a missing PGSERVICE from an empty service name.
+            # Unset inherited values inside the container; KEY= is not equivalent.
+            clear = [value for key in ("PGOPTIONS", "PGSERVICE", "PGSERVICEFILE", "PGHOSTADDR", "PSQLRC") for value in ("-u", key)]
+            command = ["docker", "exec", "-i", *forward, container, "env", *clear, *command]
         result = run(command, input=payload, env=env, capture_output=True, text=True, timeout=30, check=False)
         if result.returncode:
+            print(safe_diagnostic(result), file=sys.stderr)
             print("Scanner provisioning refused or failed; no raw SQL/credentials are emitted.", file=sys.stderr)
             return 1
         provision_committed = True

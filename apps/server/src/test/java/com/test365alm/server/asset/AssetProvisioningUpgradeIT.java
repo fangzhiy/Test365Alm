@@ -35,6 +35,7 @@ class AssetProvisioningUpgradeIT {
     @Test void upgradedDatabaseUsesProvisionedRestrictedScannerLogin() throws Exception {
         try(var pg=ownedDatabase("upgrade")) {
             pg.start();var owner=owner(pg);
+            verifyLibpqEmptyServiceIsNotUnset(pg);
             assertEquals(20,migration(pg,"20").migrate().migrationsExecuted);
             String originalLogin=login(),originalSecret=secret();
             assertEquals(0,AssetTestInfrastructure.repositoryScannerProvision(pg,originalLogin,originalSecret));
@@ -184,6 +185,28 @@ class AssetProvisioningUpgradeIT {
         assertEquals(login,row.get("current_user"));for(String flag:List.of("rolsuper","rolbypassrls","rolcreatedb","rolcreaterole","rolreplication","runtime"))assertEquals(false,row.get(flag),flag);
         for(String flag:List.of("rolcanlogin","rolinherit","scanner"))assertEquals(true,row.get(flag),flag);
         System.out.println("R11 formal scanner identity "+row);
+    }
+    /** Exact PG17 client control, only SELECT current_user on this newly owned container. */
+    private static void verifyLibpqEmptyServiceIsNotUnset(PostgreSQLContainer<?> pg) throws Exception {
+        var actual=pg.getDockerClient().inspectContainerCmd(pg.getContainerId()).exec();
+        assertEquals(AssetTestInfrastructure.RUN_ID,actual.getConfig().getLabels().get("com.test365alm.r11.provision"));
+        for(boolean unset:List.of(false,true)) {
+            var args=new ArrayList<String>(List.of("env","PGSERVICE=","PGSERVICEFILE=","PGCONNECT_TIMEOUT=3"));
+            if(unset)args.addAll(List.of("env","-u","PGSERVICE","-u","PGSERVICEFILE","-u","PGOPTIONS","-u","PGHOSTADDR"));
+            args.addAll(List.of("psql","-X","-w","-qAt","-U",pg.getUsername(),"-d",pg.getDatabaseName(),"-c","SELECT current_user"));
+            var exec=pg.getDockerClient().execCreateCmd(pg.getContainerId()).withAttachStdout(true).withAttachStderr(false).withCmd(args.toArray(String[]::new)).exec();
+            var output=new StringBuilder();
+            try(var completion=new com.github.dockerjava.api.async.ResultCallback.Adapter<com.github.dockerjava.api.model.Frame>() {
+                @Override public void onNext(com.github.dockerjava.api.model.Frame frame) { output.append(new String(frame.getPayload(),StandardCharsets.UTF_8)); }
+            }) {
+                pg.getDockerClient().execStartCmd(exec.getId()).exec(completion);
+                assertTrue(completion.awaitCompletion(15,java.util.concurrent.TimeUnit.SECONDS),"owned libpq control must finish within its bound");
+            }
+            var exit=pg.getDockerClient().inspectExecCmd(exec.getId()).exec().getExitCodeLong();
+            if(unset){assertEquals(0L,exit);assertEquals(pg.getUsername(),output.toString().trim());}
+            else assertNotEquals(0L,exit,"empty PGSERVICE/PGSERVICEFILE must reproduce the real pre-connection failure");
+        }
+        System.out.println("R11 libpq isolation: empty service variables fail before SQL; env -u succeeds on the same owned PostgreSQL");
     }
     private record Fixture(UUID admin,UUID member,UUID tenant,UUID domain,UUID project,UUID requirement) { }
     private static Fixture fixture(JdbcTemplate owner,AnnotationConfigApplicationContext c) {

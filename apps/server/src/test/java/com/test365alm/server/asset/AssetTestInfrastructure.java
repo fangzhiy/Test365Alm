@@ -99,6 +99,9 @@ public final class AssetTestInfrastructure {
         String output=new String(process.getInputStream().readAllBytes(),java.nio.charset.StandardCharsets.UTF_8);
         if(output.contains(password)||output.contains(operatorPassword)||output.contains("SCRAM-SHA-256$"))
             throw new IllegalStateException("Scanner provisioning emitted sensitive configuration");
+        // Forward only the formal tool's closed diagnostic vocabulary, never raw
+        // psql stderr, statements, connection settings or secret-bearing output.
+        for(String line:output.split("\\R"))if(line.matches("SCANNER_PROVISION_DIAGNOSTIC phase=(PROCESS|SESSION_GUARD|ROLE_SQL|COMMIT|VERIFY) sqlstate=(UNKNOWN|08001|08006|28P01|28000|42501|42601|42703|42P01|42883|22023|23505|P0001|57014|55P03)"))System.out.println(line);
         return process.exitValue();
     }
     public static String endpoint(){return "http://"+S3.getHost()+":"+S3.getMappedPort(8333);}

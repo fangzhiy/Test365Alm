@@ -85,6 +85,24 @@ class ScannerProvisionTests(unittest.TestCase):
         with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output): self.assertNotEqual(0, provision.main(env, run))
         self.assertEqual(1, run.call_count); self.assertNotIn(secret, output.getvalue())
 
+    def test_failure_diagnostic_is_only_known_stage_and_sqlstate_not_sql_or_verifier(self):
+        secret = self.environment()["TEST365ALM_ASSETS_SCANNER_DB_PASSWORD"]
+        run = Mock(return_value=subprocess.CompletedProcess([], 3,
+            "SCANNER_STAGE_SESSION_READY\nSCRAM-SHA-256$private-verifier\n"+secret,
+            "ERROR: 42601\nSQL: private SQL and "+secret))
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output): self.assertNotEqual(0, provision.main(self.environment(), run))
+        self.assertIn("SCANNER_PROVISION_DIAGNOSTIC phase=ROLE_SQL sqlstate=42601", output.getvalue())
+        self.assertNotIn(secret, output.getvalue()); self.assertNotIn("private", output.getvalue()); self.assertNotIn("SCRAM", output.getvalue())
+        self.assertIn("--set=VERBOSITY=sqlstate", run.call_args.args[0])
+
+    def test_unrecognized_diagnostic_text_cannot_be_echoed_as_a_phase_or_error_code(self):
+        run = Mock(return_value=subprocess.CompletedProcess([], 3, "SCANNER_STAGE_secret-value", "ERROR: ABCDE-secret-value"))
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output): self.assertNotEqual(0, provision.main(self.environment(), run))
+        self.assertIn("SCANNER_PROVISION_DIAGNOSTIC phase=PROCESS sqlstate=UNKNOWN", output.getvalue())
+        self.assertNotIn("secret-value", output.getvalue()); self.assertNotIn("ABCDE", output.getvalue())
+
     def test_timeout_is_safe_failure_not_a_success(self):
         env = self.environment(); secret = env["TEST365ALM_ASSETS_SCANNER_DB_PASSWORD"]
         run = Mock(side_effect=subprocess.TimeoutExpired([secret], 30, output=secret, stderr=secret))
@@ -112,7 +130,13 @@ class ScannerProvisionTests(unittest.TestCase):
         for call in run.call_args_list:
             self.assertEqual(["docker", "exec", "-i"], call.args[0][:3])
             self.assertIn("PGPASSWORD", call.args[0]); self.assertIn("a" * 64, call.args[0])
-            self.assertIn("PGOPTIONS=", call.args[0]); self.assertIn("PGSERVICE=", call.args[0]); self.assertIn("PGHOSTADDR=", call.args[0])
+            container_index=call.args[0].index("a" * 64)
+            isolated=call.args[0][container_index+1:]
+            self.assertEqual("env",isolated[0])
+            for variable in ("PGOPTIONS", "PGSERVICE", "PGSERVICEFILE", "PGHOSTADDR", "PSQLRC"):
+                index=isolated.index(variable)
+                self.assertEqual("-u",isolated[index-1])
+                self.assertNotIn(variable+"=",call.args[0],"libpq treats empty PGSERVICE as a real service, not unset")
             self.assertNotIn(env["PGPASSWORD"], str(call.args[0]))
             self.assertNotIn(env["TEST365ALM_ASSETS_SCANNER_DB_PASSWORD"], str(call.args[0]))
         env["TEST365ALM_PROVISION_CONTAINER_ID"] = "unverified-name"

@@ -34,3 +34,11 @@ Windows Wrapper独立`.\mvnw.cmd -B -ntp test`退出1，`.m2` MinIO缓存AccessD
 Push RED制品已读取到被忽略的`local-evidence/r11-fix01-red/backend/target/failsafe-reports`，XML汇总确认为149/3F/0E/0S；PR同样失败，实际checkout/build为`fec1dd0e53655ca0cc9dc823f4ff25a31a7c5de5`，不是分支head。原前端、工具、故障与浏览器五Job通过。新修复真实GREEN必须另查，不用这次RED的旧层通过代替整轮验收。
 
 未合并PR9/10、未部署、未恢复定时任务、未修改默认分支/保护/可见性，未进入M12。
+
+## 第一修复候选的真实失败（保留）
+
+本地/远端代码候选`4036eaf4a017632f0815697c3e51d6ed957efe2c`的[Push38954965238](https://github.com/fangzhiy/Test365Alm/actions/runs/38954965238)和[PR38954971007](https://github.com/fangzhiy/Test365Alm/actions/runs/38954971007)均为failure，仅server失败、其余五Job成功。PR实际checkout/build `0cd063002983e4495affd1567f5bfb3d03478433`，父提交为base d213e47和head4036eaf，tree均`2fa59c7a42f50609a3e89503f7edce987bed87e4`。
+
+真实PR报告：66单元通过；152集成中2失败、0错误、0跳过。`AssetDatabaseIT`16、`AssetTerminalOutcomeIT`5、整个`OidcCallbackSecurityIT`24均通过；两个`AssetProvisioningUpgradeIT`方法在首次正式provision返回1而非0，尚未进入升级断言。不能将静态审查或其他150个集成通过扩大成F03/F04通过。PR backend制品12070352219已下载至被忽略的`local-evidence/r11-fix01-candidate1/backend`。随后根据此失败定位正式工具入口，不绕过权限或换回helper授权。V21正常迁移/V22精确失败探针均已实际通过。
+
+自修定位：容器配置隔离误将`PGSERVICE`/`PGSERVICEFILE`设为空串；PG17 libpq将其视为已设置的服务/路径而在连接前失败，并不等同unset（[官方实现](https://raw.githubusercontent.com/postgres/postgres/REL_17_STABLE/src/interfaces/libpq/fe-connect.c)，`parseServiceInfo`）。修为容器内`env -u`真正移除偏转项。原离线mock只检查参数存在，不能证明真实libpq可连接；更新断言先RED再GREEN，并在原真实升级用例中增加同一ownedPG、仅`SELECT current_user`的空变量失败/unset成功对照。另补闭集阶段/SQLSTATE诊断，绝不打印原SQL、stderr或secret。两项新增安全诊断离线测试后工具11项退出0、系统Maven测试编译退出0；真实对照仍以随后CI为准。权限/ACL SQL未因该失败放宽。
