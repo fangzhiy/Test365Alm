@@ -6,6 +6,13 @@ import tools.jackson.databind.json.JsonMapper;
 import com.test365alm.server.project.ProjectAccessException;
 
 class FieldRulesTest {
+    @Test void zeroNeedsNoIntegerDigitsWhenPrecisionEqualsScale() {
+        var d=JSON.readTree("{\"key\":\"fraction\",\"type\":\"NUMBER\",\"required\":true,\"precision\":5,\"scale\":5}");
+        for(String s:java.util.List.of("0","-0","0.00000","0.00001"))
+            assertDoesNotThrow(()->FieldRules.value(d,JSON.readTree("\""+s+"\"")));
+        for(String s:java.util.List.of("1","-1","0.000001"))
+            assertThrows(ProjectAccessException.class,()->FieldRules.value(d,JSON.readTree("\""+s+"\"")));
+    }
     private static final JsonMapper JSON = JsonMapper.builder().build();
     @Test void reservedNamesAndUnknownTypesAreRejected() {
         for (String key : new String[]{"title", "id", "row_version", "created_by"})

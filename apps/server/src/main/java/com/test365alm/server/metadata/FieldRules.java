@@ -60,7 +60,8 @@ public final class FieldRules {
                 if(s.length()>100 || !s.matches("-?(0|[1-9][0-9]*)(\\.[0-9]+)?")) reject("Invalid decimal format");
                 BigDecimal n=new BigDecimal(s);
                 int scale=d.get("scale").intValue(), precision=d.get("precision").intValue();
-                if(n.scale()>scale || Math.max(0,n.precision()-n.scale())>precision-scale) reject("Decimal exceeds precision or scale");
+                int integerDigits=n.signum()==0?0:Math.max(0,n.precision()-n.scale());
+                if(n.scale()>scale || integerDigits>precision-scale) reject("Decimal exceeds precision or scale");
                 if(d.has("minimum") && n.compareTo(decimal(d.get("minimum")))<0) reject("Below minimum");
                 if(d.has("maximum") && n.compareTo(decimal(d.get("maximum")))>0) reject("Above maximum");
             }

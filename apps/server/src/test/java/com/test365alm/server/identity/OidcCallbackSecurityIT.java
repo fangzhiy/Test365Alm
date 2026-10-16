@@ -896,6 +896,11 @@ class OidcCallbackSecurityIT {
         var revised=corePatch(f.admin(),item,"\"1\"",d);assertEquals(200,revised.statusCode(),revised.body());
         before=coreRows(f.project());assertTestCaseRejected(()->corePatch(f.admin(),item,"\"1\"",d),412,"STALE_VERSION");assertEquals(before,coreRows(f.project()));
         assertEquals(200,get(f.viewer().flow().client(),item+"/revisions/1").statusCode());
+        before=coreRows(f.project());
+        try(var c=ownerConnection();var s=c.prepareStatement("UPDATE principal SET disabled_at=CURRENT_TIMESTAMP WHERE id=?")){s.setObject(1,f.admin().principalId());assertEquals(1,s.executeUpdate());}
+        assertTestCaseRejected(()->get(f.admin().flow().client(),item),403,"FORBIDDEN");
+        assertTestCaseRejected(()->corePatch(f.admin(),item,"\"2\"",d),403,"FORBIDDEN");
+        assertEquals(before,coreRows(f.project()));
     }
 
     @Test
@@ -920,6 +925,9 @@ class OidcCallbackSecurityIT {
         try(var c=ownerConnection();var s=c.prepareStatement("UPDATE project_member SET revoked_at=CURRENT_TIMESTAMP,authorization_version=authorization_version+1 WHERE project_id=? AND principal_id=?")){s.setObject(1,f.project());s.setObject(2,f.member().principalId());assertEquals(1,s.executeUpdate());}
         assertTestCaseRejected(()->get(f.member().flow().client(),root+"/trace-links?requirementId="+rid),404,"NOT_FOUND");
         assertTestCaseRejected(()->testCasePost(f.member(),root+"/trace-links",null,d),404,"NOT_FOUND");
+        try(var c=ownerConnection();var s=c.prepareStatement("UPDATE principal SET disabled_at=CURRENT_TIMESTAMP WHERE id=?")){s.setObject(1,f.viewer().principalId());assertEquals(1,s.executeUpdate());}
+        assertTestCaseRejected(()->get(f.viewer().flow().client(),root+"/trace-links?requirementId="+rid),403,"FORBIDDEN");
+        assertTestCaseRejected(()->testCasePost(f.viewer(),root+"/trace-links",null,d),403,"FORBIDDEN");
         assertEquals(before,coreRows(f.project()));
     }
     private HttpResponse<String> corePatch(HttpActor actor,String path,String tag,String body)throws Exception{

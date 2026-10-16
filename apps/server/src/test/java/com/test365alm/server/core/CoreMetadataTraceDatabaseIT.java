@@ -102,6 +102,30 @@ class CoreMetadataTraceDatabaseIT {
         execution.rerun(f.member,f.project,run.run().id(),key());
         assertEquals(0,links.coverage(f.viewer,f.project,req.id()).passedTests());assertEquals(1,links.coverage(f.viewer,f.project,req.id()).activeTests());
     }
+    @Test void traceCoverageFailThenPassAndInvalidationNeverMisreportsVerification() throws Exception {
+        var f=fixture();var req=requirement(f);var tc=test(f);var link=links.create(f.member,f.project,req.id(),tc.id(),key());
+        var set=execution.createSet(f.member,f.project,"R09 audit","",key());
+        var instance=execution.addInstance(f.member,f.project,set.id(),tc.id(),tc.currentRevision().id(),key());
+        assertEquals(1,links.coverage(f.viewer,f.project,req.id()).linkedTests());
+        assertEquals(0,links.coverage(f.viewer,f.project,req.id()).passedTests());
+        var run=execution.createRun(f.member,f.project,instance.id(),key());var a=run.currentAttempt();var step=a.steps().get(0);
+        execution.saveStep(f.member,f.project,run.run().id(),a.id(),step.stepKey(),"actual failed","FAIL",step.rowVersion(),key());
+        execution.finish(f.member,f.project,run.run().id(),a.id(),execution.attempt(f.member,f.project,run.run().id(),a.id()).rowVersion(),key());
+        assertEquals(0,links.coverage(f.viewer,f.project,req.id()).passedTests());
+        var b=execution.rerun(f.member,f.project,run.run().id(),key());step=b.steps().get(0);
+        execution.saveStep(f.member,f.project,run.run().id(),b.id(),step.stepKey(),"fixed","PASS",step.rowVersion(),key());
+        execution.finish(f.member,f.project,run.run().id(),b.id(),execution.attempt(f.member,f.project,run.run().id(),b.id()).rowVersion(),key());
+        assertEquals(1,links.coverage(f.viewer,f.project,req.id()).passedTests());
+        links.invalidate(f.member,f.project,link.id(),"\"1\"",key());
+        assertEquals(0,links.coverage(f.viewer,f.project,req.id()).passedTests());
+        assertEquals(0,links.coverage(f.viewer,f.project,req.id()).linkedTests());
+        assertEquals("FAIL",execution.attempt(f.member,f.project,run.run().id(),a.id()).conclusion());
+        var rebound=links.create(f.member,f.project,req.id(),tc.id(),key());
+        assertEquals(1,links.coverage(f.viewer,f.project,req.id()).passedTests());
+        requirements.update(f.member,f.project,req.id(),new com.test365alm.server.requirement.RequirementService.UpdateCommand("changed",null,null),"\"1\"",key());
+        assertEquals(0,links.coverage(f.viewer,f.project,req.id()).passedTests());
+        assertEquals(req.currentRevisionId(),rebound.requirementRevisionId());
+    }
     @Test void fieldAndTraceKeysetPagesContinueWithoutScopeLeakOrDuplicates() throws Exception {
         var f=fixture();var req=requirement(f);
         for(int i=0;i<27;i++){
@@ -178,7 +202,14 @@ class CoreMetadataTraceDatabaseIT {
             finally {owner().execute("GRANT INSERT ON "+table+" TO test365alm_runtime");}
             assertEquals(before,snapshot(f.project));
         }
-        assertEquals(1,fields.create(f.admin,f.project,d,key()).rowVersion());
+        var first=fields.create(f.admin,f.project,d,key());assertEquals(1,first.rowVersion());
+        for(String table:List.of("audit_event","core_outbox_event")){
+            var before=snapshot(f.project);owner().execute("REVOKE INSERT ON "+table+" FROM test365alm_runtime");
+            try{var ex=assertThrows(org.springframework.dao.DataAccessException.class,()->fields.revise(f.admin,f.project,first.id(),d,"\"1\"",key()));assertTrue(ex.getMostSpecificCause().getMessage().contains("permission denied for table "+table));}
+            finally{owner().execute("GRANT INSERT ON "+table+" TO test365alm_runtime");}
+            assertEquals(before,snapshot(f.project));
+        }
+        assertEquals(2,fields.revise(f.admin,f.project,first.id(),d,"\"1\"",key()).rowVersion());
     }
     private record Fixture(UUID admin,UUID member,UUID viewer,UUID tenant,UUID project){}
     private Fixture fixture(){

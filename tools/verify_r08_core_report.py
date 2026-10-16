@@ -14,6 +14,7 @@ REQUIRED = {
         'traceCoverageRequiresCurrentFrozenRevisionsPassAndNoActiveRerun',
         'fieldAndTraceKeysetPagesContinueWithoutScopeLeakOrDuplicates',
         'sameTenantDifferentProjectFieldAndTraceScopesStayIsolatedOnReusedConnection',
+        'traceCoverageFailThenPassAndInvalidationNeverMisreportsVerification',
     },
     'com.test365alm.server.identity.OidcCallbackSecurityIT': {
         'realOidcFieldMetadataHttpAdminViewerCsrfTypesVersionsAndScope',
