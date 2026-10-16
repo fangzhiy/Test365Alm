@@ -87,6 +87,10 @@ class DefectDatabaseIT {
   assertEquals("FORBIDDEN",assertThrows(ProjectAccessException.class,()->defects.create(f.viewer,f.project,content("Denied"),null,key())).code());
   assertEquals(before,snapshot(f.project));
   var d=defects.create(f.member,f.project,content("Own"),null,key());before=snapshot(f.project);
+  var active=execution.rerun(f.member,f.project,run.run().id(),key());before=snapshot(f.project);
+  assertEquals("SOURCE_NOT_FINISHED",assertThrows(ProjectAccessException.class,()->defects.fromStep(f.member,f.project,content("Active"),run.run().id(),active.id(),step.stepKey(),key())).code());assertEquals(before,snapshot(f.project));
+  complete(f,run.run().id(),active.id(),"PASS");before=snapshot(f.project);
+  assertEquals("NOT_FAILED_SOURCE",assertThrows(ProjectAccessException.class,()->defects.fromStep(f.member,f.project,content("PASS is not failure"),run.run().id(),active.id(),step.stepKey(),key())).code());assertEquals(before,snapshot(f.project));
   try(var c=runtimeConnection(f,f.viewer)){
    // SELECT is allowed, UPDATE USING hides the row from the viewer.
    assertEquals(0,c.createStatement().executeUpdate("UPDATE defect SET row_version=row_version+1 WHERE id='"+d.id()+"'"));

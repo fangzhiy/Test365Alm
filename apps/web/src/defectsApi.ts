@@ -2,6 +2,8 @@ import { requestJson, requestJsonWithResponse } from './projectAccess'
 import type { AccessRequestOptions } from './projectAccess'
 export type DefectStatus = 'OPEN'|'IN_PROGRESS'|'RESOLVED'|'CLOSED'|'REOPENED'
 export type DefectContent = { title: string; description: string; severity: string; priority: string }
+export const emptyDefect = ():DefectContent=>({title:'',description:'',severity:'MEDIUM',priority:'MEDIUM'})
+export const defectContent = (v:DefectContent):DefectContent=>({title:v.title,description:v.description,severity:v.severity,priority:v.priority})
 export type DefectRevision = DefectContent & { id: string; defectId: string; revisionNo: number; status: DefectStatus; reason: string; createdBy: string; createdAt: string }
 export type DefectSource = { runId: string; attemptId: string; stepKey: string }
 export type DefectLink = { id: string; kind: 'RUN_STEP'|'REQUIREMENT'; requirementId: string|null; requirementRevisionId: string|null; testCaseId: string|null; testRevisionId: string|null; runId: string|null; attemptId: string|null; stepKey: string|null; actualResult: string|null; expectedResult: string|null; sourceConclusion: string|null; sourceVersion: number|null }
@@ -46,8 +48,8 @@ async function tagged(path:string,init:RequestInit|undefined,o?:AccessRequestOpt
 export const defectsApi = {
  list: async(p:string,q='',cursor:string|null=null,o?:AccessRequestOptions)=>page(await requestJson(root(p)+params(cursor,q),undefined,o),defect),
  get:(p:string,d:string,o?:AccessRequestOptions)=>tagged(`${root(p)}/${d}`,undefined,o),
- create:(p:string,c:DefectContent,source:DefectSource|null,o?:AccessRequestOptions)=>tagged(`${root(p)}${source?'/from-step':''}`,json('POST',{...c,...source}),o),
- edit:(p:string,d:Defect,c:DefectContent,o?:AccessRequestOptions)=>tagged(`${root(p)}/${d.id}`,json('PATCH',c,d.rowVersion),o),
+ create:(p:string,c:DefectContent,source:DefectSource|null,o?:AccessRequestOptions)=>tagged(`${root(p)}${source?'/from-step':''}`,json('POST',{...defectContent(c),...source}),o),
+ edit:(p:string,d:Defect,c:DefectContent,o?:AccessRequestOptions)=>tagged(`${root(p)}/${d.id}`,json('PATCH',defectContent(c),d.rowVersion),o),
  transition:(p:string,d:Defect,status:DefectStatus,reason:string,o?:AccessRequestOptions)=>tagged(`${root(p)}/${d.id}/transitions`,json('POST',{status,reason},d.rowVersion),o),
  history:async(p:string,d:string,cursor:string|null=null,o?:AccessRequestOptions)=>page(await requestJson(`${root(p)}/${d}/revisions${params(cursor)}`,undefined,o),revision),
  revision:async(p:string,d:string,r:string,o?:AccessRequestOptions)=>revision(await requestJson(`${root(p)}/${d}/revisions/${r}`,undefined,o)),

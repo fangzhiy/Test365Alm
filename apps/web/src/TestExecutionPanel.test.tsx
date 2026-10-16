@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import TestExecutionPanel from './TestExecutionPanel'
 import userEvent from '@testing-library/user-event'
 import { defectsApi } from './defectsApi'
-vi.mock('./defectsApi',()=>({defectsApi:{create:vi.fn()}}))
+vi.mock('./defectsApi',async()=>({...await vi.importActual<typeof import('./defectsApi')>('./defectsApi'),defectsApi:{create:vi.fn()}}))
 import { executionApi } from './testExecution'
 import { testsApi } from './tests'
 import type { Run, RunAttempt, RunStep, TestInstance, TestSet } from './testExecution'
