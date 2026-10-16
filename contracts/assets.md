@@ -17,6 +17,7 @@
 - 允许且必须实际检测相符：`text/plain`、`application/pdf`、`image/png`、`image/jpeg`。不使用客户端文件名作检测提示；HTML/SVG/脚本/可执行及未知类型拒绝。检测不是完整沙箱，真实扫描仍必需。
 - filename 1..200字符；去除CR/LF/NUL、路径分隔及可能破坏Content-Disposition的引号等控制字符，清理后为空拒绝。它不决定SQL/临时目录/对象key。
 - S3与scanner各自有有限超时；HTTP上传配置独立的读空闲预算，不把多个独立预算相加后的行为说成一个墙钟总上限。raw PUT不使用multipart解析；临时文件由本请求创建且finally删除，不打印内容。
+- 应用显式设置 `spring.servlet.multipart.enabled=false`，不注册 multipartResolver 或 Servlet multipart 配置；raw PUT 的 `multipart/form-data`（包括畸形边界）按声明类型不匹配返回 422/CONTENT_MISMATCH，不先交给 multipart 解析器缓冲或落盘。
 
 ## 数据与状态
 

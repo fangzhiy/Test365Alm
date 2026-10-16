@@ -102,6 +102,9 @@ class OidcCallbackSecurityIT {
     @Autowired
     private JdbcTemplate runtimeJdbc;
 
+    @Autowired
+    private org.springframework.context.ApplicationContext applicationContext;
+
     @DynamicPropertySource
     static void registerProperties(DynamicPropertyRegistry registry) {
         com.test365alm.server.asset.AssetTestInfrastructure.register(registry);
@@ -1112,6 +1115,9 @@ class OidcCallbackSecurityIT {
         assertAssetRejected(f.project(),()->assetPut(f.member(),item,content,null),403,"CSRF_REJECTED");
         assertAssetRejected(f.project(),()->assetPut(f.viewer(),item,content,f.viewer().csrfToken()),403,"FORBIDDEN");
         assertAssetRejected(f.project(),()->assetPut(f.admin(),item,content,f.admin().csrfToken()),404,"NOT_FOUND");
+        assertFalse(applicationContext.containsBean("multipartResolver"),"the real HTTP app must not parse multipart before its raw upload boundary");
+        byte[] malformedMultipart=("--r11-owned-boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"x.txt\"\r\n\r\nmissing closing boundary").getBytes(StandardCharsets.UTF_8);
+        assertAssetRejected(f.project(),()->assetPut(f.member(),item,malformedMultipart,f.member().csrfToken(),"multipart/form-data; boundary=r11-owned-boundary"),422,"CONTENT_MISMATCH");
         var receipt=assetPut(f.member(),item,content,f.member().csrfToken());assertEquals(200,receipt.statusCode(),receipt.body());
         var parsed=JSON.readTree(receipt.body());assertEquals(content.length,parsed.get("size").longValue());assertEquals(assetSha(content),parsed.get("sha256").textValue());assertEquals("text/plain",parsed.get("mime").textValue());
         assertEquals(parsed,JSON.readTree(assetPut(f.member(),item,content,f.member().csrfToken()).body()));
