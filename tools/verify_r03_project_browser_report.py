@@ -16,6 +16,7 @@ REQUIRED_REQUIREMENT_UI_TEST = "real Keycloak UI requirement flow creates edits 
 REQUIRED_MANUAL_TEST_CASE_UI_TEST = "real Keycloak UI manual test case flow creates steps, edits order, and keeps viewer read-only"
 REQUIRED_MANUAL_EXECUTION_UI_TEST = "real Keycloak UI manual execution creates, resumes, finishes and reruns a two-step run"
 REQUIRED_CORE_UI_TEST = "real Keycloak UI field metadata validates and member trace coverage changes only after PASS"
+REQUIRED_DEFECT_UI_TEST = "real Keycloak UI member creates defect from FAIL retests PASS closes and preserves history"
 REQUIRED_BROWSER_TESTS = (
     REQUIRED_TEST,
     REQUIRED_UI_TEST,
@@ -23,6 +24,7 @@ REQUIRED_BROWSER_TESTS = (
     REQUIRED_MANUAL_TEST_CASE_UI_TEST,
     REQUIRED_MANUAL_EXECUTION_UI_TEST,
     REQUIRED_CORE_UI_TEST,
+    REQUIRED_DEFECT_UI_TEST,
 )
 
 

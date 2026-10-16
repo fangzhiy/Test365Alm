@@ -26,10 +26,10 @@ REQUIRED = {
 }
 
 
-def verify(directory: Path) -> tuple[bool, str]:
+def verify(directory: Path, required_suites=None) -> tuple[bool, str]:
     summaries = []
     try:
-        for suite, required in REQUIRED.items():
+        for suite, required in (REQUIRED if required_suites is None else required_suites).items():
             path = directory / f'TEST-{suite}.xml'
             if not path.is_file():
                 return False, f'NOT_RUN: {suite} report missing'

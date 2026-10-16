@@ -24,5 +24,5 @@ export function useCoreRequest() {
       return error.status && error.status >= 400 && error.status < 500 ? 'rejected' : 'unknown'
     } finally { if (current === round.current) { window.clearTimeout(timer.current); controller.current = null; setBusy(false) } }
   }, [cancel])
-  return { run, busy, message, setMessage, denied }
+  return { run, busy, message, setMessage, denied, cancel }
 }
