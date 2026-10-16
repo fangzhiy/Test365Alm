@@ -1,5 +1,7 @@
+import re
 import tempfile
 import unittest
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from tools.redact_r03_logs import redact
@@ -9,8 +11,63 @@ from tools.verify_r03_oidc_http_report import REQUIRED_TESTS, verify
 from tools.verify_r03_project_access_report import REQUIRED_PROJECT_TESTS, verify_project_access
 from tools.verify_r03_project_browser_report import REQUIRED_MANUAL_EXECUTION_UI_TEST, REQUIRED_MANUAL_TEST_CASE_UI_TEST, REQUIRED_REQUIREMENT_UI_TEST, REQUIRED_TEST as REQUIRED_PROJECT_BROWSER_TEST, REQUIRED_UI_TEST as REQUIRED_PROJECT_UI_TEST, verify as verify_project_browser
 
+TERMINAL_HTTP_TEST = "realOidcAssetHttpTerminalCompleteFreezesRejectionAndReauthorizesReplay"
+
 
 class R03CiEvidenceTests(unittest.TestCase):
+    def _oidc_report(self, directory, names):
+        suite = ET.Element("testsuite", name="com.test365alm.server.identity.OidcCallbackSecurityIT",
+                           tests=str(len(names)), failures="0", errors="0", skipped="0")
+        for name in names:
+            ET.SubElement(suite, "testcase", name=name)
+        report = Path(directory) / "TEST-com.test365alm.server.identity.OidcCallbackSecurityIT.xml"
+        ET.ElementTree(suite).write(report, encoding="unicode")
+        return suite, report
+
+    def test_oidc_gate_exact_names_match_real_test_methods(self):
+        source = (Path(__file__).resolve().parents[2] /
+                  "apps/server/src/test/java/com/test365alm/server/identity/OidcCallbackSecurityIT.java").read_text(encoding="utf-8")
+        methods = re.findall(r"@Test\s+void\s+(\w+)\s*\(", source)
+        self.assertEqual(24, len(methods))
+        self.assertEqual(len(methods), len(set(methods)))
+        self.assertIn(TERMINAL_HTTP_TEST, methods)
+        self.assertEqual(set(methods), REQUIRED_TESTS)
+
+    def test_oidc_terminal_case_is_required_and_unexpected_names_still_fail(self):
+        names = sorted(REQUIRED_TESTS | {TERMINAL_HTTP_TEST})
+        with tempfile.TemporaryDirectory() as directory:
+            self._oidc_report(directory, names)
+            valid, summary = verify(Path(directory))
+            self.assertTrue(valid, summary)
+            self._oidc_report(directory, [name for name in names if name != TERMINAL_HTTP_TEST])
+            self.assertFalse(verify(Path(directory))[0], "omitting terminal HTTP evidence must fail")
+            self._oidc_report(directory, names + ["unexpectedSubstitute"])
+            self.assertFalse(verify(Path(directory))[0], "the exact-name gate remains closed")
+
+    def test_oidc_duplicate_case_cannot_hide_behind_suite_count(self):
+        # Use the closed set itself: duplicate detection must not rely on a truthful tests attribute.
+        with tempfile.TemporaryDirectory() as directory:
+            for duplicate in (sorted(REQUIRED_TESTS)[0], TERMINAL_HTTP_TEST):
+                with self.subTest(duplicate=duplicate):
+                    suite, report = self._oidc_report(directory, sorted(REQUIRED_TESTS))
+                    ET.SubElement(suite, "testcase", name=duplicate)
+                    ET.ElementTree(suite).write(report, encoding="unicode")
+                    with self.assertRaisesRegex(ValueError, "duplicate|count"):
+                        verify(Path(directory))
+
+    def test_oidc_terminal_failure_error_and_skip_are_rejected_even_with_zero_summary(self):
+        names = sorted(REQUIRED_TESTS | {TERMINAL_HTTP_TEST})
+        with tempfile.TemporaryDirectory() as directory:
+            for tag, attribute in (("failure", "failures"), ("error", "errors"), ("skipped", "skipped")):
+                for declared in ("0", "1"):
+                    with self.subTest(tag=tag, declared=declared):
+                        suite, report = self._oidc_report(directory, names)
+                        suite.set(attribute, declared)
+                        case = next(case for case in suite.findall("testcase") if case.get("name") == TERMINAL_HTTP_TEST)
+                        ET.SubElement(case, tag)
+                        ET.ElementTree(suite).write(report, encoding="unicode")
+                        self.assertFalse(verify(Path(directory))[0])
+
     def test_redacts_both_env_and_realm_passwords(self):
         env = "R03_KEYCLOAK_ADMIN_PASSWORD=admin-secret\nR03_TEST_USER_PASSWORD=user-secret\n"
         result = redact(env, "admin-secret user-secret Authorization: Bearer opaque-token")

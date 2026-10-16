@@ -31,6 +31,7 @@ REQUIRED_TESTS = {
     "realOidcReleaseHttpTypedScopeSnapshotsAndOldSessionRevocation",
     "realOidcAssetHttpIntegrityCsrfRolesAndIdempotency",
     "realOidcAssetHttpTypedLinksFrozenVersionsAndLiveDownloadRevocation",
+    "realOidcAssetHttpTerminalCompleteFreezesRejectionAndReauthorizesReplay",
 }
 
 
@@ -45,7 +46,14 @@ def read_report(directory: Path) -> tuple[int, int, int, int, set[str]]:
     failures = int(root.get("failures", "0"))
     errors = int(root.get("errors", "0"))
     skipped = int(root.get("skipped", "0"))
-    names = {case.get("name", "") for case in root.findall("testcase")}
+    cases = root.findall("testcase")
+    names = {case.get("name", "") for case in cases}
+    if len(cases) != tests or len(names) != len(cases):
+        raise ValueError("testcase count mismatch or duplicate testcase name")
+    # Do not trust a zero suite summary when an actual testcase records a non-pass.
+    failures = max(failures, sum(case.find("failure") is not None for case in cases))
+    errors = max(errors, sum(case.find("error") is not None for case in cases))
+    skipped = max(skipped, sum(case.find("skipped") is not None for case in cases))
     return tests, failures, errors, skipped, names
 
 
