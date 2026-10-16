@@ -16,4 +16,4 @@ Attempt A1：新增测试一处误用了 rerun 的返回类型，testCompile退�
 
 本机前端 `npm run test:run`、`npm run build`、`npm run lint` 均退出0，145测试通过；普通既有React lint warnings保留，不扩成依赖升级。根目录 Python unittest80通过、validate_package退出0；规划状态仍 NOT_EXECUTED/P0 inputs missing。技能引用的本机公共 references 文件缺失，沿用本仓库 AGENTS/验收作为完成门，不据此放宽要求。
 
-阶段 A 当前代码/CI结果在对应运行完成后记录；门未通过不进入 M10 分支。后续最终交付 SHA/CI仅在回复收口，避免自引用文档循环。
+阶段 A PASS：代码 `aaf18e5726037afe5c6cf693ca1eb7449faa8141`，Push [38859691958](https://github.com/fangzhiy/Test365Alm/actions/runs/38859691958)、PR [38859696614](https://github.com/fangzhiy/Test365Alm/actions/runs/38859696614) 六Job均success。PR实际checkout `218692a30ded9e44a91a3adfc89ba1064cc6cc75`，42单元/98集成/145前端/80Python/11浏览器，零失败/错误/跳过，另独立项目UI1通过。PR7仍Open，未合并。门通过后才从该head创建 `feat/r09-m10-001`；新PR依赖PR7，base为 `feat/r08-m04-m11-001`。最终交付SHA/CI仅回复收口，避免自引用文档循环。
