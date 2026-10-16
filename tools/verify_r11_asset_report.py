@@ -21,13 +21,26 @@ REQUIRED = {
         'postCommitCleanupFailureRetainsPublishedAccessAndPendingState',
         'boundedPagesAndSameHashTenantsRemainIndependent',
         'runtimeCannotForgeRevisionFromUnscannedOrRejectedUpload',
+        'publishedAssetAllocatorAndCurrentPointerCannotMoveBackwardOrGap',
     },
     'com.test365alm.server.asset.AssetMigrationUpgradeIT': {
         'v19NonEmptyDatabaseUpgradesToV20WithoutLosingExistingBusinessHistory',
     },
+    'com.test365alm.server.asset.AssetTerminalOutcomeIT': {
+        'infectedCompleteSameKeyReplaysFrozenTerminalRejection',
+        'infectedCompleteNewKeyReturnsAlreadyRejectedWithoutRescan',
+        'infectedCompleteSameKeyDifferentRequestIsRejected',
+        'terminalReplayReauthorizesRevokedDisabledAndExpiredPrincipals',
+        'scannerTransientFailureSameKeyRemainsRetryable',
+    },
+    'com.test365alm.server.asset.AssetProvisioningUpgradeIT': {
+        'upgradedDatabaseUsesProvisionedRestrictedScannerLogin',
+        'scannerProvisioningPreservesExistingGroupLoginAndRejectsUnsafeRoles',
+    },
     'com.test365alm.server.identity.OidcCallbackSecurityIT': {
         'realOidcAssetHttpIntegrityCsrfRolesAndIdempotency',
         'realOidcAssetHttpTypedLinksFrozenVersionsAndLiveDownloadRevocation',
+        'realOidcAssetHttpTerminalCompleteFreezesRejectionAndReauthorizesReplay',
     },
 }
 

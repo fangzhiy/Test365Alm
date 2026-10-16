@@ -1,6 +1,20 @@
 # Test365Alm
 企业级应用质量管理平台研发规划基线。对标原 ALM/Quality Center 产品体系；具体目标版本、Edition、扩展和旧生态兼容范围须在 P0 冻结。
 
+## R11-FIX01：资产边界修正（实施/验证中）
+
+继续[PR #10](https://github.com/fangzhiy/Test365Alm/pull/10)，依赖未合并PR9。原c150958交付的完整成功证据保留；新增回归c3c1d13已在真实CI复现allocator/current回退及感染同key结果变化。最新范围/验收见[FIX01记录](docs/progress/runs/R11-CORE-BATCH04-FIX01.md)。正式迁移追加V21，故意失败探针V22；下文旧V20/V21仅为原轮次历史，不改写旧迁移或清库。
+
+已有数据库升级后的scanner账号由正式`python tools/provision_asset_scanner_role.py`提供。先由授权operator完成备份/评估及Flyway升级，再在受控终端从秘密管理渠道设置`PGHOST`、`PGPORT`、`PGDATABASE`、`PGUSER`与operator的`PGPASSWORD`或`PGPASSFILE`/TLS配置，并设置新独立`TEST365ALM_ASSETS_SCANNER_DB_USERNAME`、`TEST365ALM_ASSETS_SCANNER_DB_PASSWORD`；密码须24..256个非空格ASCII字符。不要将真实值写进命令参数、聊天、日志或仓库，不启用shell trace。
+
+运行该工具只创建受限scanner LOGIN子角色并验证登录，不运行Flyway、不改开发`.env`、不修改全局数据库配置。`test365alm_scanner`是能力group，已有fresh环境的group LOGIN保持不变；应用用户名可以是独立子角色。安全重复调用不旋转秘密、不扩大权限；不安全角色或前置条件拒绝时，先检查具体授权/角色配置，不改用owner/runtime账号让应用继续。应用始终显式读取scanner用户名/密码，固定使用应用同一数据库URL。新增secret需要由operator以既有安全方式更新应用本地配置，工具不会代写。
+
+正常运维默认调用本机`psql -X -w`；只有显式给出`TEST365ALM_PROVISION_CONTAINER_ID`完整ID时才可使用指定已授权容器的psql。此模式仅支持容器内`127.0.0.1:5432`，不会自动发现、创建、停止或清理容器。集成测试通过Testcontainers证明资源身份后使用此正式入口；不要把用户日常数据库当作测试资源。
+
+工具要求operator既有角色管理授权，也能设置所需会话日志参数；只有`SET LOCAL`保护全部成功后才发送SCRAM verifier（它也属于秘密）。存在preload扩展日志钩子或无法保证该会话日志边界时安全拒绝，不修改全局日志、不要求放宽生产权限。授权operator需评估自己的环境与审计政策；本轮仅验证隔离PostgreSQL。若创建已提交但随后登录核验失败，工具返回非零并明确可能部分完成；先核对已创建角色，不能自动重置密码、扩大权限或用owner替代。
+
+发布感染结果后，原complete key在有效期内重放同一422/FILE_INFECTED；新key对REJECTED仍409/UPLOAD_REJECTED。scanner暂时失败的503不永久冻结，恢复后原key可明确重试。所有重放先重新授权。资产current只能是最大修订，allocator在提交时严格连续；旧附件仍冻结旧修订。以下原R11页面及完整测试命令继续适用。
+
 > **当前状态：R11-CORE-BATCH04 资产附件最小切片代码CI通过，待独立审核。** [PR #10](https://github.com/fangzhiy/Test365Alm/pull/10) 依赖未合并的R10 PR #9，base为 `feat/r10-m06-001`。代码 `2a38148bfad5fd9b8e599b6d469a8e8b7601717d` 的Push38948375346/PR38948383146均六Job成功；最终文档交付CI在回复核对。默认分支仍 `chore/r01-status-001@a2419e292c004b2cd4c7278bdaa40b1ce3442a22`，PR #1～#8已合入。下文旧轮次的范围、未实现项和迁移版本为当时历史，现行M05及V20/V21以本节为准；不代表完整模块或ALM完成。
 
 ## R11 私有资产与冻结附件（最小切片，代码验证通过）

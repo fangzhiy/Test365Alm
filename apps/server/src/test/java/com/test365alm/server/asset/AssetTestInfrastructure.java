@@ -75,6 +75,32 @@ public final class AssetTestInfrastructure {
             owner.execute("CREATE ROLE "+SCANNER_USER+" LOGIN PASSWORD '"+SCANNER_PASSWORD+"' NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS IN ROLE test365alm_scanner");
         return new DriverManagerDataSource(pg.getJdbcUrl(),SCANNER_USER,SCANNER_PASSWORD);
     }
+    /** Runs the repository's actual operator entrypoint, never a replacement role-creation helper. */
+    public static int repositoryScannerProvision(PostgreSQLContainer<?> pg,String login,String password) throws Exception {
+        return repositoryScannerProvision(pg,login,password,pg.getUsername(),pg.getPassword());
+    }
+    public static int repositoryScannerProvision(PostgreSQLContainer<?> pg,String login,String password,String operator,String operatorPassword) throws Exception {
+        if(!pg.isRunning()||pg.getContainerId()==null)throw new IllegalStateException("Owned provision database must be running");
+        var actual=pg.getDockerClient().inspectContainerCmd(pg.getContainerId()).exec();
+        if(!pg.getContainerId().equals(actual.getId())||!RUN_ID.equals(actual.getConfig().getLabels().get("com.test365alm.r11.provision")))
+            throw new IllegalStateException("Refusing scanner provisioning on a database without this run's identity");
+        var script=java.nio.file.Path.of("..","..","tools","provision_asset_scanner_role.py").toAbsolutePath().normalize();
+        if(!java.nio.file.Files.isRegularFile(script))throw new IllegalStateException("Repository scanner provision entrypoint is missing");
+        var builder=new ProcessBuilder(System.getProperty("os.name").startsWith("Windows")?"python":"python3",script.toString());
+        var inherited=new java.util.HashMap<>(builder.environment());builder.environment().clear();
+        for(String name:java.util.List.of("PATH","SystemRoot","SYSTEMROOT","WINDIR","TMP","TEMP","TMPDIR","LANG","LC_ALL","DOCKER_HOST","DOCKER_CONTEXT","DOCKER_CONFIG","DOCKER_TLS_VERIFY","DOCKER_CERT_PATH"))
+            if(inherited.containsKey(name))builder.environment().put(name,inherited.get(name));
+        builder.environment().put("PGHOST","127.0.0.1");builder.environment().put("PGPORT","5432");
+        builder.environment().put("PGDATABASE",pg.getDatabaseName());builder.environment().put("PGUSER",operator);builder.environment().put("PGPASSWORD",operatorPassword);
+        builder.environment().put("TEST365ALM_PROVISION_CONTAINER_ID",pg.getContainerId());
+        builder.environment().put("TEST365ALM_ASSETS_SCANNER_DB_USERNAME",login);builder.environment().put("TEST365ALM_ASSETS_SCANNER_DB_PASSWORD",password);
+        builder.redirectErrorStream(true);var process=builder.start();
+        if(!process.waitFor(60,java.util.concurrent.TimeUnit.SECONDS)){process.destroyForcibly();throw new IllegalStateException("Owned scanner provisioning exceeded its bounded timeout");}
+        String output=new String(process.getInputStream().readAllBytes(),java.nio.charset.StandardCharsets.UTF_8);
+        if(output.contains(password)||output.contains(operatorPassword)||output.contains("SCRAM-SHA-256$"))
+            throw new IllegalStateException("Scanner provisioning emitted sensitive configuration");
+        return process.exitValue();
+    }
     public static String endpoint(){return "http://"+S3.getHost()+":"+S3.getMappedPort(8333);}
     public static BlobStore store(){return new S3BlobStore(endpoint(),ACCESS,SECRET,QUARANTINE,PUBLISHED,15000);}
     public static MalwareScanner scanner(){return new ClamdMalwareScanner(CLAMD.getHost(),CLAMD.getMappedPort(3310),2000,15000);}

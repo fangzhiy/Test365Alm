@@ -41,6 +41,16 @@ S3、扫描证明与业务事务没有分布式原子提交：
 
 ## 原始来源与限制
 
+### FIX01：提交完整性、冻结错误与身份provision
+
+原V20允许runtime单独修改allocator，current guard依赖同一可变allocator，不能单靠服务调用顺序证明单调性。FIX01用新增V21的延迟约束检查最终数据库状态：修订正数且唯一的既有约束配合count=max、allocator=max+1、current=max；资产变化和修订插入都触发，非法最终状态在提交时拒绝。保留正常事务中短暂分配窗口及旧版本内容，不提供current历史回退功能；不改V1—V20。正式V21之后，独立启动失败探针改为V22。
+
+INFECTED terminal complete与其业务审计/Outbox在同事务保存冻结错误outcome；沿用core幂等作用域和有效期，新增显式版本化错误信封但不改旧成功JSON。重放先重新授权并核对hash，再重放safe status/code/message，不通过当前REJECTED状态猜测旧结果。不同key仍409；transient503不冻结。该选择避免专属重复幂等表，但必须完整回归其他模块的成功重放。
+
+数据库能力角色和LOGIN secret provisioning分离：Flyway不放密码；正式Python运维入口及唯一SQL源创建独立受限LOGIN子角色，只授scanner membership；既有同名安全身份幂等核验，不安全身份明确拒绝，不旋转秘密或扩大权限。测试升级必须调用正式来源并证明真实CLEAN写证明与发布，不以临时helper隐式授权冒充交付。保留fresh group LOGIN的既有兼容，但生产推荐独立LOGIN。数据库group不是任意runtime GUC授权；应用scanner仍用显式secret且固定同一URL。
+
+本段为决策说明，RED复现、GREEN结果、非空V20数据和具体运行身份见[FIX01记录](../progress/runs/R11-CORE-BATCH04-FIX01.md)。PostgreSQL依据：[延迟约束触发器](https://www.postgresql.org/docs/17/sql-createtrigger.html)、[角色属性](https://www.postgresql.org/docs/17/role-attributes.html)、[SCRAM口令认证](https://www.postgresql.org/docs/17/auth-password.html)。不把环境变量秘密当不可被同机特权进程读取的安全存储，也不承诺生产全量安全审计。
+
 - [MinIO Java 9.0.3 README](https://github.com/minio/minio-java/tree/9.0.3)、[OkHttp JVM 依赖说明](https://github.com/square/okhttp/tree/parent-5.3.2)、[Tika core 文档](https://tika.apache.org/3.3.3/gettingstarted.html)。
 - [ClamD INSTREAM 协议](https://docs.clamav.net/manual/Usage/ClamdProtocol.html)、[官方容器说明](https://docs.clamav.net/manual/Installing/Docker.html)、[SeaweedFS mini 源码](https://github.com/seaweedfs/seaweedfs/blob/4.48/weed/command/mini.go)。
 - 新 Java 库为 Apache-2.0；SDK 不是 MinIO server。已核对上游公告，9.0.3 不在 MinIO SDK CVE-2025-59952 的 <8.6.0 范围；Tika core 不引入 PDF parser。不能将局部公告核对写成完整依赖安全认证。

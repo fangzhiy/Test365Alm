@@ -11,6 +11,10 @@
 
 ## 项目状态
 
+- R11-FIX01继续PR10（base R10 PR9，均不自动合并），只补资产提交完整性、terminal complete冻结错误和正式scanner LOGIN provision。正式追加V21，故意失败探针V22；下文R11原V20/V21为历史。真实RED已在c3c1d13的Push38953261084/PR38953268643复现，不以代码存在代替GREEN；当前证据看`docs/progress/runs/R11-CORE-BATCH04-FIX01.md`。
+- scanner身份由授权operator显式运行`python tools/provision_asset_scanner_role.py`，Flyway只管能力与schema、不管secret。独立LOGIN仅继承scanner，不得使用runtime/owner或回退其密码。工具不自动连接开发库；同名不安全角色、未知环境或无法确认安全时拒绝，不自动修配。应用只接受显式scanner用户名/密码与同一datasource URL。正式工具同时是非空V20→V21升级集成测试的真实入口，不以helper内部直接授权冒充交付。
+- `python tools/verify_r11_asset_report.py apps/server/target/failsafe-reports`须检查allocator精确提交负向、terminal同key422/新key409/瞬时故障恢复、正式provision+非空升级和真实HTTP方法；新增门禁本身有删测/重复/失败/错误/跳过回归。原六Job、旧各模块门禁、真实S3/clamd和单worker/零retry浏览器均保留。未知/me401历史若不再复现仍须写根因未证明。
+
 - R11从已审核R10 `d213e47…` 建立 `feat/r11-m05-001`；PR9未合并时只依赖其分支，不自动合并。新增正式V20，工具故意失败探针V21；旧V1—V19不改。M05仅25MiB以内隔离上传、CLEAN发布、不可变版本和typed附件/代理下载，契约`contracts/assets.md`、ADR025。普通runtime不能伪造扫描证明；专用scanner连接固定同一数据库、无DDL/BYPASSRLS/owner业务权限。S3/扫描证明/业务事务不是2PC，失败必须保留真实可诊断状态。
 - R11完整测试沿用六Job。根目录`python tools/verify_r11_asset_report.py apps/server/target/failsafe-reports`要求真实PG/S3/clamd、非空V19升级及2个真实OIDC矩阵；`python tools/verify_r11_asset_web_report.py local-evidence/r10/vitest.json`检查确切组件/API名称；旧门禁全部保留。浏览器单worker零retry，新增资产MEMBER/VIEWER流程，不能用mock扫描代替真实集成。
 

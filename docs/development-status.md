@@ -1,5 +1,11 @@
 # Test365Alm 开发状态
 
+## R11-CORE-BATCH04-FIX01 当前状态（代码修正完成，真实GREEN待验证）
+
+- 从已审核c150958继续`feat/r11-m05-001` / PR10，base R10 PR9；原成功与失败记录均保留。完整[输入](progress/inputs/R11-CORE-BATCH04-FIX01.md)、[本轮证据](progress/runs/R11-CORE-BATCH04-FIX01.md)。本轮只补allocator/current完整性、terminal冻结错误和正式scanner provision，未扩展附件范围。
+- c3c1d13仅回归提交在Push38953261084/PR38953268643真实复现5类runtime非法提交及感染重放422→409/hash冲突400，149IT中3失败、0错误/跳过；非环境假红。随后追加V21延迟提交约束、terminal error快照及正式Python/SQL工具；失败探针实际移V22，旧V1—V20未改。
+- 本机系统Maven66单元、213Vitest、116Python、TypeScript构建/lint/规划校验已通过；Wrapper缓存ACL退出1，沙箱回环/npm权限失败与正常权限复跑分开。真实非空升级、scanner账号及HTTP GREEN仍待Ubuntu六Job CI，不把本机编译或静态审查写成通过。PR9/10均未合并，无部署、定时任务或M12。
+
 ## R11-CORE-BATCH04 当前状态（M05 最小切片代码CI通过，待独立审核）
 
 - 实际起点为R10最终交付 `d213e47bebbe0f89522be48c3e58003d008cdf06`，PR #9仍Open未合并；默认分支仍`a2419e2…`。新分支`feat/r11-m05-001` / [PR #10](https://github.com/fangzhiy/Test365Alm/pull/10)，base `feat/r10-m06-001`，Depends on PR #9。未合并或修改旧分支。

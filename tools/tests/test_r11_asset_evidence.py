@@ -14,6 +14,27 @@ ASSET_UI = 'real Keycloak UI member uploads scans attaches and preserves old ass
 
 
 class AssetEvidenceTests(unittest.TestCase):
+    def test_fix01_exact_database_terminal_and_provision_cases_are_required(self):
+        expected = {
+            'com.test365alm.server.asset.AssetDatabaseIT': {'publishedAssetAllocatorAndCurrentPointerCannotMoveBackwardOrGap'},
+            'com.test365alm.server.asset.AssetTerminalOutcomeIT': {
+                'infectedCompleteSameKeyReplaysFrozenTerminalRejection',
+                'infectedCompleteNewKeyReturnsAlreadyRejectedWithoutRescan',
+                'infectedCompleteSameKeyDifferentRequestIsRejected',
+                'terminalReplayReauthorizesRevokedDisabledAndExpiredPrincipals',
+                'scannerTransientFailureSameKeyRemainsRetryable',
+            },
+            'com.test365alm.server.asset.AssetProvisioningUpgradeIT': {
+                'upgradedDatabaseUsesProvisionedRestrictedScannerLogin',
+                'scannerProvisioningPreservesExistingGroupLoginAndRejectsUnsafeRoles',
+            },
+            'com.test365alm.server.identity.OidcCallbackSecurityIT': {
+                'realOidcAssetHttpTerminalCompleteFreezesRejectionAndReauthorizesReplay',
+            },
+        }
+        for suite, names in expected.items():
+            self.assertTrue(names <= REQUIRED.get(suite, set()), suite)
+
     def xml_fixture(self, directory):
         for suite, names in REQUIRED.items():
             node = ET.Element('testsuite', name=suite, tests=str(len(names)), failures='0', errors='0', skipped='0')

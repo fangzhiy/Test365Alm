@@ -8,7 +8,7 @@
 - PROJECT_ADMIN/MEMBER 可上传、创建版本/关联；VIEWER 只读/下载。非项目成员的 TENANT_ADMIN 无自动权限。
 - 上传会话只能由创建主体读取/PUT/complete；资产及附件由当前项目读权限控制。每次操作及幂等重放重新授权，撤权/停用/租户成员失效在下一请求生效。
 - 对象存储为 private S3-compatible，分别使用 quarantine/published namespace；客户端不接触 bucket/key、存储凭据或 presigned URL。无跨租户或租户内去重。
-- 正式迁移仅追加；R10正式最大V19，V20此前仅为工具创建的失败探针。本轮正式V20，探针移V21，两者物理位置分离，不改写V1—V19。
+- 正式迁移仅追加；R11原切片正式V20。FIX01追加V21资产提交完整性约束，故意失败探针移V22，两者物理位置分离，不改写V1—V20。实际验证见本轮记录，不能把新契约本身作为验收证据。
 
 ## 文件规则
 
@@ -24,6 +24,8 @@
 稳定Asset身份与追加AssetRevision分离。修订绑定发布对象、真实size/hash/MIME和不可变CLEAN扫描结果。runtime不能INSERT扫描结果，也不能UPDATE/DELETE/TRUNCATE历史修订/附件/扫描结果；真实扫描证明由专用受限scanner数据库账号记录，普通runtime不得伪造CLEAN。专用连接固定同一应用数据库，不以owner执行业务。
 
 UploadState: `CREATED` → `UPLOADED` → `PUBLISHED`；扫描暂时失败为`SCAN_FAILED`（可再次complete）；感染为终态`REJECTED`，不能换键反转。扫描是同步有界操作，UI可显示“扫描中”；数据库不靠永久SCANNING锁定崩溃会话。
+
+已发布资产在事务提交时必须满足：修订号从1连续唯一；`next_revision_no = MAX(revision_no)+1`；current指向最大revision。服务可以在同一事务内分配编号、插入修订、推进current，但不能提交孤立allocator advance、倒退或跳号。第一版不支持直接将current切回旧版本；未来业务回滚须另行设计。旧修订和冻结附件不受新版本影响。
 
 所有下列UUID/时间为JSON string，时间ISO8601；nullable字段显式null；不输出内部对象key。
 
@@ -88,10 +90,19 @@ type Page<T> = { items: T[]; nextCursor: string | null };
 - 415/UNSUPPORTED_FILE_TYPE：实际禁止/未知类型。
 - 409/UPLOAD_CONTENT_CONFLICT：已确认uploadId收到不同内容；绝不覆盖旧receipt/object。
 - 409/UPLOAD_NOT_READY：CREATED不能complete。
-- 422/FILE_INFECTED：本次真实扫描感染，持久化REJECTED；后续complete为409/UPLOAD_REJECTED。
+- 422/FILE_INFECTED：本次真实扫描感染，持久化REJECTED。FIX01冻结该complete命令的HTTP status、code和safe message；有效期内，同主体/项目/route/key/hash重放先重新鉴权，仍返回同一422/FILE_INFECTED，且不重扫、不新增scan/audit/Outbox、不改变upload版本。此前R11实现第二次同key返回409是已记录缺陷，不是本条契约。
+- 409/UPLOAD_REJECTED：新的complete key作用于已REJECTED会话；不同于原key的冻结重放。已过期键不承诺原响应，按新意图及当前终态拒绝，不能反转感染结果。
 - 503/SCAN_UNAVAILABLE：scanner ERROR/timeout/unavailable，持久化SCAN_FAILED，不发布，可同意图重试。
 - 503/STORAGE_UNAVAILABLE：对象存储失败，不能伪造DB成功。
 - 409/IDEMPOTENCY_KEY_REUSED：同route/actor/project/key不同内容。
+
+已记录的complete key先比对摘要；即使新body违反严格`{}`，也不能把既有命令的摘要冲突混成新意图。新key仍按严格字段校验400。暂时扫描失败503不持久化为永久命令结果，原key在scanner恢复后可明确重试；PUBLISHED成功快照保持原JSON格式，兼容其他模块成功重放。冻结业务错误仅保存受控status/code/message/outcome标识，不保存内部异常或堆栈；撤权、停用、租户有效期失效均先拒绝，不返回旧结果。
+
+## Scanner身份配置职责
+
+Flyway只管理`test365alm_scanner`能力角色与表权限，不管理登录秘密。已有V19/V20升级时使用仓库正式`tools/provision_asset_scanner_role.py`创建独立LOGIN子角色，只继承scanner能力，不加入runtime、不拥有业务对象、无SUPERUSER/CREATEDB/CREATEROLE/BYPASSRLS。已有fresh初始化的group LOGIN不被改密码或停用。同名安全角色可以幂等核验并用所给秘密验证登录，不旋转密码或扩大权限；不安全角色明确拒绝，操作员核验现有身份，凭据轮换另行处理。
+
+应用继续显式读取`TEST365ALM_ASSETS_SCANNER_DB_USERNAME`与`TEST365ALM_ASSETS_SCANNER_DB_PASSWORD`；不能回退runtime/migrator密码，连接URL固定同应用数据库。工具只供已授权owner/operator，秘密安全输入、不打印、不提交；本轮真实provision只在测试专属PostgreSQL。生产凭据保管、轮换及网络隔离仍须运维评审。
 
 外部I/O与DB没有2PC：会话创建即分配内部唯一quarantine及候选published对象身份。receipt事务失败保留CREATED，外部对象可能存在但不能下载，同uploadId安全重试；发布对象成功而DB事务失败时可识别为会话候选orphan，因无DBrevision无业务下载；publish事务成功而quarantine删除失败，PUBLISHED保持，cleanupPending=true可诊断。清理不改变冻结发布响应；后续状态GET显示当前cleanup状态。本轮不做GC daemon。
 
