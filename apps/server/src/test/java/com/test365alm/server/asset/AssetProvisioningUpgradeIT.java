@@ -35,6 +35,7 @@ class AssetProvisioningUpgradeIT {
     @Test void upgradedDatabaseUsesProvisionedRestrictedScannerLogin() throws Exception {
         try(var pg=ownedDatabase("upgrade")) {
             pg.start();var owner=owner(pg);
+            assertScramHostAuthentication(owner);
             verifyLibpqEmptyServiceIsNotUnset(pg);
             assertEquals(20,migration(pg,"20").migrate().migrationsExecuted);
             String originalLogin=login(),originalSecret=secret();
@@ -96,6 +97,7 @@ class AssetProvisioningUpgradeIT {
     @Test void scannerProvisioningPreservesExistingGroupLoginAndRejectsUnsafeRoles() throws Exception {
         try(var pg=ownedDatabase("roles")) {
             pg.start();assertEquals(20,migration(pg,"20").migrate().migrationsExecuted);var owner=owner(pg);
+            assertScramHostAuthentication(owner);
             String existing=login(),password=secret();assertEquals(0,AssetTestInfrastructure.repositoryScannerProvision(pg,existing,password));
             // Legacy development wiring makes the capability role itself a LOGIN. Preserve it.
             owner.execute("DO $fixture$ DECLARE verifier text; BEGIN SELECT rolpassword INTO verifier FROM pg_authid WHERE rolname='"+existing+"'; EXECUTE format('ALTER ROLE test365alm_scanner LOGIN PASSWORD %L',verifier); END $fixture$");
@@ -190,11 +192,12 @@ class AssetProvisioningUpgradeIT {
     private static void verifyLibpqEmptyServiceIsNotUnset(PostgreSQLContainer<?> pg) throws Exception {
         var actual=pg.getDockerClient().inspectContainerCmd(pg.getContainerId()).exec();
         assertEquals(AssetTestInfrastructure.RUN_ID,actual.getConfig().getLabels().get("com.test365alm.r11.provision"));
-        for(boolean unset:List.of(false,true)) {
+        for(int mode:List.of(0,1,2)) {
             var args=new ArrayList<String>(List.of("env","PGSERVICE=","PGSERVICEFILE=","PGCONNECT_TIMEOUT=3"));
-            if(unset)args.addAll(List.of("env","-u","PGSERVICE","-u","PGSERVICEFILE","-u","PGOPTIONS","-u","PGHOSTADDR"));
+            if(mode>0)args.addAll(List.of("env","-u","PGSERVICE","-u","PGSERVICEFILE","-u","PGOPTIONS","-u","PGHOSTADDR"));
+            if(mode==2)args.add("PGREQUIREAUTH=scram-sha-256");
             args.addAll(List.of("psql","-X","-w","-qAt","-U",pg.getUsername(),"-d",pg.getDatabaseName(),"-c","SELECT current_user"));
-            var exec=pg.getDockerClient().execCreateCmd(pg.getContainerId()).withAttachStdout(true).withAttachStderr(false).withCmd(args.toArray(String[]::new)).exec();
+            var exec=pg.getDockerClient().execCreateCmd(pg.getContainerId()).withAttachStdout(true).withAttachStderr(true).withCmd(args.toArray(String[]::new)).exec();
             var output=new StringBuilder();
             try(var completion=new com.github.dockerjava.api.async.ResultCallback.Adapter<com.github.dockerjava.api.model.Frame>() {
                 @Override public void onNext(com.github.dockerjava.api.model.Frame frame) { output.append(new String(frame.getPayload(),StandardCharsets.UTF_8)); }
@@ -203,10 +206,18 @@ class AssetProvisioningUpgradeIT {
                 assertTrue(completion.awaitCompletion(15,java.util.concurrent.TimeUnit.SECONDS),"owned libpq control must finish within its bound");
             }
             var exit=pg.getDockerClient().inspectExecCmd(exec.getId()).exec().getExitCodeLong();
-            if(unset){assertEquals(0L,exit);assertEquals(pg.getUsername(),output.toString().trim());}
-            else assertNotEquals(0L,exit,"empty PGSERVICE/PGSERVICEFILE must reproduce the real pre-connection failure");
+            if(mode==1){assertEquals(0L,exit);assertEquals(pg.getUsername(),output.toString().trim());}
+            else {
+                assertNotEquals(0L,exit,mode==0?"empty PGSERVICE/PGSERVICEFILE must reproduce the real pre-connection failure":"requiring SCRAM must reject the same local trust connection");
+                assertTrue(output.toString().contains(mode==0?"service file \"\" not found":"server did not complete authentication"),"reject for the targeted libpq condition, not an unrelated connection failure");
+            }
         }
-        System.out.println("R11 libpq isolation: empty service variables fail before SQL; env -u succeeds on the same owned PostgreSQL");
+        System.out.println("R11 libpq isolation: empty service variables fail before SQL; env -u succeeds; require_auth rejects local trust on the same owned PostgreSQL");
+    }
+    private static void assertScramHostAuthentication(JdbcTemplate owner) {
+        var methods=owner.queryForList("SELECT auth_method FROM pg_hba_file_rules WHERE type LIKE 'host%' ORDER BY rule_number",String.class);
+        assertFalse(methods.isEmpty());assertTrue(methods.stream().allMatch("scram-sha-256"::equals),"owned host authentication must demand actual SCRAM, including loopback");
+        assertEquals(1,owner.queryForObject("SELECT count(*) FROM pg_hba_file_rules WHERE type='local' AND database=ARRAY['all']::text[] AND user_name=ARRAY['all']::text[] AND auth_method='trust'",Integer.class),"local trust is retained only for the explicit no-secret libpq control");
     }
     private record Fixture(UUID admin,UUID member,UUID tenant,UUID domain,UUID project,UUID requirement) { }
     private static Fixture fixture(JdbcTemplate owner,AnnotationConfigApplicationContext c) {
@@ -238,6 +249,7 @@ class AssetProvisioningUpgradeIT {
     private static PostgreSQLContainer<?> ownedDatabase(String suffix) {
         return new PostgreSQLContainer<>(DockerImageName.parse("postgres:17.11@sha256:f4c66b820c6f974249089d3d16d86a3698eae11e8746eb6644b2271031e91232").asCompatibleSubstituteFor("postgres"))
             .withDatabaseName("r11_provision_"+suffix).withUsername("r11_provision_owner").withPassword(secret()).withInitScript("r03-test-role.sql")
+            .withEnv("POSTGRES_INITDB_ARGS","--auth-host=scram-sha-256")
             .withLabel("com.test365alm.r11.provision",AssetTestInfrastructure.RUN_ID);
     }
     private static Flyway migration(PostgreSQLContainer<?> pg,String target){return Flyway.configure().dataSource(pg.getJdbcUrl(),pg.getUsername(),pg.getPassword()).target(target).load();}

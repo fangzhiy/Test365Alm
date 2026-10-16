@@ -117,6 +117,17 @@ class ScannerProvisionTests(unittest.TestCase):
         self.assertNotIn("private failure", output.getvalue())
         self.assertIn("may already be committed", output.getvalue())
 
+    def test_both_connections_require_scram_even_if_parent_requests_trust(self):
+        env = self.environment(); env["PGREQUIREAUTH"]="none"
+        for container_mode in (False, True):
+            if container_mode: env.update(PGPORT="5432", TEST365ALM_PROVISION_CONTAINER_ID="a" * 64)
+            run=Mock(side_effect=[subprocess.CompletedProcess([], 0, "", ""), subprocess.CompletedProcess([], 0, "scanner_owned_fixture\n", "")])
+            with contextlib.redirect_stdout(io.StringIO()): self.assertEqual(0, provision.main(env, run))
+            for call in run.call_args_list:
+                self.assertEqual("scram-sha-256",call.kwargs["env"].get("PGREQUIREAUTH"))
+                self.assertIn("--dbname=dbname=owned_fixture require_auth=scram-sha-256",call.args[0],"explicit parameter must also fail closed on an unsupported client")
+                if container_mode: self.assertIn("PGREQUIREAUTH",call.args[0])
+
     def test_login_verification_timeout_reports_possible_partial_completion(self):
         run = Mock(side_effect=[subprocess.CompletedProcess([], 0, "", ""), subprocess.TimeoutExpired(["psql"], 15)])
         output = io.StringIO()

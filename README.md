@@ -11,19 +11,21 @@
 
 正常运维默认调用本机`psql -X -w`；只有显式给出`TEST365ALM_PROVISION_CONTAINER_ID`完整ID时才可使用指定已授权容器的psql。此模式仅支持容器内`127.0.0.1:5432`，不会自动发现、创建、停止或清理容器。集成测试通过Testcontainers证明资源身份后使用此正式入口；不要把用户日常数据库当作测试资源。
 
+正式工具使用兼容PostgreSQL17 `require_auth`的psql/libpq，并在operator与scanner两次连接中都明确要求SCRAM-SHA-256认证。不支持该参数、trust或未完成SCRAM握手时安全拒绝；“连接成功”不能替代密码有效性。工具不会自动改`pg_hba.conf`、放宽权限或切换认证；若现有授权连接策略不满足，先由负责人评审适用配置，不在生产试错。容器内偏转环境变量必须真正unset，空字符串不等同移除。
+
 工具要求operator既有角色管理授权，也能设置所需会话日志参数；只有`SET LOCAL`保护全部成功后才发送SCRAM verifier（它也属于秘密）。存在preload扩展日志钩子或无法保证该会话日志边界时安全拒绝，不修改全局日志、不要求放宽生产权限。授权operator需评估自己的环境与审计政策；本轮仅验证隔离PostgreSQL。若创建已提交但随后登录核验失败，工具返回非零并明确可能部分完成；先核对已创建角色，不能自动重置密码、扩大权限或用owner替代。
 
 发布感染结果后，原complete key在有效期内重放同一422/FILE_INFECTED；新key对REJECTED仍409/UPLOAD_REJECTED。scanner暂时失败的503不永久冻结，恢复后原key可明确重试。所有重放先重新授权。资产current只能是最大修订，allocator在提交时严格连续；旧附件仍冻结旧修订。以下原R11页面及完整测试命令继续适用。
 
-> **当前状态：R11-CORE-BATCH04 资产附件最小切片代码CI通过，待独立审核。** [PR #10](https://github.com/fangzhiy/Test365Alm/pull/10) 依赖未合并的R10 PR #9，base为 `feat/r10-m06-001`。代码 `2a38148bfad5fd9b8e599b6d469a8e8b7601717d` 的Push38948375346/PR38948383146均六Job成功；最终文档交付CI在回复核对。默认分支仍 `chore/r01-status-001@a2419e292c004b2cd4c7278bdaa40b1ce3442a22`，PR #1～#8已合入。下文旧轮次的范围、未实现项和迁移版本为当时历史，现行M05及V20/V21以本节为准；不代表完整模块或ALM完成。
+> **原R11历史基线：资产附件最小切片代码CI通过。** 代码 `2a38148bfad5fd9b8e599b6d469a8e8b7601717d` 的Push38948375346/PR38948383146均六Job成功，原交付c150958的Push38949795012/PR38949800659也已成功。这不替代本次FIX01；当前结果以顶部FIX01记录为准。默认分支仍 `chore/r01-status-001@a2419e292c004b2cd4c7278bdaa40b1ce3442a22`，PR #1～#8已合入、PR9/10未合并。下文旧轮次的范围、未实现项和迁移版本为历史，不代表完整模块或ALM完成。
 
 ## R11 私有资产与冻结附件（最小切片，代码验证通过）
 
 本轮仅M05第一切片；代码CI实际63单元、143真实集成、213前端、106 Python、14完整浏览器及独立项目UI另1项，零失败/错误/跳过。起点、确切场景、两次历史红CI及限制见[记录](docs/progress/runs/R11-CORE-BATCH04.md)，规则见[契约](contracts/assets.md)/[ADR025](docs/adr/025-r11-private-assets-and-frozen-attachments.md)。R10 PR9尚未合并，新功能不写入主线。历史孤立登录间歇失败根因未证明，增加安全诊断并保留原测试，不宣称已根治。
 
-全新隔离开发环境：根目录执行`python tools/prepare_r03_dev.py`，它生成随机本地凭据并拒绝覆盖已有`.env.r03`/realm。使用唯一项目名，运行`docker compose --env-file .env.r03 -f compose.r03.yaml -f compose.r11.yaml -p <唯一项目名> up -d postgres keycloak asset-store asset-scanner`。新PostgreSQL容器初始化独立runtime/scanner账号，Flyway由migrator执行V20；S3两个私有bucket、clamd都只发布回环端口。不要对已有数据库卷重新初始化或清空。
+全新隔离开发环境：根目录执行`python tools/prepare_r03_dev.py`，它生成随机本地凭据并拒绝覆盖已有`.env.r03`/realm。使用唯一项目名，运行`docker compose --env-file .env.r03 -f compose.r03.yaml -f compose.r11.yaml -p <唯一项目名> up -d postgres keycloak asset-store asset-scanner`。新PostgreSQL容器初始化独立runtime/scanner账号，Flyway由migrator执行当前V1—V21；S3两个私有bucket、clamd都只发布回环端口。不要对已有数据库卷重新初始化或清空。
 
-已有`.env.r03`时不删除/覆盖它：按`prepare_r03_dev.py`列出的R11键在受控独立环境自行配置对象服务/扫描账号；旧数据库必须先备份评估并由授权迁移身份按V20升级，再单独设置scanner登录凭据。不要把migrator/owner凭据填入scanner或runtime。应用scanner连接固定使用同一个datasource URL；`TEST365ALM_ASSETS_ENABLED`默认false，未配置不提供伪成功上传。
+已有`.env.r03`时不删除/覆盖它：按`prepare_r03_dev.py`列出的R11键在受控独立环境自行配置对象服务/扫描账号；旧数据库必须先备份评估并由授权迁移身份升级到V21，再按顶部正式工具说明单独配置scanner LOGIN。不要把migrator/owner凭据填入scanner或runtime。应用scanner连接固定使用同一个datasource URL；`TEST365ALM_ASSETS_ENABLED`默认false，未配置不提供伪成功上传。
 
 PowerShell分别启动后端/前端：` . .\tools\import_r03_env.ps1`加载同一份配置，在`apps/server`运行`.\mvnw.cmd spring-boot:run`；在`apps/web`运行`npm run dev`。可先运行`python tools/verify_r11_services.py`检查本机私有S3拒绝匿名访问及真实clamd benign控制。应用健康探针仍只说明平台/数据库状态，不声称外部文件服务全部正常。
 
@@ -41,7 +43,7 @@ PowerShell分别启动后端/前端：` . .\tools\import_r03_env.ps1`加载同�
 
 发布/周期编辑使用版本条件；412 保留草稿，读取最新后必须明确采用或放弃。未知写入保留原键/内容/版本重试；写已确认后仅刷新 GET。归档后全部新写入拒绝，历史仍可读。列表通过“更多”继续分页，不下载全部页；范围最多1000、相关缺陷最多10000，超限明确拒绝评估，不显示截断指标。
 
-R10当轮正式迁移 V19、专用失败探针 V20；现行R11已为正式V20/探针V21。完整命令沿用下方 `mvn -B -ntp -Pintegration verify`，专项证据检查为 `python tools/verify_r10_release_report.py apps/server/target/failsafe-reports`；浏览器为 `npx playwright test e2e/releases.spec.ts --workers=1 --retries=0`，仅对本轮 CI-owned 环境执行。契约见 [releases](contracts/releases.md)、[ADR024](docs/adr/024-r10-release-cycle-quality-snapshot.md)、[R10实际记录](docs/progress/runs/R10-CORE-BATCH03.md)。不是完整规划、质量中心、审批或资产管理模块。
+R10当轮正式迁移 V19、专用失败探针 V20；现行R11-FIX01为正式V21/探针V22。完整命令沿用下方 `mvn -B -ntp -Pintegration verify`，专项证据检查为 `python tools/verify_r10_release_report.py apps/server/target/failsafe-reports`；浏览器为 `npx playwright test e2e/releases.spec.ts --workers=1 --retries=0`，仅对本轮 CI-owned 环境执行。契约见 [releases](contracts/releases.md)、[ADR024](docs/adr/024-r10-release-cycle-quality-snapshot.md)、[R10实际记录](docs/progress/runs/R10-CORE-BATCH03.md)。不是完整规划、质量中心、审批或资产管理模块。
 
 前端在`apps/web`执行 `npm run test:run -- --reporter=verbose --reporter=json --outputFile.json=../../local-evidence/r10/vitest.json` 后，在根目录执行 `python tools/verify_r10_release_web_report.py local-evidence/r10/vitest.json`，验证实际组件/API测试名称与完整结果。CI保存`frontend-evidence`内JSON/摘要，以及`backend-evidence`内Failsafe XML/`release-r10-report.txt`；浏览器仅上传脱敏事件时间线与JUnit，不上传原始认证trace。
 
@@ -318,7 +320,7 @@ python tools/verify_r02_readiness.py --env-file .env.r02-test --compose-project 
 
 脚本严格要求监听地址可验证且只能是 `127.0.0.1`、`::1` 或 `::ffff:127.0.0.1`；无法枚举监听、进程提前退出、版本提交不一致、端口被占用或数据源不是本机专用 PostgreSQL 时失败。首次 `up` 前会检查目标项目是否已有容器（包括停止的容器）、网络或卷；任何已有资源都会使脚本拒绝运行。默认使用当前本地 Docker context；若专用测试配置写入 `TEST365ALM_DOCKER_CONTEXT`，它必须与当前 context 一致。远端 Docker context 被拒绝。测试配置只接受脚本规定的键；父进程的 Spring、JVM 和 Compose 覆盖项不会传入子进程。
 
-启动迁移失败验证保留正式 V20，向临时目录注入独立的 V21 故障迁移，不修改正式 `db/migration`；脚本先确认正式 V20 已成功记录：
+启动迁移失败验证保留正式 V21，向临时目录注入独立的 V22 故障迁移，不修改正式 `db/migration`；脚本先确认正式 V21 已成功记录：
 
 ```powershell
 python tools/verify_r02_migration_failure.py --env-file .env.r02-test --compose-project test365alm-r02-migration-manual --server-port 18082

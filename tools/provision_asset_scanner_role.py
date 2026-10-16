@@ -5,8 +5,9 @@ PGPASSWORD/PGPASSFILE/TLS configuration. Supply the new scanner identity through
 TEST365ALM_ASSETS_SCANNER_DB_USERNAME and TEST365ALM_ASSETS_SCANNER_DB_PASSWORD.
 No secrets are command-line arguments or written to files. SQL receives only a
 client-side SCRAM verifier (also a secret). Session-only logging guards must succeed
-before it is sent; preloaded extension hooks are refused. Existing restricted logins
-are not password-rotated. No server-wide logging configuration is changed.
+before it is sent; preloaded extension hooks are refused. Both connections require
+a real SCRAM exchange, never trust authentication. Existing restricted logins are
+not password-rotated. No server-wide logging configuration is changed.
 """
 from __future__ import annotations
 
@@ -95,8 +96,10 @@ def main(environment=None, run=subprocess.run) -> int:
             raise ValueError("Invalid PostgreSQL port")
         payload = build_sql(login, password)
         env = {key: source[key] for key in (*_RUNTIME, *_CONNECTION) if key in source}
-        env.update(PGPORT=str(port), PGCONNECT_TIMEOUT="5", PGAPPNAME="test365alm-scanner-provision")
-        command = ["psql", "-X", "-w", "-q", "-t", "-A", "--set=ON_ERROR_STOP=1", "--set=ECHO=none", "--set=VERBOSITY=sqlstate"]
+        env.update(PGPORT=str(port), PGCONNECT_TIMEOUT="5", PGAPPNAME="test365alm-scanner-provision", PGREQUIREAUTH="scram-sha-256")
+        # The explicit parameter also makes older/unsupported clients reject the
+        # connection instead of silently ignoring an unknown environment variable.
+        command = ["psql", "-X", "-w", "-q", "-t", "-A", f"--dbname=dbname={source['PGDATABASE']} require_auth=scram-sha-256", "--set=ON_ERROR_STOP=1", "--set=ECHO=none", "--set=VERBOSITY=sqlstate"]
         container = source.get("TEST365ALM_PROVISION_CONTAINER_ID")
         if container:
             if not re.fullmatch(r"[a-f0-9]{64}", container) or env["PGHOST"] != "127.0.0.1" or port != 5432:
@@ -104,7 +107,7 @@ def main(environment=None, run=subprocess.run) -> int:
             env.update({key: source[key] for key in _DOCKER if key in source})
             # Docker reads each value from its own environment; credentials never appear in argv.
             # The operator/test harness is responsible for selecting an authorized owned resource.
-            forward = [value for key in (*_CONNECTION, "PGCONNECT_TIMEOUT", "PGAPPNAME") for value in ("--env", key)]
+            forward = [value for key in (*_CONNECTION, "PGCONNECT_TIMEOUT", "PGAPPNAME", "PGREQUIREAUTH") for value in ("--env", key)]
             # libpq distinguishes a missing PGSERVICE from an empty service name.
             # Unset inherited values inside the container; KEY= is not equivalent.
             clear = [value for key in ("PGOPTIONS", "PGSERVICE", "PGSERVICEFILE", "PGHOSTADDR", "PSQLRC") for value in ("-u", key)]
