@@ -11,7 +11,7 @@
 
 ## 项目状态
 
-- R08 当前默认主线已合入 PR #1～#6；新业务分支必须从已验证主线建立，不再向旧 PR 追加。新 R08 PR 不自动合并。
+- 2026-10-17 R10 起点：默认主线 `chore/r01-status-001@a2419e292c004b2cd4c7278bdaa40b1ce3442a22` 已合入PR #1～#8，主线CI38931708362六Job成功。新R10 M06分支从此已验证主线建立，base为默认分支。下面更早轮次未合并/依赖分支说明均为历史；新PR不自动合并。
 - M04/M11 仅字段定义/共享值验证、typed 需求→用例关系及有限同步覆盖切片。契约为 `contracts/field-metadata.md`、`contracts/requirement-test-trace.md`，决策 ADR 022；不能修改整个模块/WBS/验收的 PLANNED/NOT_RUN。
 - 正式迁移当前 V18；仅增加新迁移，V1—V17 不变，独立故意失败探针当前 V19。历史文档中的 V17/V18 失败探针是当时事实，不是现行配置。
 - R08 专项：`mvn -B -ntp -Pintegration verify '-Dit.test=CoreMetadataTraceDatabaseIT,ManualExecutionMigrationUpgradeIT,OidcCallbackSecurityIT'`；完整仍 `mvn -B -ntp -Pintegration verify`，Windows Wrapper 独立为 `.\mvnw.cmd`，Linux `./mvnw`。根目录 `python tools/verify_r08_core_report.py apps/server/target/failsafe-reports` 要求确切 M04/M11 DB、真实 OIDC HTTP、V16 非空升级测试名，无失败/错误/跳过。浏览器必须包含真实字段验证和 MEMBER 追踪→执行 PASS 流程，保留原十个用例、单 worker、零重试。

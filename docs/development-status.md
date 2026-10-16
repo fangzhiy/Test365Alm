@@ -1,6 +1,13 @@
 # Test365Alm 开发状态
 
-## R09-CORE-BATCH02 当前状态（A通过，B代码验证通过；最终文档交付CI见交付回复）
+## R10-CORE-BATCH03 当前状态（主线核验通过，M06 实施中）
+
+- 2026-10-17 实际 GitHub 默认分支 `chore/r01-status-001@a2419e292c004b2cd4c7278bdaa40b1ce3442a22`；PR #7 merged (`e908b8e9f23be65efa95ecdf358229406d9f0fe4`)、PR #8 merged (`a2419e2…`)。原 R09 最终交付 `32e13d86731b0e2bc5a7d844c94a6f471f9a941e` 已在主线，下面各轮 Open/待合并/旧默认 SHA 均为当时历史快照，不是当前状态。
+- [主线CI38931708362](https://github.com/fangzhiy/Test365Alm/actions/runs/38931708362) 实际 checkout=`a2419e2…`，六 Job success；44单元/110集成/160前端/85Python/12完整浏览器+独立项目UI1，失败/错误/跳过0。旧M07/M09/M11/M10精确报告门禁通过，六个制品存在。
+- 阶段A本机在上述主线完成系统Maven44单元、Vitest160、Python85/规划校验、TypeScript/Vite构建。沙箱权限初次失败如实保留；正常权限重跑通过。Docker Desktop Linux engine不可达，本机真实数据库/浏览器为 BLOCKED_LOCAL；CI成功不是本机成功。
+- 从上述真实主线新建 `feat/r10-m06-001`，新PR以默认分支为base，不依赖已合并的feature分支。全文 [R10输入](progress/inputs/R10-CORE-BATCH03.md)、[本轮记录](progress/runs/R10-CORE-BATCH03.md)；契约 [releases.md](../contracts/releases.md)。M06尚在实施，不预先声明验收通过；32模块/WBS/G0状态不改。
+
+## R09-CORE-BATCH02 历史快照（下述未合并状态是2026-10-16执行时事实）
 
 - 全文：[R09输入](progress/inputs/R09-CORE-BATCH02.md)；[连续实施/失败修复/验收记录](progress/runs/R09-CORE-BATCH02.md)。原R08及更早记录保留为当时事实，不恢复已合并PR或把历史本机Docker可用当作今天可用。
 - 阶段A在PR #7修复NUMBER零边界，补真实FAIL→PASS→失效/修订变化、字段编辑回滚和停用旧会话直接HTTP证据。head `aaf18e5726037afe5c6cf693ca1eb7449faa8141`，Push38859691958/PR38859696614六Job成功，PR checkout `218692a30ded9e44a91a3adfc89ba1064cc6cc75`；42单元/98集成/145前端/80Python/11浏览器，独立项目UI另1。PR7仍Open未合并。
