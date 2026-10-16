@@ -96,10 +96,19 @@ class AssetDatabaseIT {
     }
     @Test void scannerUnavailableAndTimeoutRemainRetryableWithoutPublication() throws Exception {
         var f=fixture();var u=assets.createUpload(f.member,f.project,body(TEXT,"retry.txt",null),key());put(f,u,TEXT);String intent=key();
-        AssetTestInfrastructure.stopScanner();
+        // A real scanner is frozen, not replaced; its process and published endpoint stay identical.
+        AssetTestInfrastructure.pauseScanner();
         try{denied(503,"SCAN_UNAVAILABLE",()->assets.complete(f.member,f.project,u.id(),EMPTY,intent));assertEquals("SCAN_FAILED",assets.getUpload(f.member,f.project,u.id()).state());inaccessibleCandidate(f,u);}
-        finally{AssetTestInfrastructure.startScanner();}
+        finally{AssetTestInfrastructure.resumeScanner();}
         var result=assets.complete(f.member,f.project,u.id(),EMPTY,intent);assertEquals("PUBLISHED",result.state());
+        var refused=assets.createUpload(f.member,f.project,body(TEXT,"refused.txt",null),key());put(f,refused,TEXT);
+        int closedPort;try(var ownedPort=new ServerSocket(0,1,InetAddress.getLoopbackAddress())){closedPort=ownedPort.getLocalPort();}
+        try(var probe=new Socket()){assertThrows(ConnectException.class,()->probe.connect(new InetSocketAddress(InetAddress.getLoopbackAddress(),closedPort),500));}
+        var refusedService=service(blobs,new ClamdMalwareScanner(InetAddress.getLoopbackAddress().getHostAddress(),closedPort,100,200));
+        int publications=count("asset_revision",f.project);String refusedIntent=key();
+        assertTimeout(Duration.ofSeconds(3),()->denied(503,"SCAN_UNAVAILABLE",()->refusedService.complete(f.member,f.project,refused.id(),EMPTY,refusedIntent)));
+        assertEquals("SCAN_FAILED",assets.getUpload(f.member,f.project,refused.id()).state());assertEquals(publications,count("asset_revision",f.project));inaccessibleCandidate(f,refused);
+        assertEquals("PUBLISHED",assets.complete(f.member,f.project,refused.id(),EMPTY,refusedIntent).state());
         var second=assets.createUpload(f.member,f.project,body(TEXT,"timeout.txt",null),key());put(f,second,TEXT);
         try(var server=new ServerSocket(0,1,InetAddress.getLoopbackAddress())) {
             var accepted=new CountDownLatch(1);var release=new CountDownLatch(1);var pool=Executors.newSingleThreadExecutor();
@@ -137,6 +146,7 @@ class AssetDatabaseIT {
     }
     @Test void runtimeRlsAndCurrentMembershipProtectEveryScope() throws Exception {
         var f=fixture();var sibling=sibling(f);var foreign=fixture();var a=publish(f,TEXT,null);publish(sibling,TEXT,null);publish(foreign,TEXT,null);var u=assets.createUpload(f.member,f.project,body(TEXT,"owned.txt",null),key());
+        assets.createAttachment(f.member,f.project,link("REQUIREMENT",requirement(f),a),key());
         var before=snapshot(f.project);denied(403,"FORBIDDEN",()->assets.createUpload(f.viewer,f.project,body(TEXT,"no.txt",null),key()));
         denied(403,"FORBIDDEN",()->assets.createUpload(f.viewer,f.project,body(TEXT,"version.txt",a.assetId()),key()));
         denied(404,"NOT_FOUND",()->assets.get(f.outsider,f.project,a.assetId()));denied(404,"NOT_FOUND",()->assets.getUpload(f.admin,f.project,u.id()));assertEquals(before,snapshot(f.project));
@@ -146,15 +156,32 @@ class AssetDatabaseIT {
         }
         try(var c=connection(f,f.viewer)){assertEquals("0",scalar(c,"SELECT count(*) FROM upload_session"));sqlDenied(c,"INSERT INTO asset(tenant_id,project_id,id,current_revision_id,created_by) VALUES(?,?,?,?,?)","42501",f.tenant,f.project,UUID.randomUUID(),UUID.randomUUID(),f.viewer);}
         projects.putMember(f.admin,f.project,f.member,List.of("PROJECT_VIEWER"),1L,false);assertArrayEquals(TEXT,download(f.member,f.project,a.assetId(),a.revisionId()));denied(403,"FORBIDDEN",()->put(f,u,TEXT));
-        projects.revokeMember(f.admin,f.project,f.member,2L);denied(404,"NOT_FOUND",()->assets.get(f.member,f.project,a.assetId()));denied(404,"NOT_FOUND",()->assets.download(f.member,f.project,a.assetId(),a.revisionId()));
-        owner().update("UPDATE principal SET disabled_at=CURRENT_TIMESTAMP WHERE id=?",f.viewer);denied(404,"NOT_FOUND",()->assets.get(f.viewer,f.project,a.assetId()));
-        owner().update("UPDATE tenant_member SET valid_until=CURRENT_TIMESTAMP WHERE tenant_id=? AND principal_id=?",f.tenant,f.admin);denied(404,"NOT_FOUND",()->assets.download(f.admin,f.project,a.assetId(),a.revisionId()));
+        // Reuse each restricted connection with an unchanged, valid identity/scope. These queries do
+        // not call service pre-authorization: the database itself must hide previously visible rows.
+        try(var c=connection(f,f.member)) {
+            for(String table:ASSET_TABLES)assertTrue(Long.parseLong(scalar(c,"SELECT count(*) FROM "+table))>0,table+" must be nonempty before revocation");
+            projects.revokeMember(f.admin,f.project,f.member,2L);assertRuntimeScopeInvisible(c,f,f.member);
+        }
+        denied(404,"NOT_FOUND",()->assets.get(f.member,f.project,a.assetId()));denied(404,"NOT_FOUND",()->assets.download(f.member,f.project,a.assetId(),a.revisionId()));
+        try(var c=connection(f,f.viewer)) {
+            assertEquals("1",scalar(c,"SELECT count(*) FROM asset"));assertEquals("1",scalar(c,"SELECT count(*) FROM attachment_link"));
+            assertEquals(1,owner().update("UPDATE principal SET disabled_at=CURRENT_TIMESTAMP WHERE id=?",f.viewer));assertRuntimeScopeInvisible(c,f,f.viewer);
+        }
+        denied(404,"NOT_FOUND",()->assets.get(f.viewer,f.project,a.assetId()));
+        try(var c=connection(f,f.admin)) {
+            assertEquals("1",scalar(c,"SELECT count(*) FROM asset"));assertEquals("1",scalar(c,"SELECT count(*) FROM attachment_link"));
+            assertEquals(1,owner().update("UPDATE tenant_member SET valid_until=CURRENT_TIMESTAMP WHERE tenant_id=? AND principal_id=?",f.tenant,f.admin));assertRuntimeScopeInvisible(c,f,f.admin);
+        }
+        denied(404,"NOT_FOUND",()->assets.download(f.admin,f.project,a.assetId(),a.revisionId()));
     }
     @Test void concurrentSameIntentCreatesOneReceiptScanAndRevision() throws Exception {
         var f=fixture();String create=key();var pair=concurrent(i->assets.createUpload(f.member,f.project,body(TEXT,"concurrent.txt",null),create));assertEquals(pair.get(0),pair.get(1));var u=(AssetService.Upload)pair.get(0);
         pair=concurrent(i->put(f,u,TEXT));assertEquals(pair.get(0),pair.get(1));String complete=key();pair=concurrent(i->assets.complete(f.member,f.project,u.id(),EMPTY,complete));assertEquals(pair.get(0),pair.get(1));var a=(AssetService.Upload)pair.get(0);
         String linkKey=key();UUID req=requirement(f);pair=concurrent(i->assets.createAttachment(f.member,f.project,link("REQUIREMENT",req,a),linkKey));assertEquals(pair.get(0),pair.get(1));
         assertEquals(1,count("upload_session",f.project));assertEquals(1,count("asset",f.project));assertEquals(1,count("asset_revision",f.project));assertEquals(1,count("scan_result",f.project));assertEquals(1,count("attachment_link",f.project));
+        assertEquals(6,owner().queryForObject("SELECT count(*) FROM audit_event WHERE project_id=? AND object_type IN ('upload_session','attachment_link')",Integer.class,f.project),"same-intent concurrency must not duplicate asset audit events");
+        assertEquals(6,count("asset_outbox_event",f.project),"session, content, scan, asset, revision and link each emit once");
+        assertEquals(3,count("core_command_idempotency",f.project),"create, complete and link retain exactly one frozen result each");
         var before=snapshot(f.project);denied(409,"IDEMPOTENCY_KEY_REUSED",()->assets.createUpload(f.member,f.project,body(TEXT,"changed.txt",null),create));
         denied(409,"IDEMPOTENCY_KEY_REUSED",()->assets.createAttachment(f.member,f.project,link("REQUIREMENT",UUID.randomUUID(),a),linkKey));assertEquals(before,snapshot(f.project));
     }
@@ -250,6 +277,14 @@ class AssetDatabaseIT {
     private static int sql(Connection c,String query,Object...args)throws SQLException{try(var s=c.prepareStatement(query)){for(int i=0;i<args.length;i++)s.setObject(i+1,args[i]);return s.executeUpdate();}}
     private static void sqlDenied(Connection c,String query,String state,Object...args){var e=assertThrows(SQLException.class,()->sql(c,query,args));assertEquals(state,e.getSQLState(),e.getMessage());}
     private static String scalar(Connection c,String query)throws SQLException{try(var s=c.createStatement();var r=s.executeQuery(query)){assertTrue(r.next());return r.getString(1);}}
+    private static final List<String> ASSET_TABLES=List.of("upload_session","asset","asset_revision","scan_result","attachment_link","asset_outbox_event");
+    private static void assertRuntimeScopeInvisible(Connection c,Fixture f,UUID actor)throws SQLException {
+        assertEquals("test365alm_runtime",scalar(c,"SELECT current_user"));
+        assertEquals(f.tenant.toString(),scalar(c,"SELECT current_setting('test365alm.tenant_id')"));
+        assertEquals(f.project.toString(),scalar(c,"SELECT current_setting('test365alm.project_id')"));
+        assertEquals(actor.toString(),scalar(c,"SELECT current_setting('test365alm.principal_id')"));
+        for(String table:ASSET_TABLES)assertEquals("0",scalar(c,"SELECT count(*) FROM "+table),table+" RLS must independently reject the now-invalid membership");
+    }
     private static void denied(int status,String code,Runnable action){var e=assertThrows(ProjectAccessException.class,action::run);assertEquals(status,e.status().value());assertEquals(code,e.code());}
     private static JsonNode json(String s){return CoreCommands.JSON.readTree(s);}
     private static JsonNode body(byte[] bytes,String filename,UUID asset){var n=CoreCommands.JSON.createObjectNode().put("filename",filename).put("size",bytes.length).put("sha256",sha(bytes)).put("contentType","text/plain");if(asset!=null)n.put("assetId",asset.toString());return n;}

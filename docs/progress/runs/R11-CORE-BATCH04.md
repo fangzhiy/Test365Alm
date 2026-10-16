@@ -46,3 +46,14 @@ R10最终Push38937842395/PR38937893784六Job成功，PR实际checkout`1c82824b11
 安全自审发现普通runtime原可INSERT CLEAN扫描结果，已改为独立受限scanner DB identity，测试要求runtime直接伪造42501。真实扫描日志独立提交，业务发布回滚允许保留扫描事实但无可下载revision；已感染证明即便audit回滚也不能通过重扫反转。不是S3/DB 2PC。raw PUT新增15s可配置读空闲限制并用真实不完整HTTP流验证；它不是总墙钟预算。
 
 本轮新增/修改文件按职责：`asset/`生产/测试、正式V20、2个OIDC HTTP矩阵、旧升级到latest计数与冻结V18→V19目标；附件面板/API/三处详情接线及新browser；私有Compose、配置生成/受限账号、V21失败探针、精确M05门禁/离线对抗测试、原6Job证据白名单；契约/ADR025/README/AGENTS/本输入与记录。发布前核对完整git清单，原V1—V19无改动。
+
+## 首次真实CI与补强（历史保留）
+
+首次代码候选`1fcbda1caae9a427470fd1156e53fcbf9b422cbf`经普通git正常推送，创建[PR10](https://github.com/fangzhiy/Test365Alm/pull/10)，base为`feat/r10-m06-001`、Depends on PR9。普通push同样遇到沙箱DNS错误，授权相同命令退出0；远端ref回读与本地相同，无Git Data API映射差异。
+
+- [Push38945148129](https://github.com/fangzhiy/Test365Alm/actions/runs/38945148129)及[PR38945221859](https://github.com/fangzhiy/Test365Alm/actions/runs/38945221859)均failure：仅server失败，其余五Job成功。
+- Push server117122280298：Surefire60成功；Failsafe143、failure2/error12/skip0。首个故障为`scannerUnavailableAndTimeoutRemainRetryableWithoutPublication`在真实扫描器恢复阶段超时180秒，随后共享scanner不可用；两个新HTTP方法503。非空V19升级先执行成功，其余旧模块保持通过。修复中，不据其他Job绿色判整轮通过。
+- 两条browser完整14项及独立项目UI1项通过；真实S3匿名403、真实clamd benign CLEAN、MEMBER上传/发布/reload/download/rev2冻结rev1、独立VIEWER负向均实际执行，不是mock扫描。后续代码仍须最终CI回归。
+- 本地独立自审补强：同一runtime连接在revoke/disabled/tenant expiry后直接读六表为0；V20升级后六新表为空；同键并发audit/Outbox各6、core幂等3。属于补强断言，不新增业务范围。
+- Seaweed官方日志会输出AccessKey及identity前8字符：Python日志过滤新增精确ACCESS_KEY及该前缀；Testcontainers启动失败日志也在输出前脱敏，不输出add-mask原值。合成回归实际RED→GREEN；Python105通过，后端新增1项后系统Maven61通过。只保留故障摘要，不隐藏失败。
+- 首轮PR实际checkout为`f4d0403f18d6e558e8e2457925fdee5b4cea4bc4`，并非分支head。恢复失败的确切内部clamd重启原因没有足够日志，不能编造为已证实端口变化。有限修复改为冻结/恢复本轮真实scanner容器，fresh inspect校验ID/标签/StartedAt/真实端口始终相同；恢复后实际benign扫描须CLEAN，不重启应用。另保留真实连接拒绝及受控TCP读超时对照，均503且无发布；不是mock扫描返回。未提高180秒方法超时，恢复预算由180缩为60秒。下一CI实际验证此修复。

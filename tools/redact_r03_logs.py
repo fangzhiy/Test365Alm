@@ -15,6 +15,9 @@ def redact(env_text: str, log_text: str) -> str:
         key, value = line.split("=", 1)
         if any(marker in key for marker in ("PASSWORD", "SECRET", "TOKEN", "ACCESS_KEY")) and value:
             secrets.append(value)
+            # SeaweedFS names its generated admin identity using this known key prefix.
+            if "ACCESS_KEY" in key and len(value) > 8:
+                secrets.append(value[:8])
     for secret in sorted(set(secrets), key=len, reverse=True):
         log_text = log_text.replace(secret, "[REDACTED]")
     log_text = re.sub(r"(?i)(authorization:\s*bearer\s+)\S+", r"\1[REDACTED]", log_text)

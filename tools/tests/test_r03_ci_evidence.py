@@ -26,10 +26,14 @@ class R03CiEvidenceTests(unittest.TestCase):
                "TEST365ALM_ASSETS_SCANNER_DB_PASSWORD=synthetic-scanner\n"
                "AWS_ACCESS_KEY_ID=synthetic-sdk-access\n")
         result = redact(env, "S3 Access Key: synthetic-access; Secret Key: synthetic-secret; "
-                        "scanner password: synthetic-scanner; SDK key: synthetic-sdk-access")
+                        "scanner password: synthetic-scanner; SDK key: synthetic-sdk-access; "
+                        "identity: admin-syntheti; storage failure: connection refused")
         for secret in ("synthetic-access", "synthetic-secret", "synthetic-scanner", "synthetic-sdk-access"):
             self.assertNotIn(secret, result)
-        self.assertEqual(4, result.count("[REDACTED]"))
+        self.assertNotIn("admin-syntheti", result)
+        self.assertIn("identity: admin-[REDACTED]", result)
+        self.assertIn("storage failure: connection refused", result)
+        self.assertEqual(5, result.count("[REDACTED]"))
 
     def test_counts_real_executed_tests_and_failures(self):
         with tempfile.TemporaryDirectory() as directory:
