@@ -4,6 +4,7 @@ import { requirementsApi, newIdempotencyKey } from './requirements'
 import type { Requirement, RequirementInput, RequirementRevision } from './requirements'
 import type { ProjectAccess } from './projectAccess'
 import TraceLinksPanel from './TraceLinksPanel'
+import AttachmentsPanel from './AttachmentsPanel'
 
 type PanelState = 'idle' | 'loading' | 'ready' | 'error'
 type RequirementsPanelProps = { projectId: string; access: ProjectAccess | null; resetSignal?: number }
@@ -213,6 +214,7 @@ export default function RequirementsPanel({ projectId, access, resetSignal = 0 }
             <button className="primary-button" type="submit" disabled={saving || detailLoading || !detailReady}>{saving ? '保存中…' : '保存需求'}</button>
           </> : <><p className="requirement-body">{selected.body || '（无正文）'}</p><p className="access-empty">只读用户可以查看需求和历史，但不能创建或保存。</p></>}
         </form>
+        {detailReady && !scopeInvalid && <AttachmentsPanel projectId={projectId} target={{kind:'REQUIREMENT',id:selected.id}} access={access} resetSignal={resetSignal} onDenied={()=>clearInvalidData('当前附件及需求范围不可访问，请重新选择项目')} />}
         <section className="requirement-history" aria-label="修订历史">
           {detailReady && <TraceLinksPanel projectId={projectId} requirementId={selected.id} access={access} />}
           <div className="member-list-heading"><strong>不可变修订历史</strong><span>{revisions.length} 个修订</span></div>

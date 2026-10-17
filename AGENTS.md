@@ -11,9 +11,17 @@
 
 ## 项目状态
 
+- R11-FIX01继续PR10（base R10 PR9，均不自动合并），只补资产提交完整性、terminal complete冻结错误和正式scanner LOGIN provision。正式追加V21，故意失败探针V22；下文R11原V20/V21为历史。真实RED已在c3c1d13复现；代码561062b的Push38958095983/PR38958100160六Job成功，66单元/152集成/213前端/123Python/14浏览器+独立UI1零F/E/S。最终文档交付CI另核对，证据看`docs/progress/runs/R11-CORE-BATCH04-FIX01.md`，不把代码存在代替GREEN或外部审核。
+- scanner身份由授权operator显式运行`python tools/provision_asset_scanner_role.py`，Flyway只管能力与schema、不管secret。独立LOGIN仅继承scanner，不得使用runtime/owner或回退其密码。工具不自动连接开发库；同名不安全角色、未知环境或无法确认安全时拒绝，不自动修配。应用只接受显式scanner用户名/密码与同一datasource URL。正式工具同时是非空V20→V21升级集成测试的真实入口，不以helper内部直接授权冒充交付。
+- 正式provision两次连接都要求真实SCRAM握手；trust连接成功不证明密码有效，旧客户端不能识别require_auth须拒绝。容器libpq偏转变量必须unset而非设空串；秘密/verifier不出argv、SQL/错误日志。缺少会话日志保护授权时安全拒绝，不改用户HBA/全局日志或放宽权限。`python -m unittest tools.tests.test_asset_scanner_provision -v`执行12项离线安全回归；真实角色与非空升级仍由完整integration命令执行。
+- `python tools/verify_r11_asset_report.py apps/server/target/failsafe-reports`须检查allocator精确提交负向、terminal同key422/新key409/瞬时故障恢复、正式provision+非空升级和真实HTTP方法；新增门禁本身有删测/重复/失败/错误/跳过回归。原六Job、旧各模块门禁、真实S3/clamd和单worker/零retry浏览器均保留。未知/me401历史若不再复现仍须写根因未证明。
+
+- R11从已审核R10 `d213e47…` 建立 `feat/r11-m05-001`；PR9未合并时只依赖其分支，不自动合并。新增正式V20，工具故意失败探针V21；旧V1—V19不改。M05仅25MiB以内隔离上传、CLEAN发布、不可变版本和typed附件/代理下载，契约`contracts/assets.md`、ADR025。普通runtime不能伪造扫描证明；专用scanner连接固定同一数据库、无DDL/BYPASSRLS/owner业务权限。S3/扫描证明/业务事务不是2PC，失败必须保留真实可诊断状态。
+- R11完整测试沿用六Job。根目录`python tools/verify_r11_asset_report.py apps/server/target/failsafe-reports`要求真实PG/S3/clamd、非空V19升级及2个真实OIDC矩阵；`python tools/verify_r11_asset_web_report.py local-evidence/r10/vitest.json`检查确切组件/API名称；旧门禁全部保留。浏览器单worker零retry，新增资产MEMBER/VIEWER流程，不能用mock扫描代替真实集成。
+
 - 2026-10-17 R10 起点：默认主线 `chore/r01-status-001@a2419e292c004b2cd4c7278bdaa40b1ce3442a22` 已合入PR #1～#8，主线CI38931708362六Job成功。新R10 M06分支从此已验证主线建立，base为默认分支。下面更早轮次未合并/依赖分支说明均为历史；新PR不自动合并。
 - M04/M11 仅字段定义/共享值验证、typed 需求→用例关系及有限同步覆盖切片。契约为 `contracts/field-metadata.md`、`contracts/requirement-test-trace.md`，决策 ADR 022；不能修改整个模块/WBS/验收的 PLANNED/NOT_RUN。
-- R10 正式迁移当前 V19；仅增加新迁移，V1—V18 不变，独立故意失败探针当前 V20。历史文档中的 V17/V18/V19 失败探针是当时事实，不是现行配置。
+- R10当轮正式迁移V19/独立故意失败探针V20；R11原轮次为正式V20/探针V21，现行FIX01为正式V21/探针V22，V1—V20不变。下文旧轮次的迁移版本及“附件未实现”等范围均为当时事实，当前范围以本文件顶部FIX01段落和对应契约为准。
 - R08 专项：`mvn -B -ntp -Pintegration verify '-Dit.test=CoreMetadataTraceDatabaseIT,ManualExecutionMigrationUpgradeIT,OidcCallbackSecurityIT'`；完整仍 `mvn -B -ntp -Pintegration verify`，Windows Wrapper 独立为 `.\mvnw.cmd`，Linux `./mvnw`。根目录 `python tools/verify_r08_core_report.py apps/server/target/failsafe-reports` 要求确切 M04/M11 DB、真实 OIDC HTTP、V16 非空升级测试名，无失败/错误/跳过。浏览器必须包含真实字段验证和 MEMBER 追踪→执行 PASS 流程，保留原十个用例、单 worker、零重试。
 
 - 当前目录包含规划与研发辅助工具，以及 R02 工程底座、R03 身份/项目访问切片和 R04-M07-001 需求最小切片的 `apps/web` Vite 前端与 `apps/server` Spring Boot 服务；需求切片不代表完整 M07、M03 或产品完成。

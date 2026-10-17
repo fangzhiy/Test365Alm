@@ -23,12 +23,14 @@ def main() -> int:
     demo_password = secrets.token_urlsafe(24)
     viewer_password = secrets.token_urlsafe(24)
     member_password = secrets.token_urlsafe(24)
+    scanner_password = secrets.token_urlsafe(32)
     values = {
         "R03_RUN_ID": secrets.token_hex(16),
         "R03_DB_NAME": "test365alm_r03",
         "R03_MIGRATION_USER": "test365alm_migrator",
         "R03_MIGRATION_PASSWORD": migration_password,
         "R03_RUNTIME_PASSWORD": runtime_password,
+        "R11_SCANNER_PASSWORD": scanner_password,
         "R03_POSTGRES_PORT": "54339",
         "R03_KEYCLOAK_PORT": "18090",
         "R03_KEYCLOAK_ADMIN_USER": "r03-local-admin",
@@ -47,6 +49,18 @@ def main() -> int:
         "SPRING_FLYWAY_PASSWORD": migration_password,
         "TEST365ALM_OIDC_ISSUER": "http://127.0.0.1:18090/realms/test365alm",
         "SPRING_PROFILES_ACTIVE": "oidc",
+        "R11_S3_PORT": "18333",
+        "R11_CLAMD_PORT": "13310",
+        "TEST365ALM_ASSETS_ENABLED": "true",
+        "TEST365ALM_ASSETS_S3_ENDPOINT": "http://127.0.0.1:18333",
+        "TEST365ALM_ASSETS_S3_ACCESS_KEY": "r11" + secrets.token_hex(12),
+        "TEST365ALM_ASSETS_S3_SECRET_KEY": secrets.token_urlsafe(36),
+        "TEST365ALM_ASSETS_S3_QUARANTINE_BUCKET": "r11-quarantine",
+        "TEST365ALM_ASSETS_S3_PUBLISHED_BUCKET": "r11-published",
+        "TEST365ALM_ASSETS_CLAMD_HOST": "127.0.0.1",
+        "TEST365ALM_ASSETS_CLAMD_PORT": "13310",
+        "TEST365ALM_ASSETS_SCANNER_DB_USERNAME": "test365alm_scanner",
+        "TEST365ALM_ASSETS_SCANNER_DB_PASSWORD": scanner_password,
     }
     realm = {
         "realm": "test365alm", "enabled": True,

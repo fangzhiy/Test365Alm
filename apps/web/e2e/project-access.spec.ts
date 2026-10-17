@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { isOwnedCiRun, seedProjectAccessScope } from './ownedR03'
+import { safeHttpEvent, safeLocation, type SafeHttpEvent } from './safeHttpDiagnostics'
 
 type Page = import('@playwright/test').Page
 type APIResponse = import('@playwright/test').APIResponse
@@ -12,7 +13,9 @@ type UiStep = {
   startedAt: string
   durationMs: number
   pathname: string
+  loginFailed?: boolean
   httpPaths?: string[]
+  httpEvents?: SafeHttpEvent[]
   status?: number | number[]
   panelState?: string
   tenantId?: string
@@ -47,6 +50,7 @@ class UiDiagnostics {
   private readonly events: UiStep[] = []
   private statuses: number[] = []
   private httpPaths: string[] = []
+  private httpEvents: SafeHttpEvent[] = []
 
   recordStatus(status: number): void {
     if (Number.isInteger(status) && status >= 100 && status <= 599) this.statuses.push(status)
@@ -56,11 +60,14 @@ class UiDiagnostics {
     const started = Date.now()
     this.statuses = []
     this.httpPaths = []
+    this.httpEvents = []
     let failure: string | undefined
     const consoleErrors: string[] = []
     const pageErrors: string[] = []
     const responseListener = (response: import('@playwright/test').Response): void => {
       this.recordStatus(response.status())
+      const event = safeHttpEvent(response.url(), response.status(), new Date().toISOString())
+      if (event && this.httpEvents.length < 200) this.httpEvents.push(event)
       try {
         const path = new URL(response.url()).pathname
         if (path.startsWith('/api/v1/') && !this.httpPaths.includes(path)) this.httpPaths.push(path)
@@ -90,6 +97,7 @@ class UiDiagnostics {
         durationMs: Date.now() - started,
         ...await this.snapshot(page),
         ...(this.httpPaths.length > 0 ? { httpPaths: this.httpPaths } : {}),
+        ...(this.httpEvents.length > 0 ? { httpEvents: this.httpEvents } : {}),
         ...(consoleErrors.length > 0 ? { consoleErrors } : {}),
         ...(pageErrors.length > 0 ? { pageErrors } : {}),
         ...(this.statuses.length === 1 ? { status: this.statuses[0] } : this.statuses.length > 1 ? { status: this.statuses } : {}),
@@ -123,8 +131,7 @@ class UiDiagnostics {
   }
 
   private async snapshot(page: Page): Promise<Omit<UiStep, 'step' | 'startedAt' | 'durationMs' | 'status' | 'error' | 'httpPaths'>> {
-    let pathname = '[unavailable]'
-    try { pathname = new URL(page.url()).pathname } catch { /* page may be closing */ }
+    const location = safeLocation(page.url())
     const tenantId = await this.inputValue(page, '租户')
     const projectId = await this.inputValue(page, '项目')
     const refreshButton = await page.getByRole('button', { name: /加载访问范围|加载中/ }).first().evaluate((element) => ({
@@ -133,7 +140,7 @@ class UiDiagnostics {
     }), undefined, { timeout: UiDiagnostics.snapshotTimeoutMs }).catch(() => undefined)
     const alertText = await page.getByRole('alert').first().textContent({ timeout: UiDiagnostics.snapshotTimeoutMs }).catch(() => null)
     const panelState = refreshButton?.label === '加载中…' ? 'loading' : alertText ? 'error' : refreshButton ? 'ready' : 'unknown'
-    return { pathname, panelState, tenantId, projectId, refreshButton, ...(alertText ? { errorSummary: redactError(alertText) } : {}) }
+    return { ...location, panelState, tenantId, projectId, refreshButton, ...(alertText ? { errorSummary: redactError(alertText) } : {}) }
   }
 
   private async inputValue(page: Page, label: string): Promise<string | undefined> {

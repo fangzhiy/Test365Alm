@@ -102,8 +102,13 @@ class OidcCallbackSecurityIT {
     @Autowired
     private JdbcTemplate runtimeJdbc;
 
+    @Autowired
+    private org.springframework.context.ApplicationContext applicationContext;
+
     @DynamicPropertySource
     static void registerProperties(DynamicPropertyRegistry registry) {
+        com.test365alm.server.asset.AssetTestInfrastructure.register(registry);
+        com.test365alm.server.asset.AssetTestInfrastructure.registerScannerDatabase(registry, POSTGRES);
         registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
         registry.add("spring.datasource.username", () -> RUNTIME_USER);
         registry.add("spring.datasource.password", () -> RUNTIME_PASSWORD);
@@ -1087,6 +1092,190 @@ class OidcCallbackSecurityIT {
         assertReleaseRejected(f.project(),()->get(f.viewer().flow().client(),item),403,"FORBIDDEN");
         try(var c=ownerConnection();var s=c.prepareStatement("UPDATE tenant_member SET valid_until=CURRENT_TIMESTAMP WHERE tenant_id=? AND principal_id=?")){s.setObject(1,f.tenant());s.setObject(2,f.admin().principalId());assertEquals(1,s.executeUpdate());}
         assertReleaseRejected(f.project(),()->get(f.admin().flow().client(),item),404,"NOT_FOUND");
+    }
+    @Test
+    void realOidcAssetHttpIntegrityCsrfRolesAndIdempotency() throws Exception {
+        var f=testCaseHttpFixture();String root="/api/v1/projects/"+f.project(),uploads=root+"/uploads";
+        byte[] content="R11 harmless plain text receipt\n".getBytes(StandardCharsets.UTF_8);
+        String body=assetUploadBody(content,"../../report\r\n\".txt",null),key=UUID.randomUUID().toString();
+        assertAssetRejected(f.project(),()->defectHttp(f.member(),uploads,"POST",null,body,key,null),403,"CSRF_REJECTED");
+        assertAssetRejected(f.project(),()->defectHttp(f.member(),uploads,"POST",null,body,key,"invalid-csrf"),403,"CSRF_REJECTED");
+        assertAssetRejected(f.project(),()->testCasePost(f.viewer(),uploads,null,body),403,"FORBIDDEN");
+        assertAssetRejected(f.project(),()->testCasePost(f.outsider(),uploads,null,body),404,"NOT_FOUND");
+        for(String invalid:List.of("{}","null","[]",body.replace("\"size\":"+content.length,"\"size\":\""+content.length+"\""),body.replace("\"size\":"+content.length,"\"size\":26214401"),body.replace("text/plain","image/svg+xml"),body.replace("\"sha256\":\""+assetSha(content)+"\"","\"sha256\":\"wrong\""),body.substring(0,body.length()-1)+",\"clean\":true}",body.substring(0,body.length()-1)+",\"objectKey\":\"forged\"}"))
+            assertAssetRejected(f.project(),()->testCasePost(f.member(),uploads,null,invalid),400,"INVALID_REQUEST");
+        var created=defectHttp(f.member(),uploads,"POST",null,body,key,f.member().csrfToken());assertEquals(201,created.statusCode(),created.body());
+        String item=uploads+"/"+jsonField(created.body(),"id");
+        String name=jsonField(created.body(),"filename");assertFalse(name.contains("\r")||name.contains("\n")||name.contains("\"")||name.contains("/"));
+        assertFalse(created.body().contains("bucket")||created.body().contains("quarantineKey")||created.body().contains("objectKey"));
+        assertEquals(JSON.readTree(created.body()),JSON.readTree(defectHttp(f.member(),uploads,"POST",null,body,key,f.member().csrfToken()).body()));
+        assertAssetRejected(f.project(),()->defectHttp(f.member(),uploads,"POST",null,body.replace("report","different"),key,f.member().csrfToken()),409,"IDEMPOTENCY_KEY_REUSED");
+        assertAssetRejected(f.project(),()->get(f.admin().flow().client(),item),404,"NOT_FOUND");
+        assertAssetRejected(f.project(),()->testCasePost(f.member(),item+"/complete",null,"{}"),409,"UPLOAD_NOT_READY");
+        assertAssetRejected(f.project(),()->assetPut(f.member(),item,content,null),403,"CSRF_REJECTED");
+        assertAssetRejected(f.project(),()->assetPut(f.viewer(),item,content,f.viewer().csrfToken()),403,"FORBIDDEN");
+        assertAssetRejected(f.project(),()->assetPut(f.admin(),item,content,f.admin().csrfToken()),404,"NOT_FOUND");
+        assertFalse(applicationContext.containsBean("multipartResolver"),"the real HTTP app must not parse multipart before its raw upload boundary");
+        byte[] malformedMultipart=("--r11-owned-boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"x.txt\"\r\n\r\nmissing closing boundary").getBytes(StandardCharsets.UTF_8);
+        assertAssetRejected(f.project(),()->assetPut(f.member(),item,malformedMultipart,f.member().csrfToken(),"multipart/form-data; boundary=r11-owned-boundary"),422,"CONTENT_MISMATCH");
+        var receipt=assetPut(f.member(),item,content,f.member().csrfToken());assertEquals(200,receipt.statusCode(),receipt.body());
+        var parsed=JSON.readTree(receipt.body());assertEquals(content.length,parsed.get("size").longValue());assertEquals(assetSha(content),parsed.get("sha256").textValue());assertEquals("text/plain",parsed.get("mime").textValue());
+        assertEquals(parsed,JSON.readTree(assetPut(f.member(),item,content,f.member().csrfToken()).body()));
+        byte[] different=content.clone();different[0]='X';
+        assertAssetRejected(f.project(),()->assetPut(f.member(),item,different,f.member().csrfToken()),409,"UPLOAD_CONTENT_CONFLICT");
+        assertAssetRejected(f.project(),()->testCasePost(f.viewer(),item+"/complete",null,"{}"),403,"FORBIDDEN");
+        assertAssetRejected(f.project(),()->testCasePost(f.member(),item+"/complete",null,"{\"clean\":true}"),400,"INVALID_REQUEST");
+        String completeKey=UUID.randomUUID().toString();var complete=defectHttp(f.member(),item+"/complete","POST",null,"{}",completeKey,f.member().csrfToken());
+        assertEquals(200,complete.statusCode(),complete.body());assertEquals("PUBLISHED",jsonField(complete.body(),"state"));
+        assertEquals(JSON.readTree(complete.body()),JSON.readTree(defectHttp(f.member(),item+"/complete","POST",null,"{}",completeKey,f.member().csrfToken()).body()));
+        assertEquals(parsed,JSON.readTree(assetPut(f.member(),item,content,f.member().csrfToken()).body()),"PUT receipt remains frozen after publication");
+        String asset=root+"/assets/"+jsonField(complete.body(),"assetId"),download=asset+"/revisions/"+jsonField(complete.body(),"revisionId")+"/download";
+        var downloaded=get(f.viewer().flow().client(),download);assertEquals(200,downloaded.statusCode());assertEquals(new String(content,StandardCharsets.UTF_8),downloaded.body());
+        assertEquals("nosniff",downloaded.headers().firstValue("X-Content-Type-Options").orElse(""));
+        assertTrue(downloaded.headers().firstValue("Content-Disposition").orElse("").startsWith("attachment;"));
+        assertEquals("text/plain",downloaded.headers().firstValue("Content-Type").orElse(""));
+        assertEquals(Integer.toString(content.length),downloaded.headers().firstValue("Content-Length").orElse(""));
+        assertAssetRejected(f.project(),()->get(HttpClient.newHttpClient(),download),401,"UNAUTHENTICATED");
+        assertAssetRejected(f.project(),()->get(f.outsider().flow().client(),download),404,"NOT_FOUND");
+        // Real raw-body failures, not annotation-only validation; each leaves the isolated DB unchanged.
+        for(String mismatch:List.of(assetUploadBody(content,"bad-hash.txt",null).replace(assetSha(content),"0".repeat(64)),assetUploadBody(content,"bad-size.txt",null).replace("\"size\":"+content.length,"\"size\":"+(content.length+1)),assetUploadBody(content,"bad-type.pdf",null).replace("text/plain","application/pdf"))) {
+            var u=testCasePost(f.member(),uploads,null,mismatch);assertEquals(201,u.statusCode(),u.body());String target=uploads+"/"+jsonField(u.body(),"id");
+            String declaredType=JSON.readTree(mismatch).get("contentType").asText();
+            assertAssetRejected(f.project(),()->assetPut(f.member(),target,content,f.member().csrfToken(),declaredType),422,"CONTENT_MISMATCH");
+        }
+        byte[] html="<!DOCTYPE html><html><script>alert(1)</script></html>".getBytes(StandardCharsets.UTF_8);
+        var badType=testCasePost(f.member(),uploads,null,assetUploadBody(html,"pretends-text.txt",null));assertEquals(201,badType.statusCode(),badType.body());
+        assertAssetRejected(f.project(),()->assetPut(f.member(),uploads+"/"+jsonField(badType.body(),"id"),html,f.member().csrfToken()),415,"UNSUPPORTED_FILE_TYPE");
+        var oversize=testCasePost(f.member(),uploads,null,assetUploadBody(content,"bounded.txt",null));assertEquals(201,oversize.statusCode());
+        byte[] large=new byte[25*1024*1024+1];java.util.Arrays.fill(large,(byte)'a');
+        assertAssetRejected(f.project(),()->assetPut(f.member(),uploads+"/"+jsonField(oversize.body(),"id"),large,f.member().csrfToken()),413,"FILE_TOO_LARGE");
+        assertEquals(200,get(f.member().flow().client(),uploads+"?limit=2").statusCode());
+        assertEquals(200,get(f.viewer().flow().client(),asset+"/revisions?limit=1").statusCode());
+    }
+
+    @Test
+    void realOidcAssetHttpTypedLinksFrozenVersionsAndLiveDownloadRevocation() throws Exception {
+        var f=testCaseHttpFixture();String root="/api/v1/projects/"+f.project();
+        byte[] one="Original version one\n".getBytes(StandardCharsets.UTF_8),two="Changed version two\n".getBytes(StandardCharsets.UTF_8);
+        var published=publishHttpAsset(f.member(),root,one,null);String assetId=jsonField(published,"assetId"),rev1=jsonField(published,"revisionId");
+        String asset=root+"/assets/"+assetId,download=asset+"/revisions/"+rev1+"/download";
+        var req=testCasePost(f.member(),root+"/requirements",null,"{\"title\":\"Attachment requirement\",\"body\":\"content\",\"priority\":\"MEDIUM\"}");assertEquals(201,req.statusCode(),req.body());
+        var test=testCasePost(f.member(),root+"/tests",null,testCaseBody("Attachment test",null,true));assertEquals(201,test.statusCode(),test.body());
+        var defect=testCasePost(f.member(),root+"/defects",null,defectBody("Attachment defect"));assertEquals(201,defect.statusCode(),defect.body());
+        String requirementId=jsonField(req.body(),"id"),testId=jsonField(test.body(),"id"),defectId=jsonField(defect.body(),"id");
+        var targets=Map.of("REQUIREMENT",Map.entry("requirementId",requirementId),"TEST_CASE",Map.entry("testCaseId",testId),"DEFECT",Map.entry("defectId",defectId));
+        String originalLink=null;
+        for(var target:targets.entrySet()) {
+            String linkBody=assetLinkBody(target.getKey(),target.getValue().getKey(),target.getValue().getValue(),assetId,rev1),key=UUID.randomUUID().toString();
+            assertAssetRejected(f.project(),()->defectHttp(f.member(),root+"/attachments","POST",null,linkBody,key,null),403,"CSRF_REJECTED");
+            assertAssetRejected(f.project(),()->testCasePost(f.viewer(),root+"/attachments",null,linkBody),403,"FORBIDDEN");
+            var link=defectHttp(f.member(),root+"/attachments","POST",null,linkBody,key,f.member().csrfToken());assertEquals(201,link.statusCode(),link.body());
+            assertEquals(rev1,jsonField(link.body(),"assetRevisionId"));
+            assertEquals(JSON.readTree(link.body()),JSON.readTree(defectHttp(f.member(),root+"/attachments","POST",null,linkBody,key,f.member().csrfToken()).body()));
+            assertAssetRejected(f.project(),()->defectHttp(f.member(),root+"/attachments","POST",null,linkBody.replace(rev1,UUID.randomUUID().toString()),key,f.member().csrfToken()),409,"IDEMPOTENCY_KEY_REUSED");
+            String list=root+"/attachments?kind="+target.getKey()+"&"+target.getValue().getKey()+"="+target.getValue().getValue()+"&limit=1";
+            var read=get(f.viewer().flow().client(),list);assertEquals(200,read.statusCode(),read.body());assertEquals(1,JSON.readTree(read.body()).get("items").size());
+            if(target.getKey().equals("REQUIREMENT"))originalLink=JSON.readTree(read.body()).get("items").get(0).toString();
+            assertAssetRejected(f.project(),()->testCasePost(f.member(),root+"/attachments",null,linkBody.replace(target.getValue().getValue(),UUID.randomUUID().toString())),404,"NOT_FOUND");
+        }
+        for(UUID foreign:List.of(f.otherProject(),f.otherTenantProject())) {
+            String foreignRoot="/api/v1/projects/"+foreign;
+            var foreignAsset=publishHttpAsset(f.admin(),foreignRoot,one,null);
+            assertNotEquals(assetId,jsonField(foreignAsset,"assetId"),"same hash never shares cross-scope identity");
+            assertAssetRejected(f.project(),()->testCasePost(f.member(),root+"/attachments",null,assetLinkBody("REQUIREMENT","requirementId",requirementId,jsonField(foreignAsset,"assetId"),jsonField(foreignAsset,"revisionId"))),404,"NOT_FOUND");
+            assertAssetRejected(f.project(),()->get(f.member().flow().client(),root+"/assets/"+jsonField(foreignAsset,"assetId")),404,"NOT_FOUND");
+            assertAssetRejected(f.project(),()->get(f.admin().flow().client(),foreignRoot+"/assets/"+assetId+"/revisions/"+rev1+"/download"),404,"NOT_FOUND");
+            var foreignReq=testCasePost(f.admin(),foreignRoot+"/requirements",null,"{\"title\":\"Foreign attachment target\",\"body\":\"private\",\"priority\":\"MEDIUM\"}");assertEquals(201,foreignReq.statusCode());
+            assertAssetRejected(f.project(),()->testCasePost(f.member(),root+"/attachments",null,assetLinkBody("REQUIREMENT","requirementId",jsonField(foreignReq.body(),"id"),assetId,rev1)),404,"NOT_FOUND");
+        }
+        String validLink=assetLinkBody("REQUIREMENT","requirementId",requirementId,assetId,rev1);
+        for(String bad:List.of(validLink.replace("REQUIREMENT","UNKNOWN"),validLink.substring(0,validLink.length()-1)+",\"target\":{}}",validLink.substring(0,validLink.length()-1)+",\"testCaseId\":\""+testId+"\"}"))
+            assertAssetRejected(f.project(),()->testCasePost(f.member(),root+"/attachments",null,bad),400,"INVALID_REQUEST");
+        assertAssetRejected(f.project(),()->testCasePost(f.member(),root+"/attachments",null,validLink.replace(requirementId,testId)),404,"NOT_FOUND");
+        var version2=publishHttpAsset(f.member(),root,two,assetId);assertEquals(assetId,jsonField(version2,"assetId"));String rev2=jsonField(version2,"revisionId");assertNotEquals(rev1,rev2);
+        var current=get(f.viewer().flow().client(),asset);assertEquals(200,current.statusCode());assertEquals(rev2,jsonField(current.body(),"currentRevisionId"));assertEquals(2,JSON.readTree(current.body()).get("currentRevision").get("revisionNumber").intValue());
+        var original=get(f.viewer().flow().client(),root+"/attachments?kind=REQUIREMENT&requirementId="+requirementId);assertEquals(JSON.readTree(originalLink),JSON.readTree(original.body()).get("items").get(0));
+        assertEquals(new String(one,StandardCharsets.UTF_8),get(f.viewer().flow().client(),download).body());
+        assertEquals(new String(two,StandardCharsets.UTF_8),get(f.viewer().flow().client(),asset+"/revisions/"+rev2+"/download").body());
+        assertAssetRejected(f.project(),()->testCasePost(f.viewer(),root+"/uploads",null,assetUploadBody(two,"next.txt",assetId)),403,"FORBIDDEN");
+        try(var c=ownerConnection();var s=c.prepareStatement("UPDATE requirement SET deleted_at=CURRENT_TIMESTAMP WHERE project_id=? AND id=?")){s.setObject(1,f.project());s.setObject(2,UUID.fromString(requirementId));assertEquals(1,s.executeUpdate());}
+        assertAssetRejected(f.project(),()->testCasePost(f.member(),root+"/attachments",null,assetLinkBody("REQUIREMENT","requirementId",requirementId,assetId,rev2)),404,"NOT_FOUND");
+        assertEquals(new String(one,StandardCharsets.UTF_8),get(f.viewer().flow().client(),download).body());
+        // Same authenticated CookieManager throughout; no /me refresh before direct protected requests.
+        try(var c=ownerConnection();var s=c.prepareStatement("UPDATE project_member SET roles='{PROJECT_VIEWER}',authorization_version=authorization_version+1 WHERE project_id=? AND principal_id=?")){s.setObject(1,f.project());s.setObject(2,f.member().principalId());assertEquals(1,s.executeUpdate());}
+        assertEquals(200,get(f.member().flow().client(),download).statusCode());
+        assertAssetRejected(f.project(),()->testCasePost(f.member(),root+"/uploads",null,assetUploadBody(two,"denied.txt",assetId)),403,"FORBIDDEN");
+        try(var c=ownerConnection();var s=c.prepareStatement("UPDATE project_member SET revoked_at=CURRENT_TIMESTAMP,authorization_version=authorization_version+1 WHERE project_id=? AND principal_id=?")){s.setObject(1,f.project());s.setObject(2,f.member().principalId());assertEquals(1,s.executeUpdate());}
+        assertAssetRejected(f.project(),()->get(f.member().flow().client(),download),404,"NOT_FOUND");assertAssetRejected(f.project(),()->get(f.member().flow().client(),asset),404,"NOT_FOUND");
+        try(var c=ownerConnection();var s=c.prepareStatement("UPDATE principal SET disabled_at=CURRENT_TIMESTAMP WHERE id=?")){s.setObject(1,f.viewer().principalId());assertEquals(1,s.executeUpdate());}
+        assertAssetRejected(f.project(),()->get(f.viewer().flow().client(),download),403,"FORBIDDEN");assertAssetRejected(f.project(),()->get(f.viewer().flow().client(),asset),403,"FORBIDDEN");
+        try(var c=ownerConnection();var s=c.prepareStatement("UPDATE tenant_member SET valid_until=CURRENT_TIMESTAMP WHERE tenant_id=? AND principal_id=?")){s.setObject(1,f.tenant());s.setObject(2,f.admin().principalId());assertEquals(1,s.executeUpdate());}
+        assertAssetRejected(f.project(),()->get(f.admin().flow().client(),download),404,"NOT_FOUND");assertAssetRejected(f.project(),()->get(f.admin().flow().client(),asset),404,"NOT_FOUND");
+    }
+    @Test
+    void realOidcAssetHttpTerminalCompleteFreezesRejectionAndReauthorizesReplay() throws Exception {
+        byte[] eicar=("X5O!P%@AP[4\\PZX54(P^)7CC)7}$"+"EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*").getBytes(StandardCharsets.US_ASCII);
+        for(String loss:List.of("revoked","disabled","expired")) {
+            var f=testCaseHttpFixture();String root="/api/v1/projects/"+f.project()+"/uploads";
+            var created=testCasePost(f.member(),root,null,assetUploadBody(eicar,"terminal-outcome.txt",null));assertEquals(201,created.statusCode(),created.body());
+            String item=root+"/"+jsonField(created.body(),"id"),complete=item+"/complete",key=UUID.randomUUID().toString();
+            assertEquals(200,assetPut(f.member(),item,eicar,f.member().csrfToken()).statusCode());
+            var first=defectHttp(f.member(),complete,"POST",null,"{}",key,f.member().csrfToken());
+            assertEquals(422,first.statusCode(),first.body());assertEquals("FILE_INFECTED",jsonField(first.body(),"code"));
+            var rejected=JSON.readTree(get(f.member().flow().client(),item).body());assertEquals("REJECTED",rejected.get("state").textValue());
+            var before=assetRows(f.project());
+            var replay=defectHttp(f.member(),complete,"POST",null,"{}",key,f.member().csrfToken());
+            assertEquals(first.statusCode(),replay.statusCode(),replay.body());
+            assertEquals(jsonField(first.body(),"code"),jsonField(replay.body(),"code"));
+            assertEquals(jsonField(first.body(),"message"),jsonField(replay.body(),"message"));
+            assertEquals(before,assetRows(f.project()),"HTTP terminal replay must preserve every scan/audit/Outbox/upload/idempotency field");
+            assertEquals(rejected.get("rowVersion"),JSON.readTree(get(f.member().flow().client(),item).body()).get("rowVersion"));
+            assertAssetRejected(f.project(),()->testCasePost(f.member(),complete,null,"{}"),409,"UPLOAD_REJECTED");
+            assertAssetRejected(f.project(),()->defectHttp(f.member(),complete,"POST",null,"{\"unexpected\":true}",key,f.member().csrfToken()),409,"IDEMPOTENCY_KEY_REUSED");
+            assertAssetRejected(f.project(),()->testCasePost(f.member(),complete,null,"{\"unexpected\":true}"),400,"INVALID_REQUEST");
+            assertEquals(1,before.get("scan_result").size());assertEquals(0,before.get("asset_revision").size());
+            try(var c=ownerConnection()) {
+                String sql=switch(loss) {
+                    case "revoked" -> "UPDATE project_member SET revoked_at=CURRENT_TIMESTAMP,authorization_version=authorization_version+1 WHERE principal_id=? AND project_id=?";
+                    case "disabled" -> "UPDATE principal SET disabled_at=CURRENT_TIMESTAMP WHERE id=?";
+                    case "expired" -> "UPDATE tenant_member SET valid_until=CURRENT_TIMESTAMP WHERE principal_id=? AND tenant_id=?";
+                    default -> throw new AssertionError(loss);
+                };
+                try(var s=c.prepareStatement(sql)) {
+                    s.setObject(1,f.member().principalId());
+                    if(!loss.equals("disabled"))s.setObject(2,loss.equals("revoked")?f.project():f.tenant());
+                    assertEquals(1,s.executeUpdate());
+                }
+            }
+            // The original authenticated client calls complete directly, without a /me refresh.
+            assertAssetRejected(f.project(),()->defectHttp(f.member(),complete,"POST",null,"{}",key,f.member().csrfToken()),loss.equals("disabled")?403:404,loss.equals("disabled")?"FORBIDDEN":"NOT_FOUND");
+        }
+    }
+    private String assetUploadBody(byte[] content,String name,String assetId)throws Exception {
+        var values=new LinkedHashMap<String,Object>();values.put("filename",name);values.put("size",content.length);values.put("sha256",assetSha(content));values.put("contentType","text/plain");if(assetId!=null)values.put("assetId",assetId);return JSON.writeValueAsString(values);
+    }
+    private String assetSha(byte[] content)throws Exception{return java.util.HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content));}
+    private String assetLinkBody(String kind,String field,String target,String asset,String revision){return JSON.writeValueAsString(Map.of("kind",kind,field,target,"assetId",asset,"assetRevisionId",revision));}
+    private HttpResponse<String> assetPut(HttpActor actor,String upload,byte[] content,String csrf)throws Exception {
+        return assetPut(actor,upload,content,csrf,"text/plain");
+    }
+    private HttpResponse<String> assetPut(HttpActor actor,String upload,byte[] content,String csrf,String contentType)throws Exception {
+        var b=HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+appPort+upload+"/content")).timeout(Duration.ofSeconds(30)).header("Content-Type",contentType);if(csrf!=null)b.header(actor.csrfHeader(),csrf);
+        // Unknown-length streaming publisher proves that Content-Length is not the size boundary.
+        return actor.flow().client().send(b.PUT(HttpRequest.BodyPublishers.ofInputStream(()->new java.io.ByteArrayInputStream(content))).build(),HttpResponse.BodyHandlers.ofString());
+    }
+    private String publishHttpAsset(HttpActor actor,String root,byte[] content,String asset)throws Exception {
+        var u=testCasePost(actor,root+"/uploads",null,assetUploadBody(content,"evidence.txt",asset));assertEquals(201,u.statusCode(),u.body());String path=root+"/uploads/"+jsonField(u.body(),"id");
+        var put=assetPut(actor,path,content,actor.csrfToken());assertEquals(200,put.statusCode(),put.body());var completed=testCasePost(actor,path+"/complete",null,"{}");assertEquals(200,completed.statusCode(),completed.body());assertEquals("PUBLISHED",jsonField(completed.body(),"state"));return completed.body();
+    }
+    private void assertAssetRejected(UUID project,HttpCall call,int status,String code)throws Exception {
+        var before=assetRows(project);assertTestCaseRejected(call,status,code);assertEquals(before,assetRows(project),"HTTP refusal cannot mutate asset/session/revision/scan/link/audit/outbox/idempotency");
+    }
+    private Map<String,List<String>> assetRows(UUID project)throws Exception {
+        var result=new java.util.TreeMap<String,List<String>>();try(var c=ownerConnection()){
+            for(String table:List.of("upload_session","asset","asset_revision","scan_result","attachment_link","asset_outbox_event","audit_event","core_command_idempotency"))
+                try(var s=c.prepareStatement("SELECT to_jsonb(t)::text FROM "+table+" t WHERE project_id=? ORDER BY to_jsonb(t)::text")){s.setObject(1,project);try(var r=s.executeQuery()){var rows=new ArrayList<String>();while(r.next())rows.add(r.getString(1));result.put(table,rows);}}
+        }return result;
     }
     private String releaseBody(String name) {return "{\"name\":\""+name+"\",\"description\":\"plan\",\"startDate\":\"2026-01-01\",\"endDate\":\"2026-12-31\"}";}
     private void assertReleaseRejected(UUID project,HttpCall call,int status,String code)throws Exception {

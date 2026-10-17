@@ -5,6 +5,7 @@ import java.security.MessageDigest;
 import java.util.HexFormat;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
@@ -34,11 +35,37 @@ public class CoreCommands {
         var rows=jdbc.query("SELECT request_hash,response_json::text FROM core_command_idempotency WHERE tenant_id=? AND project_id=? AND principal_id=? AND route=? AND idempotency_key=?",(rs,i)->new String[]{rs.getString(1),rs.getString(2)},p.tenantId(),p.id(),actor,route,key);
         if(rows.isEmpty()) return null;
         if(!rows.get(0)[0].equals(hash)) throw ProjectAccessException.conflict("IDEMPOTENCY_KEY_REUSED","Key was used for another request");
-        return JSON.readValue(rows.get(0)[1],type);
+        return decodeReplay(rows.get(0)[1],type);
     }
     public void save(ProjectService.ProjectView p,UUID actor,String route,String key,String hash,Object response) {
         jdbc.update("INSERT INTO core_command_idempotency(tenant_id,project_id,principal_id,route,idempotency_key,request_hash,response_json) VALUES(?,?,?,?,?,?,?::jsonb)",p.tenantId(),p.id(),actor,route,key,hash,JSON.writeValueAsString(response));
     }
+    /** Call only for a deliberately terminal business rejection in its committing business transaction. */
+    public void saveTerminalError(ProjectService.ProjectView p,UUID actor,String route,String key,String hash,ProjectAccessException error) {
+        save(p,actor,route,key,hash,freezeTerminalError(error));
+    }
+    static FrozenTerminalError freezeTerminalError(ProjectAccessException error) {
+        if(!safeTerminalError(error.status().value(),error.code(),error.getMessage()))throw new IllegalArgumentException("Unsafe terminal command outcome");
+        return new FrozenTerminalError("TERMINAL_ERROR_V1",error.status().value(),error.code(),error.getMessage());
+    }
+    static <T>T decodeReplay(String json,Class<T> type) {
+        var value=JSON.readTree(json);
+        if(value.has("_coreOutcome")) {
+            var kind=value.get("_coreOutcome");var status=value.get("status");var code=value.get("code");var message=value.get("message");
+            if(value.size()!=4||!kind.isTextual()||!kind.textValue().equals("TERMINAL_ERROR_V1")
+                ||status==null||!status.isIntegralNumber()||!status.canConvertToInt()
+                ||code==null||!code.isTextual()||message==null||!message.isTextual()
+                ||!safeTerminalError(status.intValue(),code.textValue(),message.textValue()))throw new IllegalStateException("Invalid persisted terminal command outcome");
+            throw new ProjectAccessException(code.textValue(),HttpStatus.valueOf(status.intValue()),message.textValue());
+        }
+        // Already-published success responses remain plain DTO JSON, with no migration or wrapping.
+        return JSON.readValue(json,type);
+    }
+    private static boolean safeTerminalError(int status,String code,String message) {
+        return status>=400&&status<500&&HttpStatus.resolve(status)!=null&&code!=null&&code.matches("[A-Z][A-Z0-9_]{1,63}")
+            &&message!=null&&!message.isBlank()&&message.length()<=300&&message.chars().noneMatch(Character::isISOControl);
+    }
+    public record FrozenTerminalError(String _coreOutcome,int status,String code,String message) { }
     public void event(ProjectService.ProjectView p,UUID actor,String type,UUID id,long version,String action,Object snapshot) {
         jdbc.update("INSERT INTO audit_event(tenant_id,project_id,actor_principal_id,action,object_type,object_id,object_revision,after_hash) VALUES(?,?,?,?,?,?,?,?)",p.tenantId(),p.id(),actor,action,type,id,version,hash(JSON.writeValueAsString(snapshot)));
         jdbc.update("INSERT INTO core_outbox_event(tenant_id,project_id,field_id,link_id,object_revision,event_type,payload) VALUES(?,?,?,?,?,?,?::jsonb)",p.tenantId(),p.id(),type.equals("field_definition")?id:null,type.equals("trace_link")?id:null,version,action,JSON.writeValueAsString(snapshot));
