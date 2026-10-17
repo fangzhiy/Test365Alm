@@ -1,9 +1,21 @@
 # Test365Alm
 企业级应用质量管理平台研发规划基线。对标原 ALM/Quality Center 产品体系；具体目标版本、Edition、扩展和旧生态兼容范围须在 P0 冻结。
 
-> **当前状态：R09-CORE-BATCH02。** PR #1～#6 已进入默认分支；PR #7 的 M04/M11 阶段 A 修复通过后，独立 PR #8（base PR #7 分支）实现 M10 缺陷核心与相关复测切片。两条 PR 均不自动合并；不代表完整模块或 ALM 完成。实际代码/交付与 CI 身份见最新轮次记录及交付回复。
+> **当前状态：R10-CORE-BATCH03 最小切片代码CI通过，待独立审核。** PR #1～#8 已进入默认分支 `chore/r01-status-001`，主线 `a2419e292c004b2cd4c7278bdaa40b1ce3442a22` 六Job CI38931708362成功。R10独立 [PR #9](https://github.com/fangzhiy/Test365Alm/pull/9) 代码fa72209的Push38936921155/PR38936929050六Job通过，未合并；最终交付CI以执行回复核对。下面R08/R09说明和轮次记录保留历史背景。各项仅最小切片，不代表完整模块或ALM完成。
 
-## R09 缺陷与失败步骤复测
+## R10 发布、周期与冻结质量快照
+
+沿用下文已有本机隔离启动，不覆盖 `.env.r03`。PROJECT_ADMIN 登录并选项目，在“发布与周期工作台”创建发布和日期，打开详情创建日期包含于发布的周期；从真实需求/用例候选加入范围，显示的是已冻结 revision。新增源修订不会自动改变该范围。
+
+点击“生成质量快照”，查看分子/分母、规则和范围指纹。在原手工执行工作台完成该冻结用例后再评估，新的快照反映执行事实，历史快照保持原值。活动重跑不会把旧 PASS 算当前 PASS。MEMBER/VIEWER 可查看发布、周期及快照，但无写入权限；未入项目的租户管理员无隐式访问。
+
+发布/周期编辑使用版本条件；412 保留草稿，读取最新后必须明确采用或放弃。未知写入保留原键/内容/版本重试；写已确认后仅刷新 GET。归档后全部新写入拒绝，历史仍可读。列表通过“更多”继续分页，不下载全部页；范围最多1000、相关缺陷最多10000，超限明确拒绝评估，不显示截断指标。
+
+正式迁移当前 V19、专用失败探针 V20。完整命令沿用下方 `mvn -B -ntp -Pintegration verify`，专项证据检查为 `python tools/verify_r10_release_report.py apps/server/target/failsafe-reports`；浏览器为 `npx playwright test e2e/releases.spec.ts --workers=1 --retries=0`，仅对本轮 CI-owned 环境执行。契约见 [releases](contracts/releases.md)、[ADR024](docs/adr/024-r10-release-cycle-quality-snapshot.md)、[R10实际记录](docs/progress/runs/R10-CORE-BATCH03.md)。不是完整规划、质量中心、审批或资产管理模块。
+
+前端在`apps/web`执行 `npm run test:run -- --reporter=verbose --reporter=json --outputFile.json=../../local-evidence/r10/vitest.json` 后，在根目录执行 `python tools/verify_r10_release_web_report.py local-evidence/r10/vitest.json`，验证实际组件/API测试名称与完整结果。CI保存`frontend-evidence`内JSON/摘要，以及`backend-evidence`内Failsafe XML/`release-r10-report.txt`；浏览器仅上传脱敏事件时间线与JUnit，不上传原始认证trace。
+
+## R09 缺陷与失败步骤复测（历史切片）
 
 沿用下文 R03 本机隔离启动方式，不覆盖已有 `.env.r03`。登录普通 PROJECT_MEMBER 并选择项目：
 
@@ -15,7 +27,7 @@
 
 请求超时或网络断开时，未知写意图锁定原内容/版本/幂等键，用“重试原意图”确认；不要换新键重复创建。412 保留旧草稿及基础版本；读取最新后明确采用或放弃，不自动重发覆盖。已确认写成功后读取失败，仅刷新 GET。项目/身份/读取权限失效清理原范围。附件/通知/自定义工作流/SLA/复杂树/同步/AI/完整报表未实现。
 
-契约：[缺陷](contracts/defects.md)；决策：[ADR023](docs/adr/023-r09-defect-core-and-related-retest.md)；输入与实际失败/验证：[R09记录](docs/progress/runs/R09-CORE-BATCH02.md)。正式迁移当前V18、专用失败探针V19；下面R08/R06段落中的版本为历史切片说明。
+契约：[缺陷](contracts/defects.md)；决策：[ADR023](docs/adr/023-r09-defect-core-and-related-retest.md)；输入与实际失败/验证：[R09记录](docs/progress/runs/R09-CORE-BATCH02.md)。R09当时正式迁移V18、专用失败探针V19；下面R08/R06段落中的版本也是历史切片说明。
 
 ```powershell
 cd apps/server
