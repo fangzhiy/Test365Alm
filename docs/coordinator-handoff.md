@@ -7,11 +7,12 @@
 - 用户已明确“执行全部”，继续本地实现/测试/审查/集成：审计、业务字段、执行网格、复核、模拟签署与锁定、报告、A03十四用例闭环。Run `run_ac1961a61108`，细则 `docs/oq-delivery-plan.md`，清单 `tasks/oq-delivery-todo.md`。不推送、不部署或接生产，不自行确认业务报告格式认可。
 - 目录树已在 `dev@da47293`。审计总管组合后端 `34c19f6` 完整85单元/167集成真实S3/ClamAV/EICAR全绿，cleanup true；真实浏览器源 `4a13589` 的用例/执行/缺陷三条Keycloak流程全部passed，单worker、0retry/skip，exit0、cleanup/processes_stopped均true。总管已独立核对脱敏JSON、实际源码相同性及审查结论，批准本地dev集成。
 - 审计交接原文归档到 `docs/reviews/audit-history-worker-handoff.md`，正式验收在 `docs/reviews/audit-history-coordinator-review.md`。旧Windows Defender导致的失败保留历史事实，未更改安全软件或降低真实扫描断言。
-- B业务字段worker `ctx_75ff43d25b84`（`feat-business-fields`），C执行网格/运行器worker `ctx_625abb4f3c84`（`feat-execution-grid`）已启动，在各自工作区实际实施。B预留正式V23，C预留正式V24，故意失败探针统一V25；总管处理合流计数，旧V1—V22不改。
+- B业务字段worker `ctx_75ff43d25b84` 与C执行网格/运行器worker `ctx_625abb4f3c84` 已完成各自验收。正式迁移已含B V23、C V24，共24个实际文件；C本轮故意失败探针V25未执行。D预留正式V25、D线探针V26；合流时更新数量与探针，旧V1—V23不改。
 - D复核依赖B，E模拟签署/锁定依赖C/D，F报告依赖E，G最终A03验收依赖全部合流。任务已经入队；收到worker完成事件后按真实验收及依赖启动，不把代码检查点视为整功能通过。
-- 审计浏览器资源已精确清理；B/C重型Docker验证需串行安排。W1演示与其他项目资源继续保持，不复用未知资源、日常.env或5173/8080。
+- 审计、B及C本轮测试资源已精确清理；后续重型Docker验证仍严格串行。W1演示与其他项目资源继续保持，不复用未知资源、日常.env或5173/8080。
 - B业务字段本轮B1/B2已完成总管验收：后端源da9906c的89单元/175完整集成、浏览器源b5cc1b2的三条真实流程全部通过，报告/运行源码一致性及精确清理均已独立核对；最终worker交接b2d9ec2归档为 `docs/reviews/business-fields-worker-handoff.md`，正式决定见 `docs/reviews/business-fields-coordinator-review.md`。批准本地dev集成；独立故障探针和完整14条浏览器全集仍NOT_RUN。
-- C已获续派，先合总管B集成检查点a2b45d2、处理双方夹具并提交实际组合库存和固定51专项门禁；下一Docker时段预留给C，待组合源/门禁审查后执行。D在本次B进入dev的确切SHA上启动，正式迁移预留V25（V24仍归C），D线故障探针改V26；迁移数量按实际文件计算，不把最大版本当数量。D先离线实现，重型验证不得抢占C时段，执行真实验证前还须同步已验收C基线。
+- C已完成总管独立验收：后端源96def34/run d3142b41的scan93/1→unit93→focused93/51→full93/187全零F/E/S，逐名库存匹配；浏览器源8f48057/run7dfd6f17的三条真实Keycloak流程全部passed，1worker/0retry/0skip，real-owned S3/ClamAV及正式双SCRAM provision通过。总管同Engine复核后端53容器、浏览器4容器/1网络/3卷及标签均无残留，秘密删除、同root Java/Node0。最终交接ba65160仅文档变化，原文归档 `docs/reviews/execution-grid-worker-handoff.md`，正式验收 `docs/reviews/execution-grid-coordinator-review.md`；C1/C2批准本地集成，旧失败及cleanup=false记录保留。
+- D复核worker `ctx_9ed975ccb1ec`（`feat-review`，task_7c52218a8a7e）已在B基线23d138c离线提交84eb68b，尚未验收，按安排待命且无资源。C集成后总管主动发送确切已验收基线，D保留全部历史夹具合流并提交逐名库存/固定专项及第四条复核浏览器适配，审查后获下一串行Docker窗口。95/202只是预估，不能充当实际库存或绿色；D1/D2仍未完成。正式V25/探针V26，不提前启动资源。
 
 ### B/C 真实验证前检查点（2026-11-11）
 

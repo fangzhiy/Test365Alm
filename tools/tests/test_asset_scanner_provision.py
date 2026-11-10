@@ -128,6 +128,22 @@ class ScannerProvisionTests(unittest.TestCase):
                 self.assertIn("--dbname=dbname=owned_fixture require_auth=scram-sha-256",call.args[0],"explicit parameter must also fail closed on an unsupported client")
                 if container_mode: self.assertIn("PGREQUIREAUTH",call.args[0])
 
+    def test_container_connections_keep_docker_profile_and_pinned_context_without_libpq_overrides(self):
+        env = self.environment()
+        profile = {"HOME": "/owned/profile", "USERPROFILE": "C:/owned/profile", "HOMEDRIVE": "C:", "HOMEPATH": "/owned/profile"}
+        env.update(profile, PGPORT="5432", TEST365ALM_PROVISION_CONTAINER_ID="a" * 64,
+                   DOCKER_CONTEXT="owned-desktop-context", PGOPTIONS="unsafe", PGSERVICE="unsafe", SPRING_CONFIG_LOCATION="unsafe")
+        run = Mock(side_effect=[subprocess.CompletedProcess([], 0, "", ""), subprocess.CompletedProcess([], 0, "scanner_owned_fixture\n", "")])
+        with contextlib.redirect_stdout(io.StringIO()): self.assertEqual(0, provision.main(env, run))
+        for call in run.call_args_list:
+            self.assertEqual("owned-desktop-context", call.kwargs["env"]["DOCKER_CONTEXT"])
+            for key, value in profile.items():
+                self.assertEqual(value, call.kwargs["env"].get(key))
+                self.assertNotIn(key, call.args[0], "Docker config lookup variables must not be forwarded into PostgreSQL")
+            for key in ("PGOPTIONS", "PGSERVICE", "SPRING_CONFIG_LOCATION"):
+                self.assertNotIn(key, call.kwargs["env"])
+            self.assertEqual("scram-sha-256", call.kwargs["env"]["PGREQUIREAUTH"])
+
     def test_login_verification_timeout_reports_possible_partial_completion(self):
         run = Mock(side_effect=[subprocess.CompletedProcess([], 0, "", ""), subprocess.TimeoutExpired(["psql"], 15)])
         output = io.StringIO()

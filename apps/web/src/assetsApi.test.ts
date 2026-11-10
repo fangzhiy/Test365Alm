@@ -29,3 +29,11 @@ it('asset file preflight rejects unsupported empty and oversized files before HT
  await expect(prepareAssetFile(new File([],'empty.txt',{type:'text/plain'}))).rejects.toMatchObject({status:400,code:'INVALID_REQUEST'})
  const huge=new File(['x'],'huge.txt',{type:'text/plain'});Object.defineProperty(huge,'size',{value:26214401});await expect(prepareAssetFile(huge)).rejects.toThrow()
 })
+
+it('step attachments keep an exact persisted step target and a CLEAN revision',async()=>{
+ const revision={id:'r',projectId:'p',assetId:'a',revisionNumber:1,filename:'evidence.txt',size:4,sha256:sha,mime:'text/plain',scanStatus:'CLEAN',createdBy:'member',createdAt:now}
+ const link={id:'link',projectId:'p',kind:'RUN_STEP',requirementId:null,testCaseId:null,defectId:null,runStepId:'step-identity',assetId:'a',assetRevisionId:'r',revision,createdBy:'member',createdAt:now}
+ const fetch=vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({items:[link],nextCursor:null}))).mockResolvedValueOnce(new Response(JSON.stringify({items:[{...link,runStepId:'other-step'}],nextCursor:null})))
+ vi.stubGlobal('fetch',fetch);expect((await assetsApi.attachments('p',{kind:'RUN_STEP',id:'step-identity'})).items[0]).toMatchObject({runStepId:'step-identity'})
+ expect(fetch.mock.calls[0][0]).toContain('runStepId=step-identity');await expect(assetsApi.attachments('p',{kind:'RUN_STEP',id:'step-identity'})).rejects.toMatchObject({code:'INVALID_RESPONSE'})
+})

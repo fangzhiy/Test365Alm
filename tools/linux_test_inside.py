@@ -10,7 +10,7 @@ from pathlib import Path
 PHASES = {
     "scan": ["-Pintegration", "verify", "-Dit.test=AssetDatabaseIT#realClamdCleanAndEicarProduceSafeTerminalStates"],
     "unit": ["test"],
-    "focused": ["-Pintegration", "verify", "-Dit.test=BusinessFieldsDatabaseIT,BusinessFieldsMigrationUpgradeIT"],
+    "focused": ["-Pintegration", "verify", "-Dit.test=BusinessFieldsDatabaseIT,BusinessFieldsMigrationUpgradeIT,ManualExecutionDatabaseIT,ManualExecutionMigrationUpgradeIT,AssetDatabaseIT#stepEvidence*,OidcCallbackSecurityIT#realOidcManualExecutionHttpRunsAndRejectsViewerWrites,AssetMigrationUpgradeIT,DefectMigrationUpgradeIT,ReleaseMigrationUpgradeIT,AssetProvisioningUpgradeIT#upgradedDatabaseUsesProvisionedRestrictedScannerLogin"],
     "integration": ["-Pintegration", "verify"],
 }
 
@@ -27,9 +27,63 @@ BUSINESS_METHODS = {
 } | {("com.test365alm.server.businessfields.BusinessFieldsMigrationUpgradeIT",
       "nonemptyV22UpgradePreservesAllHistoricalContentAndRuntimeCannotRewriteIt")}
 
+# Coordinator-approved C43 + B8, frozen by method identity, never CLI counts.
+EXECUTION_METHODS = {
+    ('com.test365alm.server.asset.AssetDatabaseIT', 'stepEvidenceAuditAndOutboxFailureRollBackLinkAndFrozenClaim'),
+    ('com.test365alm.server.asset.AssetDatabaseIT', 'stepEvidenceRejectsViewerForeignPausedAndFinishedTargets'),
+    ('com.test365alm.server.asset.AssetDatabaseIT', 'stepEvidenceUsesRealCleanRevisionAndPreservesOldAttemptOnRetry'),
+    ('com.test365alm.server.asset.AssetMigrationUpgradeIT', 'v19NonEmptyDatabaseUpgradesToV20WithoutLosingExistingBusinessHistory'),
+    ('com.test365alm.server.asset.AssetProvisioningUpgradeIT', 'upgradedDatabaseUsesProvisionedRestrictedScannerLogin'),
+    ('com.test365alm.server.defect.DefectMigrationUpgradeIT', 'nonemptyV17RequirementsTestsRunsAndTraceSurviveV18AndRemainUsable'),
+    ('com.test365alm.server.execution.ManualExecutionDatabaseIT', 'actualTextConclusionAndFirstExecutionTimePersistIndependentlyAcrossReloadAndReplay'),
+    ('com.test365alm.server.execution.ManualExecutionDatabaseIT', 'assignmentAuditAndOutboxFailuresRollBackAssignmentEventAndClaim'),
+    ('com.test365alm.server.execution.ManualExecutionDatabaseIT', 'assignmentConcurrentWritersFreezeReplayAndReauthorizeBeforeReturningIt'),
+    ('com.test365alm.server.execution.ManualExecutionDatabaseIT', 'assignmentDirectoryPagesOnlyActiveWritersAndPreservesOpaqueCursor'),
+    ('com.test365alm.server.execution.ManualExecutionDatabaseIT', 'assignmentsRejectViewerNonmemberCrossProjectDisabledAndExpiredIdentities'),
+    ('com.test365alm.server.execution.ManualExecutionDatabaseIT', 'auditInsertFailureRollsBackFinish'),
+    ('com.test365alm.server.execution.ManualExecutionDatabaseIT', 'auditInsertFailureRollsBackRunCreation'),
+    ('com.test365alm.server.execution.ManualExecutionDatabaseIT', 'auditInsertFailureRollsBackStepSave'),
+    ('com.test365alm.server.execution.ManualExecutionDatabaseIT', 'concurrentRerunsAllowOnlyOneActiveAttempt'),
+    ('com.test365alm.server.execution.ManualExecutionDatabaseIT', 'concurrentSameKeyRerunReplaysTheFrozenResponse'),
+    ('com.test365alm.server.execution.ManualExecutionDatabaseIT', 'concurrentSameKeyRunCreationReplaysTheFrozenResponse'),
+    ('com.test365alm.server.execution.ManualExecutionDatabaseIT', 'concurrentSameKeyStepSaveReplaysTheFrozenResponse'),
+    ('com.test365alm.server.execution.ManualExecutionDatabaseIT', 'concurrentStepWriteAndFinishHaveOneVersionedWinner'),
+    ('com.test365alm.server.execution.ManualExecutionDatabaseIT', 'concurrentStepWritesRejectExactlyOneStaleVersion'),
+    ('com.test365alm.server.execution.ManualExecutionDatabaseIT', 'createsImmutableManifestExecutesAndRerunsWithoutChangingSource'),
+    ('com.test365alm.server.execution.ManualExecutionDatabaseIT', 'executionBuildingStillRejectsHistoricalManifestAndTerminalAttemptWrites'),
+    ('com.test365alm.server.execution.ManualExecutionDatabaseIT', 'finishedAttemptRejectsLateStepEventsButFinishEventIsPersisted'),
+    ('com.test365alm.server.execution.ManualExecutionDatabaseIT', 'gridFiltersBeforeLimitAndContinuesAcrossInstancesWithoutOtherSetLeak'),
+    ('com.test365alm.server.execution.ManualExecutionDatabaseIT', 'manifestAssignmentAndOldAttemptStayFrozenAfterReassignmentRenameAndRevision'),
+    ('com.test365alm.server.execution.ManualExecutionDatabaseIT', 'outboxInsertFailureRollsBackFinish'),
+    ('com.test365alm.server.execution.ManualExecutionDatabaseIT', 'outboxInsertFailureRollsBackRunCreation'),
+    ('com.test365alm.server.execution.ManualExecutionDatabaseIT', 'outboxInsertFailureRollsBackStepAndAttemptVersion'),
+    ('com.test365alm.server.execution.ManualExecutionDatabaseIT', 'pagedExecutionReadsAndSummaryUseStableProjectScopedCounts'),
+    ('com.test365alm.server.execution.ManualExecutionDatabaseIT', 'pauseReplayReturnsTheOriginalFrozenResponseAfterResume'),
+    ('com.test365alm.server.execution.ManualExecutionDatabaseIT', 'runtimeCannotForgeAssignmentIdentityVersionScopeOrFrozenEvidenceIdentity'),
+    ('com.test365alm.server.execution.ManualExecutionDatabaseIT', 'runtimeCannotMutateSealedManifestOrFinishedAttempt'),
+    ('com.test365alm.server.execution.ManualExecutionDatabaseIT', 'sameKeyDifferentStepContentIsRejectedWithoutSideEffects'),
+    ('com.test365alm.server.execution.ManualExecutionDatabaseIT', 'setPaginationContinuesBeyondDefaultPageWithStableTimestampTiesAndNoScopeLeak'),
+    ('com.test365alm.server.execution.ManualExecutionDatabaseIT', 'sourceRevisionChangesDoNotRewriteAnExistingRunManifest'),
+    ('com.test365alm.server.execution.ManualExecutionDatabaseIT', 'summarySeparatesUnrunActiveAndLatestCompletedResultsAcrossAuthorizedScopes'),
+    ('com.test365alm.server.execution.ManualExecutionDatabaseIT', 'zeroStepRevisionCannotStartAManualRun'),
+    ('com.test365alm.server.execution.ManualExecutionMigrationUpgradeIT', 'v13NonEmptyExecutionDatabaseUpgradesToV16'),
+    ('com.test365alm.server.execution.ManualExecutionMigrationUpgradeIT', 'v14NonEmptyExecutionDatabaseUpgradesToV16'),
+    ('com.test365alm.server.execution.ManualExecutionMigrationUpgradeIT', 'v16NonEmptyExecutionDatabaseUpgradesToV17WithoutLosingHistoryOrReplay'),
+    ('com.test365alm.server.execution.ManualExecutionMigrationUpgradeIT', 'v22NonEmptyExecutionDatabaseUpgradesToV24WithUnknownHistoricalClocks'),
+    ('com.test365alm.server.identity.OidcCallbackSecurityIT', 'realOidcManualExecutionHttpRunsAndRejectsViewerWrites'),
+    ('com.test365alm.server.release.ReleaseMigrationUpgradeIT', 'nonemptyV18RequirementsTestsExecutionDefectsAndTraceSurviveV19AndRemainUsable'),
+}
+FOCUSED_METHODS = BUSINESS_METHODS | EXECUTION_METHODS
+INVENTORY = json.loads((Path(__file__).with_name("linux-test") / "combined-methods.json").read_text(encoding="utf-8"))
+UNIT_METHODS = {(suite,name) for suite,names in INVENTORY["unit"].items() for name in names}
+INTEGRATION_METHODS = {(suite,name) for suite,names in INVENTORY["integration"].items() for name in names}
+if len(UNIT_METHODS) != 93 or len(INTEGRATION_METHODS) != 187 or not FOCUSED_METHODS <= INTEGRATION_METHODS:
+    raise ValueError("Frozen combined method inventory does not match the reviewed gate")
+
 
 def valid_report(phase: str, report: dict) -> bool:
-    expected = {"scan": (89, 1), "unit": (89, None), "focused": (89, 8), "integration": (89, 175)}[phase]
+    # The merged source inventory is frozen by identity, not a caller-selected total.
+    expected = {"scan": (93, 1), "unit": (93, None), "focused": (93, 51), "integration": (93, 187)}[phase]
     if report["unit"]["tests"] != expected[0]:
         return False
     if expected[1] is not None and report["integration"]["tests"] != expected[1]:
@@ -43,11 +97,59 @@ def valid_report(phase: str, report: dict) -> bool:
             return False
         if any(summary[key] for key in ("failures", "errors", "skipped")):
             return False
+        if any(case.get(flag, False) for case in summary["cases"] for flag in ("failure", "error", "skipped")):
+            return False
+        required = UNIT_METHODS if kind == "unit" else INTEGRATION_METHODS if phase == "integration" else None
+        if required is not None and set(identities) != required:
+            return False
+    if phase == "scan" and {(case["class"], case["method"]) for case in report["integration"]["cases"]} != {
+            ("com.test365alm.server.asset.AssetDatabaseIT", "realClamdCleanAndEicarProduceSafeTerminalStates")}:
+        return False
     if phase in ("focused", "integration"):
         actual = {(case["class"], case["method"]) for case in report["integration"]["cases"]}
-        if not BUSINESS_METHODS <= actual:
+        if not FOCUSED_METHODS <= actual:
             return False
     return True
+
+
+# Failure diagnostics are lossy classifications, never raw exception/log exports.
+DIAGNOSTIC_TYPES = frozenset((
+    "org.opentest4j.AssertionFailedError", "java.lang.AssertionError",
+    "org.springframework.jdbc.BadSqlGrammarException",
+    "org.springframework.dao.DataIntegrityViolationException",
+    "org.springframework.dao.InvalidDataAccessApiUsageException",
+    "org.postgresql.util.PSQLException", "java.lang.IllegalStateException",
+    "com.test365alm.server.project.ProjectAccessException",
+))
+DIAGNOSTIC_SQLSTATES = frozenset(("42703", "42P01", "42501", "23502", "23503", "23505", "23514", "40001", "40P01"))
+DIAGNOSTIC_CLASSES = {suite for suite, _ in UNIT_METHODS | INTEGRATION_METHODS} | {
+    "com.test365alm.server.execution.ExecutionService",
+    "com.test365alm.server.fixture.HistoricalExecutionService61711294",
+    "com.test365alm.server.fixture.HistoricalExecutionUpgradeSupport",
+    "com.test365alm.server.defect.DefectEvidence",
+    "com.test365alm.server.defect.LegacyDefectService",
+    "com.test365alm.server.defect.DefectService",
+}
+
+
+def failure_diagnostics(node: ET.Element) -> dict:
+    # Bound both input work and output size; ignore attributes other than type.
+    body = (node.text or "")[:262144]
+    types = []
+    for candidate in [node.get("type", ""), *re.findall(r"(?m)^(?:Caused by: )?([\w.$]+)(?=:|$)", body)]:
+        if candidate in DIAGNOSTIC_TYPES and candidate not in types:
+            types.append(candidate)
+    states = sorted(set(re.findall(r"\b(?:SQLState|SQL state|SQLSTATE):?\s*([A-Z0-9]{5})\b", body)) & DIAGNOSTIC_SQLSTATES)
+    frames = []
+    for cls, filename, line in re.findall(r"(?m)^\s*at ([\w.$]+)\.[\w$<>]+\(([\w$]+\.java):(\d{1,5})\)\s*$", body):
+        if cls not in DIAGNOSTIC_CLASSES or filename != cls.rsplit(".", 1)[-1] + ".java" or int(line) < 1:
+            continue
+        frame = {"class": cls, "file": filename, "line": int(line)}
+        if frame not in frames:
+            frames.append(frame)
+        if len(frames) == 8:
+            break
+    return {"types": types, "sqlstates": states, "frames": frames}
 
 
 def summarize(directory: Path) -> dict:
@@ -55,11 +157,17 @@ def summarize(directory: Path) -> dict:
     for path in sorted(directory.glob("TEST-*.xml")):
         suite = ET.parse(path).getroot()
         for case in suite.findall("testcase"):
-            # Never export system-out/err, exception messages, properties, or stack traces.
-            cases.append({"class": case.get("classname"), "method": case.get("name"),
+            # Never export system-out/err, messages, properties, SQL, or raw stack traces.
+            item = {"class": case.get("classname"), "method": case.get("name"),
                           "failure": case.find("failure") is not None,
                           "error": case.find("error") is not None,
-                          "skipped": case.find("skipped") is not None})
+                          "skipped": case.find("skipped") is not None}
+            failed = case.find("failure")
+            if failed is None:
+                failed = case.find("error")
+            if failed is not None:
+                item["diagnostics"] = failure_diagnostics(failed)
+            cases.append(item)
     for case in cases:
         if not all(re.fullmatch(r"[\w.$#()\[\], :\-]+", case[k] or "") for k in ("class", "method")):
             raise ValueError("Unexpected test identity; refuse export")
@@ -70,6 +178,8 @@ def summarize(directory: Path) -> dict:
 
 
 def main() -> int:
+    if len(sys.argv) != 2 or sys.argv[1] not in PHASES:
+        return 2  # No arbitrary selector/count arguments, including inside the runner.
     phase = sys.argv[1]
     args = PHASES[phase]
     evidence = Path("/work/evidence")

@@ -301,6 +301,22 @@ class OidcCallbackSecurityIT {
         assertEquals(201, added.statusCode(), added.body());
         UUID instance = UUID.fromString(jsonField(added.body(), "id"));
 
+        String assignmentPath="/api/v1/projects/"+project+"/test-instances/"+instance+"/assignee";
+        String assignmentKey="m09-grid-assignment-"+UUID.randomUUID();
+        String assignmentBody="{\"assigneeId\":\""+memberId+"\",\"expectedVersion\":1}";
+        assertEquals(403,putExecutionStep(member.client,assignmentPath,null,null,1,assignmentKey,assignmentBody).statusCode());
+        assertEquals(400,putExecutionStep(member.client,assignmentPath,memberCsrfHeader,memberCsrf,1,
+                "m09-grid-viewer-target-"+UUID.randomUUID(),"{\"assigneeId\":\""+viewerId+"\",\"expectedVersion\":1}").statusCode());
+        var assigned=putExecutionStep(member.client,assignmentPath,memberCsrfHeader,memberCsrf,1,assignmentKey,assignmentBody);
+        assertEquals(200,assigned.statusCode(),assigned.body()); assertEquals(memberId.toString(),jsonField(assigned.body(),"assigneeId"));
+        String gridPath=setPath+"/"+set+"/execution-grid";
+        var unrunGrid=get(member.client,gridPath+"?status=NOT_RUN&limit=1&assigneeId="+memberId);
+        assertEquals(200,unrunGrid.statusCode(),unrunGrid.body());
+        assertTrue(jsonNode(unrunGrid.body(),"items","0","executionDate").isNull());
+        var people=get(member.client,"/api/v1/projects/"+project+"/execution-assignees?limit=1");
+        assertEquals(200,people.statusCode(),people.body()); assertEquals(1,jsonNode(people.body(),"items").size());
+        assertTrue(jsonNode(people.body(),"nextCursor").isTextual());
+
         HttpResponse<String> createdRun = postExecution(member.client, "/api/v1/projects/" + project + "/runs",
                 memberCsrfHeader, memberCsrf, "m09-http-run-" + UUID.randomUUID(),
                 "{\"testInstanceId\":\"" + instance + "\",\"mode\":\"MANUAL\"}");
@@ -310,6 +326,19 @@ class OidcCallbackSecurityIT {
         long attemptVersion = jsonLong(createdRun.body(), "currentAttempt", "rowVersion");
         UUID step = UUID.fromString(jsonText(createdRun.body(), "currentAttempt", "steps", "0", "stepKey"));
         long stepVersion = jsonLong(createdRun.body(), "currentAttempt", "steps", "0", "rowVersion");
+        assertEquals(memberId.toString(),jsonText(createdRun.body(),"manifest","assigneeId"));
+        assertNotNull(UUID.fromString(jsonText(createdRun.body(),"currentAttempt","steps","0","runStepId")));
+        assertTrue(jsonNode(createdRun.body(),"currentAttempt","steps","0","executedAt").isNull());
+        assertTrue(jsonNode(createdRun.body(),"currentAttempt","steps","0","updatedAt").isNull());
+        var runningGrid=get(member.client,gridPath+"?status=RUNNING&limit=1&assigneeId="+memberId);
+        assertEquals(200,runningGrid.statusCode(),runningGrid.body());
+        assertEquals(run.toString(),jsonText(runningGrid.body(),"items","0","runId"));
+        assertEquals(jsonText(createdRun.body(),"currentAttempt","startedAt"),jsonText(runningGrid.body(),"items","0","executionDate"));
+        var cleared=putExecutionStep(member.client,assignmentPath,memberCsrfHeader,memberCsrf,2,"m09-grid-clear-"+UUID.randomUUID(),"{\"assigneeId\":null,\"expectedVersion\":2}");
+        assertEquals(200,cleared.statusCode(),cleared.body());
+        var frozen=putExecutionStep(member.client,assignmentPath,memberCsrfHeader,memberCsrf,1,assignmentKey,assignmentBody);
+        assertEquals(assigned.body(),frozen.body(),"assignment replay returns its frozen response after later reassignment");
+        assertEquals(memberId.toString(),jsonText(get(member.client,"/api/v1/projects/"+project+"/runs/"+run).body(),"manifest","assigneeId"));
         HttpResponse<String> missingCsrf = putExecutionStep(member.client,
                 "/api/v1/projects/" + project + "/runs/" + run + "/attempts/" + attempt + "/steps/" + step,
                 null, null, stepVersion, "m09-http-missing-csrf-" + UUID.randomUUID(),
@@ -320,14 +349,26 @@ class OidcCallbackSecurityIT {
                 memberCsrfHeader, memberCsrf, stepVersion, "m09-http-conflicting-version-" + UUID.randomUUID(),
                 "{\"actualResult\":\"Visible\",\"conclusion\":\"PASS\",\"expectedVersion\":" + (stepVersion + 1) + "}");
         assertEquals(400, conflictingVersion.statusCode(), conflictingVersion.body());
+        var textOnly=putExecutionStep(member.client,"/api/v1/projects/"+project+"/runs/"+run+"/attempts/"+attempt+"/steps/"+step,
+                memberCsrfHeader,memberCsrf,stepVersion,"m09-grid-text-"+UUID.randomUUID(),
+                "{\"actualResult\":\"Text without a conclusion\",\"conclusion\":\"NOT_RUN\",\"expectedVersion\":"+stepVersion+"}");
+        assertEquals(200,textOnly.statusCode(),textOnly.body());
+        assertEquals("Text without a conclusion",jsonText(textOnly.body(),"steps","0","actualResult"));
+        assertEquals("NOT_RUN",jsonText(textOnly.body(),"steps","0","conclusion"));
+        assertTrue(jsonNode(textOnly.body(),"steps","0","executedAt").isNull());
+        assertNotNull(OffsetDateTime.parse(jsonText(textOnly.body(),"steps","0","updatedAt")));
+        stepVersion++;
         HttpResponse<String> saved = putExecutionStep(member.client,
                 "/api/v1/projects/" + project + "/runs/" + run + "/attempts/" + attempt + "/steps/" + step,
                 memberCsrfHeader, memberCsrf, stepVersion, "m09-http-step-" + UUID.randomUUID(),
-                "{\"actualResult\":\"Visible\",\"conclusion\":\"PASS\",\"expectedVersion\":" + stepVersion + "}");
+                "{\"actualResult\":\"\",\"conclusion\":\"PASS\",\"expectedVersion\":" + stepVersion + "}");
         assertEquals(200, saved.statusCode(), saved.body());
+        assertEquals("",jsonText(saved.body(),"steps","0","actualResult"));
+        assertEquals("PASS",jsonText(saved.body(),"steps","0","conclusion"));
+        assertNotNull(OffsetDateTime.parse(jsonText(saved.body(),"steps","0","executedAt")));
         HttpResponse<String> finished = postExecutionVersion(member.client,
                 "/api/v1/projects/" + project + "/runs/" + run + "/attempts/" + attempt + "/finish",
-                memberCsrfHeader, memberCsrf, attemptVersion + 1, "m09-http-finish-" + UUID.randomUUID());
+                memberCsrfHeader, memberCsrf, attemptVersion + 2, "m09-http-finish-" + UUID.randomUUID());
         assertEquals(200, finished.statusCode(), finished.body());
         assertEquals("FINISHED", jsonText(finished.body(), "status"));
         assertEquals(404, get(member.client, "/api/v1/projects/" + project + "/runs/" + UUID.randomUUID()).statusCode());
@@ -346,6 +387,9 @@ class OidcCallbackSecurityIT {
         String viewerCsrfHeader = jsonField(viewerCsrfBody, "headerName");
         String viewerCsrf = jsonField(viewerCsrfBody, "token");
         assertEquals(200, get(viewer.client, "/api/v1/projects/" + project + "/test-sets").statusCode());
+        assertEquals(200,get(viewer.client,gridPath+"?status=FINISHED&limit=1").statusCode());
+        assertEquals(403,putExecutionStep(viewer.client,assignmentPath,viewerCsrfHeader,viewerCsrf,3,
+                "m09-grid-viewer-write-"+UUID.randomUUID(),"{\"assigneeId\":null,\"expectedVersion\":3}").statusCode());
         assertEquals(200, get(viewer.client, "/api/v1/projects/" + project + "/runs/" + run).statusCode());
         HttpResponse<String> denied = postExecution(viewer.client, setPath, viewerCsrfHeader, viewerCsrf,
                 "m09-http-viewer-denied-" + UUID.randomUUID(), "{\"name\":\"denied\",\"description\":\"\"}");

@@ -144,7 +144,7 @@ public class AssetService {
             var prior=jdbc.query("SELECT id FROM attachment_link WHERE tenant_id=? AND project_id=? AND kind=? AND "+column+"=? AND asset_revision_id=?",(r,i)->r.getObject(1,UUID.class),p.tenantId(),project,c.kind(),c.target(),c.revisionId());
             if(!prior.isEmpty()){var result=attachment(p,prior.get(0));commands.save(p,actor,route,key,hash,result);return result;}
             UUID id=UUID.randomUUID();
-            jdbc.update("INSERT INTO attachment_link(tenant_id,project_id,id,kind,requirement_id,test_case_id,defect_id,asset_id,asset_revision_id,created_by) VALUES(?,?,?,?,?,?,?,?,?,?)",p.tenantId(),project,id,c.kind(),c.kind().equals("REQUIREMENT")?c.target():null,c.kind().equals("TEST_CASE")?c.target():null,c.kind().equals("DEFECT")?c.target():null,c.assetId(),c.revisionId(),actor);
+            jdbc.update("INSERT INTO attachment_link(tenant_id,project_id,id,kind,requirement_id,test_case_id,defect_id,run_step_id,asset_id,asset_revision_id,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?)",p.tenantId(),project,id,c.kind(),c.kind().equals("REQUIREMENT")?c.target():null,c.kind().equals("TEST_CASE")?c.target():null,c.kind().equals("DEFECT")?c.target():null,c.kind().equals("RUN_STEP")?c.target():null,c.assetId(),c.revisionId(),actor);
             var result=attachment(p,id);event(p,actor,null,c.assetId(),c.revisionId(),id,"ATTACHMENT_LINK_CREATED",Map.of("linkId",id,"kind",c.kind(),"targetId",c.target(),"assetId",c.assetId(),"revisionId",c.revisionId()));
             commands.save(p,actor,route,key,hash,result);return result;});
     }
@@ -154,11 +154,18 @@ public class AssetService {
             return page(ids.stream().map(id->attachment(p,id)).toList(),n,Attachment::id);});
     }
     private void target(ProjectService.ProjectView p,String kind,UUID id,boolean write) {
+        if ("RUN_STEP".equals(kind)) {
+            var states=jdbc.query("SELECT a.status FROM run_step s JOIN run_attempt a ON a.tenant_id=s.tenant_id AND a.project_id=s.project_id AND a.id=s.attempt_id WHERE s.tenant_id=? AND s.project_id=? AND s.id=?"+(write?" FOR UPDATE OF a":""),
+                    (r,i)->r.getString("status"),p.tenantId(),p.id(),id);
+            String state=one(states);
+            if(write&&!"RUNNING".equals(state))throw ProjectAccessException.conflict("ATTEMPT_NOT_RUNNING","Step evidence can only be linked to a running attempt");
+            return;
+        }
         String table=switch(kind){case "REQUIREMENT"->"requirement";case "TEST_CASE"->"test_case";case "DEFECT"->"defect";default->throw ProjectAccessException.invalid("Unsupported attachment kind");};
         if(id==null)throw ProjectAccessException.invalid("Typed target is required");
         one(jdbc.query("SELECT id FROM "+table+" WHERE tenant_id=? AND project_id=? AND id=?"+(kind.equals("REQUIREMENT")&&write?" AND deleted_at IS NULL":""),(r,i)->r.getObject(1,UUID.class),p.tenantId(),p.id(),id));
     }
-    private static String column(String kind){return switch(kind){case "REQUIREMENT"->"requirement_id";case "TEST_CASE"->"test_case_id";case "DEFECT"->"defect_id";default->throw ProjectAccessException.invalid("Unsupported attachment kind");};}
+    private static String column(String kind){return switch(kind){case "REQUIREMENT"->"requirement_id";case "TEST_CASE"->"test_case_id";case "DEFECT"->"defect_id";case "RUN_STEP"->"run_step_id";default->throw ProjectAccessException.invalid("Unsupported attachment kind");};}
     private Session upload(ProjectService.ProjectView p,UUID id,UUID actor,boolean lock) {
         // NO KEY UPDATE keeps the identity locked yet permits the independent scanner FK's KEY SHARE.
         return one(jdbc.query("SELECT * FROM upload_session WHERE tenant_id=? AND project_id=? AND id=? AND created_by=?"+(lock?" FOR NO KEY UPDATE":""),AssetService::uploadRow,p.tenantId(),p.id(),id,actor));
@@ -168,7 +175,7 @@ public class AssetService {
     }
     private Revision revision(ProjectService.ProjectView p,UUID asset,UUID revision){return one(jdbc.query("SELECT * FROM asset_revision WHERE tenant_id=? AND project_id=? AND asset_id=? AND id=?",AssetService::revisionRow,p.tenantId(),p.id(),asset,revision));}
     private Attachment attachment(ProjectService.ProjectView p,UUID id) {
-        return one(jdbc.query("SELECT * FROM attachment_link WHERE tenant_id=? AND project_id=? AND id=?",(r,i)->new Attachment(id,p.id(),r.getString("kind"),r.getObject("requirement_id",UUID.class),r.getObject("test_case_id",UUID.class),r.getObject("defect_id",UUID.class),r.getObject("asset_id",UUID.class),r.getObject("asset_revision_id",UUID.class),revision(p,r.getObject("asset_id",UUID.class),r.getObject("asset_revision_id",UUID.class)),r.getObject("created_by",UUID.class),r.getObject("created_at",OffsetDateTime.class)),p.tenantId(),p.id(),id));
+        return one(jdbc.query("SELECT * FROM attachment_link WHERE tenant_id=? AND project_id=? AND id=?",(r,i)->new Attachment(id,p.id(),r.getString("kind"),r.getObject("requirement_id",UUID.class),r.getObject("test_case_id",UUID.class),r.getObject("defect_id",UUID.class),r.getObject("run_step_id",UUID.class),r.getObject("asset_id",UUID.class),r.getObject("asset_revision_id",UUID.class),revision(p,r.getObject("asset_id",UUID.class),r.getObject("asset_revision_id",UUID.class)),r.getObject("created_by",UUID.class),r.getObject("created_at",OffsetDateTime.class)),p.tenantId(),p.id(),id));
     }
     private void event(ProjectService.ProjectView p,UUID actor,UUID upload,UUID asset,UUID revision,UUID link,String action,Object payload) {
         String json=CoreCommands.JSON.writeValueAsString(payload);
@@ -192,6 +199,6 @@ public class AssetService {
     public record Receipt(UUID uploadId,String state,long size,String sha256,String mime) { }
     public record Revision(UUID id,UUID projectId,UUID assetId,long revisionNumber,String filename,long size,String sha256,String mime,String scanStatus,UUID createdBy,OffsetDateTime createdAt) { }
     public record Asset(UUID id,UUID projectId,UUID currentRevisionId,Revision currentRevision,UUID createdBy,OffsetDateTime createdAt) { }
-    public record Attachment(UUID id,UUID projectId,String kind,UUID requirementId,UUID testCaseId,UUID defectId,UUID assetId,UUID assetRevisionId,Revision revision,UUID createdBy,OffsetDateTime createdAt) { }
+    public record Attachment(UUID id,UUID projectId,String kind,UUID requirementId,UUID testCaseId,UUID defectId,UUID runStepId,UUID assetId,UUID assetRevisionId,Revision revision,UUID createdBy,OffsetDateTime createdAt) { }
     public record Download(Revision revision,InputStream stream) { }
 }

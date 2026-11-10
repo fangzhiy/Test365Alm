@@ -70,7 +70,7 @@ class MigrationIsolationTests(unittest.TestCase):
                     patch.object(migration, "assert_project_available", return_value=("desktop-linux", "test-engine")), \
                     patch.object(migration, "run_compose", side_effect=[
                         None,
-                        SimpleNamespace(stdout="23\n"),
+                        SimpleNamespace(stdout="24\n"),
                     ]) as compose, \
                     patch.object(migration, "capture_manifest", return_value=manifest), \
                     patch.object(migration, "manifest_path"), \
@@ -92,10 +92,10 @@ class MigrationIsolationTests(unittest.TestCase):
             for key in ("SPRING_DATASOURCE_URL", "SPRING_APPLICATION_JSON", "JAVA_TOOL_OPTIONS", "COMPOSE_FILE"):
                 self.assertNotIn(key, captured)
             self.assertEqual(2, compose.call_count)
-            formal_v22_check = compose.call_args_list[1].args
-            self.assertEqual("exec", formal_v22_check[1])
-            self.assertIn("flyway_schema_history", formal_v22_check[-1])
-            self.assertIn("version = '23'", formal_v22_check[-1])
+            formal_v24_check = compose.call_args_list[1].args
+            self.assertEqual("exec", formal_v24_check[1])
+            self.assertIn("flyway_schema_history", formal_v24_check[-1])
+            self.assertIn("version = '24'", formal_v24_check[-1])
 
 
 if __name__ == "__main__":

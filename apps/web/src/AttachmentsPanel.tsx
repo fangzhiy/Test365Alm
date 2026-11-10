@@ -5,7 +5,7 @@ import type {Asset,AssetPage,AssetRevision,AssetTarget,AssetUpload,Attachment,Up
 import {useCoreRequest} from './useCoreRequest'
 import {newIdempotencyKey} from './requirements'
 
-type Props={projectId:string;target:AssetTarget;access:ProjectAccess|null;resetSignal?:number;onDenied?:()=>void}
+type Props={projectId:string;target:AssetTarget;access:ProjectAccess|null;resetSignal?:number;onDenied?:()=>void;onLockChange?:(locked:boolean)=>void}
 const empty=<T,>():AssetPage<T>=>({items:[],nextCursor:null})
 const labels={CREATED:'未上传',UPLOADED:'已上传，等待扫描',SCAN_FAILED:'扫描失败，可重试',PUBLISHED:'发布已确认',REJECTED:'文件被拒绝，不可发布'}
 export default function AttachmentsPanel(props:Props) {
@@ -18,7 +18,7 @@ function Boundary(props:Props&{access:ProjectAccess}) {
  const onDenied=useCallback(()=>{setDenied(true);callback?.()},[callback])
  return <section aria-label="附件与资产" className="requirement-history"><h4>附件与不可变资产版本</h4>{denied?<p role="alert">当前附件范围已失效，请重新取得项目权限。</p>:<AttachmentScope {...props} onDenied={onDenied}/>}</section>
 }
-function AttachmentScope({projectId,target,access,onDenied}:Props&{access:ProjectAccess;onDenied:()=>void}) {
+function AttachmentScope({projectId,target,access,onDenied,onLockChange}:Props&{access:ProjectAccess;onDenied:()=>void}) {
  const read=useCoreRequest(),download=useCoreRequest(),readRun=read.run
  const [links,setLinks]=useState(empty<Attachment>),[uploads,setUploads]=useState(empty<AssetUpload>),[assets,setAssets]=useState(empty<Asset>)
  const [selected,setSelected]=useState<string|null>(null),[publishedRevision,setPublishedRevision]=useState<string|null>(null),[detailRefresh,setDetailRefresh]=useState(0),[recovered,setRecovered]=useState<AssetUpload|null>(null),[uploadEpoch,setUploadEpoch]=useState(0),[uploadLocked,setUploadLocked]=useState(false),[uploadBusy,setUploadBusy]=useState(false),[detailLocked,setDetailLocked]=useState(false)
@@ -26,6 +26,7 @@ function AttachmentScope({projectId,target,access,onDenied}:Props&{access:Projec
  const revoke=useCallback(()=>{if(urlRef.current){URL.revokeObjectURL(urlRef.current);urlRef.current=null}window.clearTimeout(urlTimer.current)},[])
  useEffect(()=>revoke,[revoke])
  useEffect(()=>{if(read.denied||download.denied)onDenied()},[read.denied,download.denied,onDenied])
+ useEffect(()=>{onLockChange?.(uploadLocked||detailLocked);return()=>onLockChange?.(false)},[uploadLocked,detailLocked,onLockChange])
  const targetKind=target.kind,targetId=target.id
  const load=useCallback((cursor:string|null=null)=>readRun(signal=>assetsApi.attachments(projectId,{kind:targetKind,id:targetId},cursor,{signal}),page=>setLinks(old=>({...page,items:cursor?appendAssets(old.items,page.items):page.items}))),[readRun,projectId,targetKind,targetId])
  useEffect(()=>{void load()},[load])

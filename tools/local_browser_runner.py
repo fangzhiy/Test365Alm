@@ -22,7 +22,7 @@ import uuid
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-from tools import prepare_r03_dev
+from tools import prepare_r03_dev, local_browser_assets
 from tools.linux_test_runner import committed_archive
 from tools.r02_resource_guard import (
     ResourceManifest, ResourceOwnershipError, _docker, _inspect, _labels,
@@ -50,7 +50,7 @@ def port(used: set[int]) -> int:
     return value
 
 
-def fresh_config(root: Path, run: str, source: str) -> dict[str, str]:
+def fresh_config(root: Path, run: str, source: str, with_assets: bool = False) -> dict[str, str]:
     env_file, realm_file = root / ".env.r03", root / "local-evidence/r03/realm.json"
     previous = prepare_r03_dev.ENV, prepare_r03_dev.REALM
     try:
@@ -72,6 +72,8 @@ def fresh_config(root: Path, run: str, source: str) -> dict[str, str]:
                   TEST365ALM_DATASOURCE_URL=f"jdbc:postgresql://127.0.0.1:{pg}/test365alm_r03",
                   SPRING_FLYWAY_URL=f"jdbc:postgresql://127.0.0.1:{pg}/test365alm_r03",
                   TEST365ALM_ASSETS_ENABLED="false", R03_LOCAL_SOURCE_SHA=source)
+    if with_assets:
+        local_browser_assets.configure(values, used, port)
     env_file.write_text("".join(f"{k}={v}\n" for k, v in values.items()), encoding="utf-8")
     realm = json.loads(realm_file.read_text())
     realm["clients"][0]["redirectUris"] = [values["TEST365ALM_OIDC_REDIRECT_URI"]]
@@ -135,6 +137,7 @@ def validate_results(report: dict) -> bool:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", required=True)
+    parser.add_argument("--with-assets", action="store_true", help="Create owned real S3/ClamAV and provision a dedicated scanner LOGIN")
     args = parser.parse_args()
     suffix = uuid.uuid4().hex
     run, project = f"r03-local-{suffix}", f"test365alm-r03-local-{suffix}"
@@ -161,7 +164,8 @@ def main() -> int:
     identities: dict = {}
     processes, handles = [], []
     result, cleanup = 1, False
-    summary = {"run": run, "source": args.source, "project": project, "context": context, "engine": engine}
+    summary = {"run": run, "source": args.source, "project": project, "context": context, "engine": engine,
+               "assets": "real-owned" if args.with_assets else "disabled", "asset_preflight": "NOT_RUN", "scanner_provision": "NOT_RUN"}
 
     def command(command: list, cwd: Path, name: str, timeout=300):
         with (evidence / f"{name}.private.log").open("w", encoding="utf-8") as output:
@@ -176,7 +180,7 @@ def main() -> int:
     try:
         if preexisting_secrets:
             raise ResourceOwnershipError("Refusing pre-existing local secret files")
-        values = fresh_config(root, run, args.source)
+        values = fresh_config(root, run, args.source, with_assets=True) if args.with_assets else fresh_config(root, run, args.source)
         context, engine = assert_project_available(project, env)
         env.update(TEST365ALM_DOCKER_CONTEXT=context, TEST365ALM_DOCKER_ENGINE=engine)
         env.update(values)
@@ -190,7 +194,8 @@ def main() -> int:
         java_home = Path("D:/code/ProOrca/Wetest365ALM/.tools/jdk-21")
         env.update(JAVA_HOME=str(java_home), PATH=str(java_home / "bin") + os.pathsep + env["PATH"])
         summary.update(context=context, engine=engine)
-        raw = _docker(["compose", "--env-file", str(root / ".env.r03"), "-f", str(root / "compose.r03.yaml"),
+        asset_files = ["-f", str(root / "compose.r11.yaml")] if args.with_assets else []
+        raw = _docker(["compose", "--env-file", str(root / ".env.r03"), "-f", str(root / "compose.r03.yaml"), *asset_files,
                        "-p", project, "config", "--format", "json"], env)
         document = json.loads(raw)
         init = root / "local-evidence/init-db.sh"
@@ -198,7 +203,10 @@ def main() -> int:
         for mount in document["services"]["postgres"]["volumes"]:
             if mount["target"].startswith("/docker-entrypoint-initdb.d/"):
                 mount["source"] = str(init)
-        document["services"]["postgres"]["environment"]["POSTGRES_SCANNER_PASSWORD"] = values["R11_SCANNER_PASSWORD"]
+        if args.with_assets:
+            local_browser_assets.prepare_document(document)
+        else:
+            document["services"]["postgres"]["environment"]["POSTGRES_SCANNER_PASSWORD"] = values["R11_SCANNER_PASSWORD"]
         kc = document["services"]["keycloak"]
         kc.update(volumes=[], entrypoint=["/bin/sh", "-c"], command=["sleep infinity"])
         for category in ("services", "volumes", "networks"):
@@ -223,6 +231,12 @@ def main() -> int:
         manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
         verify(resources, args.source, identities, env)
         compose("start")
+        def asset_guard():
+            local_browser_assets.assert_owned(values, services, env, lambda: verify(resources, args.source, identities, env))
+        if args.with_assets:
+            summary["asset_preflight"] = "RUNNING"
+            local_browser_assets.wait_ready(values, asset_guard)
+            summary["asset_preflight"] = "PASSED"
         keycloak = services["keycloak"]["id"]
         verify(resources, args.source, identities, env)
         _docker(["exec", keycloak, "mkdir", "-p", "/opt/keycloak/data/import"], env)
@@ -246,6 +260,10 @@ def main() -> int:
             processes.append(subprocess.Popen(cmd, cwd=cwd, env=env, stdout=handle, stderr=subprocess.STDOUT))
         wait_http(values["TEST365ALM_DEV_BACKEND_URL"] + "/health/ready", processes)
         wait_http(values["TEST365ALM_WEB_ORIGIN"], processes)
+        if args.with_assets:
+            summary["scanner_provision"] = "RUNNING"
+            local_browser_assets.provision(values, services, env, asset_guard)
+            summary["scanner_provision"] = "PASSED"
         verify(resources, args.source, identities, env)
         command(["node", "node_modules/@playwright/test/cli.js", "test", "e2e/project-access.spec.ts", "e2e/manual-execution.spec.ts", "e2e/defects.spec.ts",
                  "--config", "playwright.local.config.ts", "--grep", "real Keycloak UI (manual test case flow|manual execution creates|member creates defect)",
@@ -253,6 +271,9 @@ def main() -> int:
         report = json.loads((evidence / "results.json").read_text())
         result = 0 if validate_results(report) else 1
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+        for stage in ("asset_preflight", "scanner_provision"):
+            if summary[stage] == "RUNNING":
+                summary[stage] = "FAILED"
         summary["failure_type"] = type(error).__name__
         print(f"FAIL: {type(error).__name__} (private diagnostics kept locally)", flush=True)
     finally:

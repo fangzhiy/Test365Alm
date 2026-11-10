@@ -3,6 +3,7 @@ import {act,cleanup,fireEvent,render,screen,waitFor} from '@testing-library/reac
 import userEvent from '@testing-library/user-event'
 import {afterEach,beforeEach,expect,it,vi} from 'vitest'
 import AttachmentsPanel from './AttachmentsPanel'
+import StepAttachments from './StepAttachments'
 import {assetsApi,prepareAssetFile} from './assetsApi'
 import type {AssetUpload,AssetRevision,Attachment} from './assetsApi'
 import type {ProjectAccess} from './projectAccess'
@@ -77,4 +78,19 @@ it('asset MEMBER to VIEWER cancels original write but retains fresh authorized f
 })
 it('asset published session selects its exact revision even when another version is already current',async()=>{
  const u=await created();await u.click(screen.getByRole('button',{name:'上传文件内容'}));await u.click(screen.getByRole('button',{name:'扫描并发布'}));vi.mocked(assetsApi.asset).mockResolvedValue({...asset,currentRevisionId:'r2',currentRevision:{...revision,id:'r2',revisionNumber:2}});await u.click(await screen.findByRole('button',{name:'读取已发布版本'}));await screen.findByText('当前资产修订 2');await u.click(await screen.findByRole('button',{name:'关联所选冻结版本'}));expect(assetsApi.revision).toHaveBeenCalledWith('p','a','r1',expect.anything());expect(assetsApi.attach).toHaveBeenCalledWith('p',target,revision,expect.anything())
+})
+
+it('step runner expands exact evidence target and waits for scan publication before linking',async()=>{
+ const onLock=vi.fn(),stepTarget={kind:'RUN_STEP' as const,id:'saved-step'}
+ vi.mocked(assetsApi.attach).mockResolvedValue({...attachment,kind:'RUN_STEP',requirementId:null,runStepId:'saved-step'})
+ vi.mocked(assetsApi.complete).mockRejectedValueOnce({status:503,code:'SCAN_UNAVAILABLE',message:'扫描暂不可用'}).mockResolvedValueOnce(published)
+ render(<StepAttachments projectId="p" stepId="saved-step" ordinal={1} writable access={access} resetSignal={0} onLock={onLock}/> )
+ expect(assetsApi.attachments).not.toHaveBeenCalled();fireEvent.click(screen.getByRole('button',{name:'查看步骤 1 附件'}));await waitFor(()=>expect(assetsApi.attachments).toHaveBeenCalledWith('p',stepTarget,null,expect.anything()))
+ const u=await selectFile();await u.click(screen.getByRole('button',{name:'创建上传会话'}));await screen.findByText('未上传');await u.click(screen.getByRole('button',{name:'上传文件内容'}));await screen.findByText('已上传，等待扫描')
+ await u.click(screen.getByRole('button',{name:'扫描并发布'}));await screen.findByText('扫描暂不可用');expect(assetsApi.attach).not.toHaveBeenCalled();expect(screen.queryByRole('button',{name:'关联所选冻结版本'})).not.toBeInTheDocument()
+ expect(onLock).toHaveBeenCalledWith('attachment:saved-step',true);await u.click(screen.getByRole('button',{name:'重试原上传操作'}));await screen.findByText('发布已确认')
+ await u.click(screen.getByRole('button',{name:'读取已发布版本'}));await u.click(await screen.findByRole('button',{name:'关联所选冻结版本'}));await screen.findByText('关联已确认')
+ expect(assetsApi.attach).toHaveBeenCalledWith('p',stepTarget,revision,expect.objectContaining({idempotencyKey:expect.any(String)}))
+ cleanup();render(<StepAttachments projectId="p" stepId="saved-step" ordinal={1} writable={false} access={access} resetSignal={0} onLock={onLock}/>);fireEvent.click(screen.getByRole('button',{name:'查看步骤 1 附件'}));await screen.findByRole('button',{name:'刷新附件'})
+ expect(screen.queryByLabelText('选择附件文件')).not.toBeInTheDocument();expect(screen.queryByRole('button',{name:'关联所选冻结版本'})).not.toBeInTheDocument()
 })

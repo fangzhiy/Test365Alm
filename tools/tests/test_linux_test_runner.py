@@ -1,12 +1,14 @@
 import copy
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
 from tools.linux_test_runner import Guard, Identity, RUN, SOURCE, committed_archive, main, validate, run_phases
-from tools.linux_test_inside import summarize, valid_report, BUSINESS_METHODS, PHASES
+from tools.linux_test_inside import summarize, valid_report, FOCUSED_METHODS, UNIT_METHODS, PHASES
 from tools.r02_resource_guard import ResourceOwnershipError
+from tools import linux_test_runner as runner
 
 RUN_ID = "a" * 32
 SHA = "b" * 40
@@ -14,7 +16,8 @@ SHA = "b" * 40
 
 def container():
     return {"Id": "c" * 64, "Created": "created", "Image": "sha256:image",
-            "Config": {"Labels": {RUN: RUN_ID, SOURCE: SHA}}, "HostConfig": {}, "Mounts": []}
+            "Config": {"Labels": {RUN: RUN_ID, SOURCE: SHA}}, "HostConfig": {}, "Mounts": [],
+            "State": {"StartedAt": "first-start"}}
 
 
 class LinuxRunnerGuardTests(unittest.TestCase):
@@ -22,7 +25,7 @@ class LinuxRunnerGuardTests(unittest.TestCase):
         with patch("tools.linux_test_runner.phase", return_value=0) as phase:
             self.assertEqual(0, run_phases(Mock(), "runner", Path("evidence")))
             self.assertEqual(["scan", "unit", "focused", "integration"], [call.args[2] for call in phase.call_args_list])
-        self.assertEqual(["-Pintegration", "verify", "-Dit.test=BusinessFieldsDatabaseIT,BusinessFieldsMigrationUpgradeIT"], PHASES["focused"])
+        self.assertEqual(["-Pintegration", "verify", "-Dit.test=BusinessFieldsDatabaseIT,BusinessFieldsMigrationUpgradeIT,ManualExecutionDatabaseIT,ManualExecutionMigrationUpgradeIT,AssetDatabaseIT#stepEvidence*,OidcCallbackSecurityIT#realOidcManualExecutionHttpRunsAndRejectsViewerWrites,AssetMigrationUpgradeIT,DefectMigrationUpgradeIT,ReleaseMigrationUpgradeIT,AssetProvisioningUpgradeIT#upgradedDatabaseUsesProvisionedRestrictedScannerLogin"], PHASES["focused"])
 
     def test_every_failed_phase_stops_before_later_phases(self):
         for failure_index in range(4):
@@ -35,8 +38,8 @@ class LinuxRunnerGuardTests(unittest.TestCase):
     def test_focused_report_rejects_replaced_duplicate_missing_and_failed_methods(self):
         def summary(cases):
             return {"tests":len(cases),"cases":cases,"failures":0,"errors":0,"skipped":0}
-        report={"unit":summary([{"class":"Unit","method":str(i)} for i in range(89)]),
-                "integration":summary([{"class":c,"method":m} for c,m in sorted(BUSINESS_METHODS)])}
+        report={"unit":summary([{"class":c,"method":m} for c,m in sorted(UNIT_METHODS)]),
+                "integration":summary([{"class":c,"method":m} for c,m in sorted(FOCUSED_METHODS)])}
         self.assertTrue(valid_report("focused",report))
         for alteration in ("replace","duplicate","missing","failures","errors","skipped"):
             bad=copy.deepcopy(report)
@@ -57,6 +60,7 @@ class LinuxRunnerGuardTests(unittest.TestCase):
         for change in (lambda c: c["Config"]["Labels"].update({RUN: "foreign"}),
                        lambda c: c["Config"]["Labels"].pop(SOURCE),
                        lambda c: c.update(Id="replacement"), lambda c: c.update(Created="recreated"),
+                       lambda c: c["State"].update(StartedAt="restarted"),
                        lambda c: c.update(Image="changed")):
             changed = copy.deepcopy(actual)
             change(changed)
@@ -119,6 +123,88 @@ class LinuxRunnerGuardTests(unittest.TestCase):
         guard.discover = Mock(side_effect=ResourceOwnershipError("daemon changed"))
         self.assertFalse(guard.cleanup())
 
+    def test_cleanup_confirms_exact_container_absence_when_ryuk_wins_the_require_or_rm_window(self):
+        for window in ("require", "rm"):
+            guard = self.guard()
+            actual = container()
+            guard.resources[actual["Id"]] = validate(actual, RUN_ID, SHA)
+            guard.discover = Mock()
+            guard.verify_engine = Mock()
+            guard.inspect = Mock(side_effect=[actual, None, None] if window == "require" else [actual, actual, None])
+            guard.docker = Mock()
+            if window == "rm":
+                guard.docker.side_effect = runner.OwnedContainerDisappeared()
+            with self.subTest(window=window):
+                self.assertTrue(guard.cleanup())
+                self.assertEqual("confirmed_absent_after_not_found", guard.cleanup_events[-1]["reason"])
+                self.assertEqual(actual["Id"], guard.cleanup_events[-1]["id"])
+                self.assertEqual(0 if window == "require" else 1, guard.docker.call_count)
+
+    def test_cleanup_refuses_non_not_found_errors_replacements_and_daemon_changes(self):
+        for change in ("unexpected_error", "replacement", "restart", "image", "foreign", "daemon"):
+            guard = self.guard()
+            actual = container()
+            guard.resources[actual["Id"]] = validate(actual, RUN_ID, SHA)
+            guard.discover = Mock()
+            guard.verify_engine = Mock()
+            changed = copy.deepcopy(actual)
+            if change == "replacement": changed["Id"] = "d" * 64
+            if change == "restart": changed["State"]["StartedAt"] = "restarted"
+            if change == "image": changed["Image"] = "sha256:changed"
+            if change == "foreign": changed["Config"]["Labels"][RUN] = "foreign"
+            guard.inspect = Mock(side_effect=[actual, changed])
+            guard.remove = Mock(side_effect=ResourceOwnershipError("unsafe") if change == "unexpected_error" else runner.OwnedContainerDisappeared())
+            if change == "daemon": guard.verify_engine.side_effect = [None, ResourceOwnershipError("daemon changed")]
+            with self.subTest(change=change):
+                self.assertFalse(guard.cleanup())
+                guard.remove.assert_called_once_with(actual["Id"])
+                self.assertEqual("refused", guard.cleanup_events[-1]["reason"])
+                self.assertNotIn("unsafe", str(guard.cleanup_events))
+
+    def test_only_exact_owned_rm_not_found_errors_are_classified_as_disappeared(self):
+        guard = self.guard()
+        identity = "c" * 64
+        for error, code, expected in ((f"Error response from daemon: No such container: {identity}\n", 1, True),
+                                      (f"Error response from daemon: No such container: {'d' * 64}\n", 1, False),
+                                      (f"Error response from daemon: No such container: {identity}\nsecret-extra", 1, False),
+                                      (f"Error response from daemon: No such container: {identity}\n", 125, False),
+                                      ("permission denied secret", 1, False)):
+            result = subprocess.CompletedProcess([], code, b"", error.encode())
+            with self.subTest(code=code, expected=expected), patch("tools.linux_test_runner.subprocess.run", return_value=result):
+                with self.assertRaises(runner.OwnedContainerDisappeared if expected else ResourceOwnershipError) as failure:
+                    guard.docker("container", "rm", "-f", "-v", identity)
+                self.assertEqual(expected, isinstance(failure.exception, runner.OwnedContainerDisappeared))
+                self.assertNotIn("secret", str(failure.exception))
+
+    def test_inspect_requires_a_complete_not_found_response_for_the_exact_id(self):
+        guard = self.guard()
+        identity = "c" * 64
+        for error, code, absent in ((f"Error: No such container: {identity}\n", 1, True),
+                                     (f"Error: No such object: {identity}\n", 1, True),
+                                     (f"Error: No such container: {'d'*64}\n", 1, False),
+                                     (f"Error: No such container: {identity}\nsecret-extra", 1, False),
+                                     (f"Error: No such container: {identity}\n", 125, False),
+                                     ("permission denied secret", 1, False)):
+            result = subprocess.CompletedProcess([], code, b"[]", error.encode())
+            with self.subTest(absent=absent, code=code), patch("tools.linux_test_runner.subprocess.run", return_value=result):
+                if absent:
+                    self.assertIsNone(guard.inspect(identity))
+                else:
+                    with self.assertRaises(ResourceOwnershipError): guard.inspect(identity)
+
+    def test_first_start_is_recorded_once_and_a_later_restart_cannot_replace_it(self):
+        guard = self.guard()
+        actual = container()
+        actual["State"]["StartedAt"] = "0001-01-01T00:00:00Z"
+        guard.resources[actual["Id"]] = validate(actual, RUN_ID, SHA)
+        guard.verify_engine = Mock()
+        actual["State"]["StartedAt"] = "first-start"
+        guard.inspect = Mock(return_value=actual)
+        guard.require(actual["Id"])
+        self.assertEqual("first-start", guard.resources[actual["Id"]].started_at)
+        actual["State"]["StartedAt"] = "second-start"
+        with self.assertRaises(ResourceOwnershipError): guard.require(actual["Id"])
+
     def test_archive_requires_exact_commit_and_refuses_daily_env_before_export(self):
         with tempfile.TemporaryDirectory() as directory:
             destination = Path(directory) / "source.tar"
@@ -132,7 +218,7 @@ class LinuxRunnerGuardTests(unittest.TestCase):
                 self.assertFalse(destination.exists())
 
     def test_main_phase_exception_always_cleans_and_records_failure(self):
-        guard = Mock(context="local", engine="engine", resources={})
+        guard = Mock(context="local", engine="engine", resources={}, cleanup_events=[])
         guard.labels.return_value = []
         guard.docker.side_effect = ["built", "sha256:" + "e" * 64]
         guard.cleanup.return_value = True
@@ -169,6 +255,42 @@ class LinuxRunnerGuardTests(unittest.TestCase):
                 '<testcase classname="SafeTest" name="same"/><testcase classname="SafeTest" name="same"/></testsuite>')
             with self.assertRaises(ValueError):
                 summarize(Path(directory))
+
+    def test_failure_diagnostics_export_only_known_types_states_and_source_locations(self):
+        with tempfile.TemporaryDirectory() as directory:
+            (Path(directory) / "TEST-safe.xml").write_text('''<testsuite>
+              <testcase classname="com.test365alm.server.execution.ManualExecutionDatabaseIT"
+                        name="manifestAssignmentAndOldAttemptStayFrozenAfterReassignmentRenameAndRevision">
+                <failure type="org.opentest4j.AssertionFailedError" message="secret-message">
+org.opentest4j.AssertionFailedError: secret-assertion-values
+ at com.test365alm.server.execution.ManualExecutionDatabaseIT.manifestAssignmentAndOldAttemptStayFrozenAfterReassignmentRenameAndRevision(ManualExecutionDatabaseIT.java:1003)
+ at evil.Secret.secret(Secret.java:12)
+Caused by: org.postgresql.util.PSQLException: secret-sql SQLState: 42703
+ at com.test365alm.server.execution.ExecutionService.attempt(ExecutionService.java:450)
+                </failure><properties>secret-property</properties><system-out>secret-log</system-out>
+              </testcase></testsuite>''', encoding="utf-8")
+            report = summarize(Path(directory))
+            diagnostics = report["cases"][0]["diagnostics"]
+            self.assertEqual(["org.opentest4j.AssertionFailedError", "org.postgresql.util.PSQLException"], diagnostics["types"])
+            self.assertEqual(["42703"], diagnostics["sqlstates"])
+            self.assertEqual([{"class": "com.test365alm.server.execution.ManualExecutionDatabaseIT",
+                               "file": "ManualExecutionDatabaseIT.java", "line": 1003},
+                              {"class": "com.test365alm.server.execution.ExecutionService",
+                               "file": "ExecutionService.java", "line": 450}], diagnostics["frames"])
+            self.assertNotIn("secret", str(report).lower())
+            self.assertNotIn("evil", str(report))
+
+    def test_unknown_diagnostics_are_omitted_and_known_frames_are_bounded(self):
+        with tempfile.TemporaryDirectory() as directory:
+            frames = "\n".join(f" at com.test365alm.server.execution.ExecutionService.run(ExecutionService.java:{i})" for i in range(1, 30))
+            (Path(directory) / "TEST-safe.xml").write_text('<testsuite><testcase classname="SafeTest" name="rejects">'
+                '<error type="secret.CustomError">secret SQLState: ABCDE\n' + frames +
+                '\n at com.test365alm.server.execution.ExecutionService.secret(Secret.java:999)</error></testcase></testsuite>', encoding="utf-8")
+            diagnostic = summarize(Path(directory))["cases"][0]["diagnostics"]
+            self.assertEqual([], diagnostic["types"])
+            self.assertEqual([], diagnostic["sqlstates"])
+            self.assertEqual(8, len(diagnostic["frames"]))
+            self.assertNotIn("secret", str(diagnostic).lower())
 
 
 if __name__ == "__main__":

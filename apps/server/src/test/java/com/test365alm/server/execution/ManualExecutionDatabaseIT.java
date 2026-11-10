@@ -1,6 +1,8 @@
 package com.test365alm.server.execution;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -909,6 +911,187 @@ class ManualExecutionDatabaseIT {
         }
         assertTrue(permission, "failure must come from the injected privilege denial: " + failure);
         assertTrue(tableMentioned, "failure must identify injected table " + table + ": " + failure);
+    }
+
+    @Test
+    void gridFiltersBeforeLimitAndContinuesAcrossInstancesWithoutOtherSetLeak() throws Exception {
+        Fixture f=fixture();
+        var set=executions.createSet(f.member(),f.project(),"Grid","","grid-set-001");
+        var first=summaryInstance(f,set.id(),"grid-first");
+        var second=summaryInstance(f,set.id(),"grid-second");
+        var third=summaryInstance(f,set.id(),"grid-third");
+        executions.assignInstance(f.member(),f.project(),second.id(),f.member(),1,"grid-assign-001");
+        var run=executions.createRun(f.member(),f.project(),second.id(),"grid-run-001");
+        var other=executions.createSet(f.member(),f.project(),"Other","","grid-other-set");
+        summaryInstance(f,other.id(),"grid-outside");
+        var filtered=executions.executionGrid(f.member(),f.project(),set.id(),null,1,"RUNNING",f.member());
+        assertEquals(second.id(),filtered.items().get(0).instance().id());
+        assertEquals(run.run().id(),filtered.items().get(0).runId());
+        assertEquals(run.currentAttempt().startedAt(),filtered.items().get(0).executionDate());
+        assertEquals(null,filtered.nextCursor());
+        var page=executions.executionGrid(f.member(),f.project(),set.id(),null,1,"NOT_RUN",null);
+        assertEquals(first.id(),page.items().get(0).instance().id());
+        assertEquals(null,page.items().get(0).executionDate());
+        assertTrue(page.nextCursor()!=null);
+        var last=executions.executionGrid(f.member(),f.project(),set.id(),page.nextCursor(),1,"NOT_RUN",null);
+        assertEquals(third.id(),last.items().get(0).instance().id());assertEquals(null,last.nextCursor());
+    }
+
+    @Test
+    void assignmentsRejectViewerNonmemberCrossProjectDisabledAndExpiredIdentities() throws Exception {
+        var prepared=preparedRun("grid-invalid","grid-invalid-case");var f=prepared.fixture();var id=prepared.instance().id();
+        var foreign=fixture();
+        assertThrows(ProjectAccessException.class,()->executions.assignInstance(f.member(),f.project(),id,foreign.member(),1,"grid-foreign"));
+        UUID viewer=gridPerson(f,"PROJECT_VIEWER");
+        assertThrows(ProjectAccessException.class,()->executions.assignInstance(viewer,f.project(),id,f.member(),1,"grid-viewer-actor"));
+        assertThrows(ProjectAccessException.class,()->executions.assignInstance(f.member(),f.project(),id,viewer,1,"grid-viewer-target"));
+        UUID outsider=gridPerson(f,"PROJECT_MEMBER");
+        ownerExecute("DELETE FROM project_member WHERE project_id=? AND principal_id=?",f.project(),outsider);
+        assertThrows(ProjectAccessException.class,()->executions.assignInstance(outsider,f.project(),id,f.member(),1,"grid-outsider-actor"));
+        assertThrows(ProjectAccessException.class,()->executions.assignInstance(f.member(),f.project(),id,outsider,1,"grid-outsider-target"));
+        for(String failure:List.of("disabled","project-revoked","tenant-revoked","project-expired","tenant-expired")) {
+            UUID person=gridPerson(f,"PROJECT_MEMBER");
+            switch(failure) {
+                case "disabled" -> ownerExecute("UPDATE principal SET disabled_at=CURRENT_TIMESTAMP WHERE id=?",person);
+                case "project-revoked" -> ownerExecute("UPDATE project_member SET revoked_at=CURRENT_TIMESTAMP WHERE principal_id=?",person);
+                case "tenant-revoked" -> ownerExecute("UPDATE tenant_member SET revoked_at=CURRENT_TIMESTAMP WHERE principal_id=?",person);
+                case "project-expired" -> ownerExecute("UPDATE project_member SET valid_until=CURRENT_TIMESTAMP-INTERVAL '1 minute' WHERE principal_id=?",person);
+                default -> ownerExecute("UPDATE tenant_member SET valid_until=CURRENT_TIMESTAMP-INTERVAL '1 minute' WHERE principal_id=?",person);
+            }
+            assertThrows(ProjectAccessException.class,()->executions.assignInstance(f.member(),f.project(),id,person,1,"grid-invalid-"+failure));
+            assertTrue(executions.executionAssignees(f.member(),f.project(),null,200).items().stream().noneMatch(x->x.id().equals(person)));
+        }
+        assertEquals(1,ownerCount("SELECT assignment_version FROM test_instance WHERE id=?",id));
+        assertEquals(0,ownerCount("SELECT COUNT(*) FROM execution_event WHERE project_id=? AND event_type='TEST_INSTANCE_ASSIGNED'",f.project()));
+    }
+
+    @Test
+    void assignmentConcurrentWritersFreezeReplayAndReauthorizeBeforeReturningIt() throws Exception {
+        var prepared=preparedRun("grid-race","grid-race-case");var f=prepared.fixture();var id=prepared.instance().id();
+        var outcomes=concurrently(
+            ()->executions.assignInstance(f.member(),f.project(),id,f.member(),1,"grid-race-a"),
+            ()->executions.assignInstance(f.member(),f.project(),id,null,1,"grid-race-b"));
+        assertEquals(1,outcomes.stream().filter(Outcome::succeeded).count());
+        var loser=(ProjectAccessException)outcomes.stream().filter(x->!x.succeeded()).findFirst().orElseThrow().error();
+        assertEquals("STALE_VERSION",loser.code());
+        var saved=executions.assignInstance(f.member(),f.project(),id,f.member(),2,"grid-frozen");
+        executions.assignInstance(f.member(),f.project(),id,null,3,"grid-clear");
+        assertEquals(saved,executions.assignInstance(f.member(),f.project(),id,f.member(),2,"grid-frozen"));
+        assertThrows(ProjectAccessException.class,()->executions.assignInstance(f.member(),f.project(),id,null,2,"grid-frozen"));
+        ownerExecute("UPDATE project_member SET revoked_at=CURRENT_TIMESTAMP WHERE project_id=? AND principal_id=?",f.project(),f.member());
+        assertThrows(ProjectAccessException.class,()->executions.assignInstance(f.member(),f.project(),id,f.member(),2,"grid-frozen"));
+    }
+
+    @Test
+    void assignmentAuditAndOutboxFailuresRollBackAssignmentEventAndClaim() throws Exception {
+        for(String table:List.of("audit_event","execution_outbox_event")) {
+            var prepared=preparedRun("grid-rollback-"+table,"grid-rollback-case-"+table);var f=prepared.fixture();var id=prepared.instance().id();
+            int events=ownerCount("SELECT COUNT(*) FROM execution_event WHERE project_id=?",f.project());
+            ownerExecute("REVOKE INSERT ON "+table+" FROM test365alm_runtime");
+            try { assertThrows(RuntimeException.class,()->executions.assignInstance(f.member(),f.project(),id,f.member(),1,"grid-rollback-key")); }
+            finally { ownerExecute("GRANT INSERT ON "+table+" TO test365alm_runtime"); }
+            assertEquals(1,ownerCount("SELECT assignment_version FROM test_instance WHERE id=?",id));
+            assertEquals(events,ownerCount("SELECT COUNT(*) FROM execution_event WHERE project_id=?",f.project()));
+            assertEquals(0,ownerCount("SELECT COUNT(*) FROM execution_idempotency WHERE project_id=? AND route LIKE 'instance:assign:%'",f.project()));
+            assertEquals(2,executions.assignInstance(f.member(),f.project(),id,f.member(),1,"grid-rollback-key").assignmentVersion());
+        }
+    }
+
+    @Test
+    void manifestAssignmentAndOldAttemptStayFrozenAfterReassignmentRenameAndRevision() throws Exception {
+        var prepared=preparedRun("grid-snapshot","grid-snapshot-case");var f=prepared.fixture();var id=prepared.instance().id();
+        executions.assignInstance(f.member(),f.project(),id,f.member(),1,"grid-snapshot-assign");
+        // The helper already claimed grid-snapshot-run before assignment. Its
+        // response must remain frozen; a new intent needs a distinct key.
+        assertEquals(prepared.run(),executions.createRun(f.member(),f.project(),id,"grid-snapshot-run"));
+        assertNull(prepared.run().manifest().assigneeId());
+        var run=executions.createRun(f.member(),f.project(),id,"grid-snapshot-assigned-run");
+        assertNotEquals(prepared.run().run().id(),run.run().id());
+        assertEquals(f.member(),run.manifest().assigneeId());assertEquals("M09 member",run.manifest().assigneeName());
+        var a=run.currentAttempt();var step=a.steps().get(0);
+        var saved=executions.saveStep(f.member(),f.project(),run.run().id(),a.id(),step.stepKey(),"original","PASS",1,"grid-snapshot-save");
+        executions.finish(f.member(),f.project(),run.run().id(),a.id(),saved.rowVersion(),"grid-snapshot-finish");
+        executions.assignInstance(f.member(),f.project(),id,null,2,"grid-snapshot-clear");
+        ownerExecute("UPDATE principal SET display_name='Renamed' WHERE id=?",f.member());
+        tests.appendRevision(f.member(),f.project(),prepared.source().id(),new TestCaseService.RevisionCommand("Changed","new","new",List.of()),"\"1\"","grid-snapshot-revise");
+        var retry=executions.rerun(f.member(),f.project(),run.run().id(),"grid-snapshot-retry");
+        var reread=executions.run(f.member(),f.project(),run.run().id());
+        assertEquals(run.manifest(),reread.manifest());
+        assertEquals(run,executions.createRun(f.member(),f.project(),id,"grid-snapshot-assigned-run"),"create replay retains the initial attempt response");
+        assertEquals("FINISHED",executions.attempt(f.member(),f.project(),run.run().id(),a.id()).status(),"create replay cannot rewrite the current persisted attempt");
+        assertEquals("original",executions.attempt(f.member(),f.project(),run.run().id(),a.id()).steps().get(0).actualResult());
+        assertEquals("",retry.steps().get(0).actualResult());
+        assertTrue(!retry.steps().get(0).runStepId().equals(step.runStepId()));
+    }
+
+    @Test
+    void actualTextConclusionAndFirstExecutionTimePersistIndependentlyAcrossReloadAndReplay() throws Exception {
+        var prepared=preparedRun("grid-clock","grid-clock-case");var f=prepared.fixture();var run=prepared.run();var a=run.currentAttempt();var step=a.steps().get(0);
+        assertEquals(null,step.executedAt());
+        var draft=executions.saveStep(f.member(),f.project(),run.run().id(),a.id(),step.stepKey(),"observed text","NOT_RUN",1,"grid-clock-draft");
+        assertEquals(null,draft.steps().get(0).executedAt());assertEquals("observed text",draft.steps().get(0).actualResult());
+        var concluded=executions.saveStep(f.member(),f.project(),run.run().id(),a.id(),step.stepKey(),"","PASS",2,"grid-clock-conclude");
+        assertTrue(concluded.steps().get(0).executedAt()!=null);assertEquals("",concluded.steps().get(0).actualResult());
+        var corrected=executions.saveStep(f.member(),f.project(),run.run().id(),a.id(),step.stepKey(),"later detail","PASS",3,"grid-clock-correct");
+        assertEquals(concluded.steps().get(0).executedAt(),corrected.steps().get(0).executedAt());
+        assertTrue(!corrected.steps().get(0).updatedAt().isBefore(corrected.steps().get(0).executedAt()));
+        assertEquals(concluded,executions.saveStep(f.member(),f.project(),run.run().id(),a.id(),step.stepKey(),"","PASS",2,"grid-clock-conclude"));
+        assertEquals(corrected,executions.attempt(f.member(),f.project(),run.run().id(),a.id()));
+    }
+
+    @Test
+    void assignmentDirectoryPagesOnlyActiveWritersAndPreservesOpaqueCursor() throws Exception {
+        Fixture f=fixture(); UUID first=gridPerson(f,"PROJECT_MEMBER"),second=gridPerson(f,"PROJECT_ADMIN");
+        gridPerson(f,"PROJECT_VIEWER"); UUID revoked=gridPerson(f,"PROJECT_MEMBER");
+        ownerExecute("UPDATE project_member SET revoked_at=CURRENT_TIMESTAMP WHERE project_id=? AND principal_id=?",f.project(),revoked);
+        List<UUID> seen=new java.util.ArrayList<>(); String cursor=null;
+        do {
+            var page=executions.executionAssignees(f.member(),f.project(),cursor,1);
+            assertEquals(1,page.items().size()); seen.add(page.items().get(0).id());
+            if(page.nextCursor()!=null) assertTrue(!page.nextCursor().equals(cursor));
+            cursor=page.nextCursor();
+        } while(cursor!=null && seen.size()<5);
+        assertEquals(3,seen.size()); assertEquals(java.util.Set.of(f.member(),first,second),new java.util.HashSet<>(seen));
+        assertThrows(ProjectAccessException.class,()->executions.executionAssignees(f.member(),f.project(),"broken cursor",1));
+    }
+
+    @Test
+    void runtimeCannotForgeAssignmentIdentityVersionScopeOrFrozenEvidenceIdentity() throws Exception {
+        var prepared=preparedRun("grid-sql","grid-sql-case"); var f=prepared.fixture(); UUID id=prepared.instance().id();
+        UUID viewer=gridPerson(f,"PROJECT_VIEWER");
+        try(Connection c=runtimeConnection(new Fixture(f.tenant(),f.project(),viewer))) {
+            var error=assertThrows(java.sql.SQLException.class,()->execute(c,"UPDATE test_instance SET assignee_id=NULL,assignee_name=NULL,assignment_version=2 WHERE id=?",id));
+            assertEquals("42501",error.getSQLState()); c.rollback();
+        }
+        for(String sql:List.of(
+                "UPDATE test_instance SET assignee_id='"+f.member()+"',assignee_name='Forged',assignment_version=2 WHERE id='"+id+"'",
+                "UPDATE test_instance SET assignee_id='"+viewer+"',assignee_name='Grid person',assignment_version=2 WHERE id='"+id+"'")) {
+            try(Connection c=runtimeConnection(f)) { assertEquals("23514",assertThrows(java.sql.SQLException.class,()->execute(c,sql)).getSQLState()); c.rollback(); }
+        }
+        try(Connection c=runtimeConnection(f)) {
+            assertEquals("55006",assertThrows(java.sql.SQLException.class,()->execute(c,"UPDATE test_instance SET assignment_version=3 WHERE id=?",id)).getSQLState()); c.rollback();
+        }
+        var foreign=preparedRun("grid-sql-foreign","grid-sql-foreign-case");
+        try(Connection c=runtimeConnection(f); var q=c.prepareStatement("UPDATE test_instance SET assignment_version=2 WHERE id=?")) {
+            q.setObject(1,foreign.instance().id()); assertEquals(0,q.executeUpdate()); c.rollback();
+        }
+        for(String sql:List.of("UPDATE execution_manifest SET assignee_id=NULL WHERE id='"+prepared.run().manifest().id()+"'",
+                "UPDATE run_step SET id=gen_random_uuid(),row_version=row_version+1 WHERE attempt_id='"+prepared.run().currentAttempt().id()+"'",
+                "UPDATE run_step SET executed_at=CURRENT_TIMESTAMP,row_version=row_version+1 WHERE attempt_id='"+prepared.run().currentAttempt().id()+"'")) {
+            try(Connection c=runtimeConnection(f)) { assertEquals("42501",assertThrows(java.sql.SQLException.class,()->execute(c,sql)).getSQLState()); c.rollback(); }
+        }
+        assertEquals(prepared.run().manifest(),executions.run(f.member(),f.project(),prepared.run().run().id()).manifest());
+    }
+
+    private UUID gridPerson(Fixture f,String role) throws Exception {
+        UUID id=UUID.randomUUID();
+        ownerExecute("INSERT INTO principal(id,issuer,subject,display_name) VALUES(?,'https://grid.invalid',?,'Grid person')",id,id.toString());
+        ownerExecute("INSERT INTO tenant_member(tenant_id,principal_id,roles) VALUES(?,?,ARRAY['MEMBER']::text[])",f.tenant(),id);
+        ownerExecute("INSERT INTO project_member(tenant_id,project_id,principal_id,roles) VALUES(?,?,?,?::text[])",f.tenant(),f.project(),id,"{"+role+"}");
+        return id;
+    }
+    private void ownerExecute(String sql,Object...args) throws Exception {
+        try(Connection c=DriverManager.getConnection(POSTGRES.getJdbcUrl(),POSTGRES.getUsername(),POSTGRES.getPassword())) { execute(c,sql,args); }
     }
 
     private Fixture fixture() throws Exception {

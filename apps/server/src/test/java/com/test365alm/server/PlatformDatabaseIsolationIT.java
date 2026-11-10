@@ -50,6 +50,11 @@ class PlatformDatabaseIsolationIT {
 
     @DynamicPropertySource
     static void registerTargetDatasource(DynamicPropertyRegistry registry) {
+        JdbcTemplate beforeMigration = new JdbcTemplate(new DriverManagerDataSource(
+                TARGET.getJdbcUrl(), TARGET.getUsername(), TARGET.getPassword()));
+        assertEquals(Boolean.FALSE, beforeMigration.queryForObject(
+                "SELECT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='test365alm_runtime')", Boolean.class),
+                "schema-only readiness target starts without an operator-provisioned runtime role");
         registry.add("spring.datasource.url", TARGET::getJdbcUrl);
         registry.add("spring.datasource.username", TARGET::getUsername);
         registry.add("spring.datasource.password", TARGET::getPassword);
@@ -66,6 +71,9 @@ class PlatformDatabaseIsolationIT {
         assertTrue(TARGET.isRunning());
         assertTrue(CONTROL.isRunning());
         assertNotEquals(TARGET.getContainerId(), CONTROL.getContainerId());
+        assertEquals(Boolean.FALSE, targetJdbc.queryForObject(
+                "SELECT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='test365alm_runtime')", Boolean.class),
+                "successful migrations must not create operator-managed runtime roles");
 
         JdbcTemplate controlJdbc = new JdbcTemplate(new DriverManagerDataSource(
                 CONTROL.getJdbcUrl(), CONTROL.getUsername(), CONTROL.getPassword()));

@@ -28,6 +28,13 @@ class AssetRulesTest {
         assertEquals("INVALID_REQUEST",assertThrows(ProjectAccessException.class,()->AssetRules.link(wrong)).code());
         assertEquals("INVALID_REQUEST",assertThrows(ProjectAccessException.class,()->AssetRules.link(CoreCommands.JSON.readTree("null"))).code());
     }
+    @Test void stepEvidenceHasAnExclusiveTypedTarget() {
+        String id="00000000-0000-0000-0000-000000000001";
+        var body=CoreCommands.JSON.readTree("{\"kind\":\"RUN_STEP\",\"runStepId\":\""+id+"\",\"assetId\":\""+id+"\",\"assetRevisionId\":\""+id+"\"}");
+        assertEquals("RUN_STEP",AssetRules.link(body).kind());
+        var mixed=body.deepCopy();((tools.jackson.databind.node.ObjectNode)mixed).put("testCaseId",id);
+        assertThrows(ProjectAccessException.class,()->AssetRules.link(mixed));
+    }
     @Test void actualStreamLimitDoesNotTrustDeclaredOrHttpLength() throws Exception {
         var stream=new InputStream(){long remaining=AssetRules.MAX_SIZE+1;public int read(){return remaining-->0?'a':-1;}public int read(byte[] b,int o,int len){if(remaining==0)return -1;int n=(int)Math.min(len,remaining);java.util.Arrays.fill(b,o,o+n,(byte)'a');remaining-=n;return n;}};
         assertEquals("FILE_TOO_LARGE",assertThrows(ProjectAccessException.class,()->AssetRules.readBounded(stream,OutputStream.nullOutputStream())).code());

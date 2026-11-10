@@ -1,0 +1,396 @@
+{
+  "unit": {
+    "com.test365alm.server.asset.AssetContainerLogsTest": [
+      "automaticFailureLogPathRemovesCredentialsButPreservesFailureEvidence"
+    ],
+    "com.test365alm.server.asset.AssetRawUploadConfigurationTest": [
+      "actualApplicationConfigurationDoesNotRegisterMultipartParsing"
+    ],
+    "com.test365alm.server.asset.AssetRulesTest": [
+      "actualStreamLimitDoesNotTrustDeclaredOrHttpLength",
+      "stepEvidenceHasAnExclusiveTypedTarget",
+      "typedAttachmentCannotMixTargetsOrAcceptUntrustedRevisionMetadata",
+      "uploadDeclarationsAreStrictBoundedAndFilenameIsOnlySafeMetadata"
+    ],
+    "com.test365alm.server.asset.AssetTestInfrastructureTest": [
+      "changedConfiguredBindingsAreNeverUnpaused",
+      "changedPublishedEndpointAfterResumeStillFails",
+      "failedPostPauseInspectionRecoversOriginalProcessAndEndpointBeforeRethrowing",
+      "lostOwnershipAfterPauseIsNeverUnpaused",
+      "replacedProcessIsNeverUnpaused",
+      "restartedProcessIsNeverUnpaused",
+      "unknownOwnershipNeverPauses"
+    ],
+    "com.test365alm.server.asset.AssetUploadTimeoutTest": [
+      "rawServletUploadStopsWhenClientLeavesBodyIncomplete",
+      "uploadTimeoutCannotBeInfiniteOrUnbounded"
+    ],
+    "com.test365alm.server.asset.ClamdMalwareScannerTest": [
+      "scannerTimeoutAndUnavailableFailClosed",
+      "sendsBoundedInstreamAndAcceptsOnlyExactCleanResponse"
+    ],
+    "com.test365alm.server.asset.FileRulesTest": [
+      "countsActualStreamBeyondDeclaredLength",
+      "detectsActualTextAndDeletesOwnedSpool",
+      "eicarTextDetectionAllowsRealScannerBoundary",
+      "interruptedReadDeletesOnlyTheOwnedSpoolBeforePropagatingFailure",
+      "rejectsActiveAndUnknownContentWithoutFilenameHint",
+      "rejectsSizeHashAndMimeMismatch"
+    ],
+    "com.test365alm.server.asset.LinuxRunLabelsTest": [
+      "absentProvenanceLeavesOrdinaryRunsUntouched",
+      "invalidOrConflictingProvenanceRefusesCreation",
+      "labelsPreserveExistingOwnershipAndRyukSession"
+    ],
+    "com.test365alm.server.asset.S3BlobStoreTest": [
+      "disabledAdaptersAndUnavailableStorageNeverReturnCleanOrLeakConfiguration",
+      "privateAdapterSignsRequestsAndSeparatesQuarantineFromPublished"
+    ],
+    "com.test365alm.server.businessfields.BusinessFieldsTest": [
+      "customTypesDefaultsAndExactDefinitionVersionsAreValidated",
+      "forgedDefinitionsAndIncompleteCustomReferencesAreRejected",
+      "missingValueNullAndInvalidReviewerCannotSilentlyBecomeValid",
+      "systemValuesAreTypedBoundedAndRevisioned"
+    ],
+    "com.test365alm.server.core.CoreCommandsOutcomeTest": [
+      "existingSuccessfulReplayKeepsItsOriginalJsonShape",
+      "malformedTerminalEnvelopeCannotMasqueradeAsSuccessOrUnsafeError",
+      "terminalErrorReplayPreservesOnlySafeStatusCodeAndMessage"
+    ],
+    "com.test365alm.server.defect.DefectRulesTest": [
+      "contentRejectsUnknownFieldsWrongTypesAndInvalidBoundaries",
+      "fixedTransitionsAndResolutionEvidenceAreRequired"
+    ],
+    "com.test365alm.server.execution.ExecutionControllerTest": [
+      "createRunAcceptsTheControlledFrontendAliases",
+      "expectedVersionMustMatchStrongIfMatchAndRejectOverflow",
+      "pagedReadEndpointsAreAdditiveAndUseOpaqueCursor",
+      "pagedRunsAndSummaryForwardAnOptionalTestSetFilter",
+      "runSummaryIsReadThroughTheProjectScopedService",
+      "saveStepAcceptsActualAndOutcomeAliasesWithStrongVersion",
+      "transitionBodiesAcceptOnlyTheVersionContract",
+      "transitionBodiesRejectUnknownFieldsAndNonObjects",
+      "unknownFieldsAndUnsupportedRunModeAreRejected"
+    ],
+    "com.test365alm.server.execution.ExecutionGridControllerTest": [
+      "assignmentRequiresExplicitNullableTargetAndStrongVersion",
+      "gridForwardsFiltersAndOpaqueCursor",
+      "gridRejectsInventedStatusAndVersion"
+    ],
+    "com.test365alm.server.execution.ExecutionServiceTest": [
+      "canonicalHashDistinguishesNullEmptyAndDelimiterContent",
+      "idempotencyKeyMustBeBounded",
+      "idempotentAttemptSnapshotRoundTripsTimestampsAndSteps",
+      "manifestHashChangesWhenSnapshotContentChanges",
+      "stepConclusionIsFixedToTheExecutionContract"
+    ],
+    "com.test365alm.server.folder.FolderServiceTest": [
+      "invalidKindsSortAndFiltersAreRejected",
+      "namesAreTrimmedAndBounded",
+      "versionsRequireOneStrongPositiveTag"
+    ],
+    "com.test365alm.server.history.HistoryDiffTest": [
+      "cursorRoundTripsAndRejectsGarbage",
+      "firstVersionHasNoBeforeValuesAndSkipsEmptyFields",
+      "onlyChangedFieldsAreReportedInOrder",
+      "runEventsExpandPayloadBeforeAndAfter",
+      "stepsAddedRemovedEditedAndReordered",
+      "unchangedStepsProduceNothingAndFirstVersionAddsAll"
+    ],
+    "com.test365alm.server.identity.IdentityControllerTest": [
+      "disabledLocalIdentityInvalidatesExistingSession"
+    ],
+    "com.test365alm.server.identity.IdentitySecurityTest": [
+      "insecureCookieIsLimitedToLiteralLoopbackDevelopmentOrigin"
+    ],
+    "com.test365alm.server.identity.OidcValidationTest": [
+      "expiredIdTokenIsRejectedByActualOidcProvider",
+      "validSignedIdTokenPassesActualOidcProvider",
+      "wrongAudienceIsRejectedByActualOidcProvider",
+      "wrongIssuerIsRejectedByActualOidcProvider",
+      "wrongNonceIsRejectedByActualOidcProvider",
+      "wrongSignatureIsRejectedByActualOidcProvider"
+    ],
+    "com.test365alm.server.metadata.FieldRulesTest": [
+      "enumTextRequiredDefaultsAndUnknownFieldsAreValidated",
+      "numberPrecisionScaleBoundsAndTypesAreExact",
+      "reservedNamesAndUnknownTypesAreRejected",
+      "zeroNeedsNoIntegerDigitsWhenPrecisionEqualsScale"
+    ],
+    "com.test365alm.server.platform.health.DatabaseReadinessProbeTest": [
+      "reportsDatabaseDownWhenConnectionCannotBeOpened",
+      "reportsDatabaseUpButMigrationNotAppliedWhenRequiredTableIsMissing",
+      "reportsDatabaseUpButMigrationUnknownWhenStructureCannotBeChecked"
+    ],
+    "com.test365alm.server.platform.health.PlatformHealthControllerTest": [
+      "liveRemainsUpWhenDatabaseIsDown",
+      "readyRecoversWithoutRestartingController",
+      "readyReturns503WhenDatabaseIsConnectedButRequiredStructureIsMissing",
+      "readyReturns503WhenDatabaseIsDown"
+    ],
+    "com.test365alm.server.platform.version.VersionControllerTest": [
+      "returnsBuildMetadataWithoutInventingACommit"
+    ],
+    "com.test365alm.server.release.ReleaseRulesTest": [
+      "finiteLifecycleAndReadonlyContentCannotBeReopened",
+      "strictDatesTypesAndClosedFieldsHaveDeterministicErrors"
+    ],
+    "com.test365alm.server.requirement.RequirementControllerTest": [
+      "createReturnsCreatedAndEntityEtag",
+      "updateReturnsCurrentEtagForOptimisticVersion"
+    ],
+    "com.test365alm.server.requirement.RequirementServiceTest": [
+      "ifMatchAcceptsOnlyOneStrongQuotedPositiveTag",
+      "ifMatchRejectsBareWeakWildcardAndMalformedValues"
+    ],
+    "com.test365alm.server.Test365AlmServerApplicationTests": [
+      "applicationIsMarkedAsSpringBootApplication"
+    ],
+    "com.test365alm.server.testcase.TestCaseControllerTest": [
+      "detailReturnsStrongEntityTag"
+    ],
+    "com.test365alm.server.testcase.TestCaseServiceTest": [
+      "ifMatchAcceptsOnlyOneStrongQuotedPositiveTag",
+      "ifMatchRejectsBareWeakWildcardAndMalformedValues"
+    ]
+  },
+  "integration": {
+    "com.test365alm.server.asset.AssetDatabaseIT": [
+      "attachmentAuditAndOutboxFailuresRollbackAndRecover",
+      "boundedPagesAndSameHashTenantsRemainIndependent",
+      "concurrentNewVersionsAllocateUniqueRevisionNumbers",
+      "concurrentSameIntentCreatesOneReceiptScanAndRevision",
+      "contentSizeHashMimeAndStreamBoundsRejectWithoutPublication",
+      "memberUploadUsesPrivateQuarantineAndServerVerifiedReceipt",
+      "newVersionsPreserveFrozenAttachmentBytesAndImmutableRows",
+      "postCommitCleanupFailureRetainsPublishedAccessAndPendingState",
+      "publishedAssetAllocatorAndCurrentPointerCannotMoveBackwardOrGap",
+      "publishedObjectThenDatabaseFailureIsInaccessibleAndRecoverable",
+      "quarantinePutThenReceiptFailureHasNoDownloadAndSafelyRetries",
+      "realClamdCleanAndEicarProduceSafeTerminalStates",
+      "runtimeCannotForgeRevisionFromUnscannedOrRejectedUpload",
+      "runtimeRlsAndCurrentMembershipProtectEveryScope",
+      "scannerUnavailableAndTimeoutRemainRetryableWithoutPublication",
+      "stepEvidenceAuditAndOutboxFailureRollBackLinkAndFrozenClaim",
+      "stepEvidenceRejectsViewerForeignPausedAndFinishedTargets",
+      "stepEvidenceUsesRealCleanRevisionAndPreservesOldAttemptOnRetry",
+      "typedLinksRejectForeignMissingAndDeletedTargets"
+    ],
+    "com.test365alm.server.asset.AssetMigrationUpgradeIT": [
+      "v19NonEmptyDatabaseUpgradesToV20WithoutLosingExistingBusinessHistory"
+    ],
+    "com.test365alm.server.asset.AssetProvisioningUpgradeIT": [
+      "scannerProvisioningPreservesExistingGroupLoginAndRejectsUnsafeRoles",
+      "upgradedDatabaseUsesProvisionedRestrictedScannerLogin"
+    ],
+    "com.test365alm.server.asset.AssetTerminalOutcomeIT": [
+      "infectedCompleteNewKeyReturnsAlreadyRejectedWithoutRescan",
+      "infectedCompleteSameKeyDifferentRequestIsRejected",
+      "infectedCompleteSameKeyReplaysFrozenTerminalRejection",
+      "scannerTransientFailureSameKeyRemainsRetryable",
+      "terminalReplayReauthorizesRevokedDisabledAndExpiredPrincipals"
+    ],
+    "com.test365alm.server.businessfields.BusinessFieldsDatabaseIT": [
+      "customDefinitionRevisionsRemainFrozenAndCrossProjectIsRejected",
+      "fieldsPersistOnExactRevisionReplayAndHistory",
+      "outboxFailureRollsBackBusinessFieldsAndIdempotency",
+      "requirementAndDefectFieldsPersistAndStatusCopiesFrozenValues",
+      "reviewerDirectoryIsReadableByMembersBoundedSearchableAndRejectsForeignOrInactiveScope",
+      "reviewerRejectsForeignDisabledExpiredAndRevokedIdentitiesAndReplayReauthorizes",
+      "runtimeSqlCannotRewriteSealedFieldsOrInsertForeignReviewerAndViewerCannotWrite"
+    ],
+    "com.test365alm.server.businessfields.BusinessFieldsMigrationUpgradeIT": [
+      "nonemptyV22UpgradePreservesAllHistoricalContentAndRuntimeCannotRewriteIt"
+    ],
+    "com.test365alm.server.core.CoreMetadataTraceDatabaseIT": [
+      "concurrentFieldRevisionsHaveOneExactStaleLoserAndTraceCreatesHaveOneIdentity",
+      "fieldAdminBoundaryRlsAndForeignScopesRejectWithoutEffects",
+      "fieldAndTraceKeysetPagesContinueWithoutScopeLeakOrDuplicates",
+      "fieldAuditAndOutboxFailuresRollbackTheWholeCommand",
+      "fieldDefinitionsPersistImmutableRevisionsAndValidateExactValues",
+      "sameTenantDifferentProjectFieldAndTraceScopesStayIsolatedOnReusedConnection",
+      "traceCoverageFailThenPassAndInvalidationNeverMisreportsVerification",
+      "traceCoverageRequiresCurrentFrozenRevisionsPassAndNoActiveRerun",
+      "traceForeignDeletedEndpointsRlsAndAuditOutboxRollbackHaveNoEffects",
+      "traceLinksHaveRealEndpointsFrozenReplayAndNonPassUnexecutedCoverage"
+    ],
+    "com.test365alm.server.defect.DefectDatabaseIT": [
+      "auditAndOutboxFailuresRollbackCreateEditAndTransitionExactly",
+      "concurrentEditsAndTransitionsHaveOneExactStaleLoser",
+      "concurrentSameKeyCreationAndBoundedPagesHaveNoDuplicateNumbers",
+      "failingStepSourceAndExplicitRetestsPreserveFailureAndRequireRelatedPass",
+      "invalidSourceForeignEndpointsAndViewerSqlWritesHaveNoEffects",
+      "legitimateRuntimeWriterCannotForgeInitialStateAppendCommittedSourceOrAlterSnapshot",
+      "lifecycleRejectsIllegalTransitionsAndClosedHistoryCannotBeRewritten",
+      "memberCreatesImmutableDefectAndFrozenReplayWithAtomicEvidence",
+      "unrelatedPassActiveRetestAndPreviousResolutionCannotVerifyCurrentCycle"
+    ],
+    "com.test365alm.server.defect.DefectMigrationUpgradeIT": [
+      "nonemptyV17RequirementsTestsRunsAndTraceSurviveV18AndRemainUsable"
+    ],
+    "com.test365alm.server.execution.ManualExecutionDatabaseIT": [
+      "actualTextConclusionAndFirstExecutionTimePersistIndependentlyAcrossReloadAndReplay",
+      "assignmentAuditAndOutboxFailuresRollBackAssignmentEventAndClaim",
+      "assignmentConcurrentWritersFreezeReplayAndReauthorizeBeforeReturningIt",
+      "assignmentDirectoryPagesOnlyActiveWritersAndPreservesOpaqueCursor",
+      "assignmentsRejectViewerNonmemberCrossProjectDisabledAndExpiredIdentities",
+      "auditInsertFailureRollsBackFinish",
+      "auditInsertFailureRollsBackRunCreation",
+      "auditInsertFailureRollsBackStepSave",
+      "concurrentRerunsAllowOnlyOneActiveAttempt",
+      "concurrentSameKeyRerunReplaysTheFrozenResponse",
+      "concurrentSameKeyRunCreationReplaysTheFrozenResponse",
+      "concurrentSameKeyStepSaveReplaysTheFrozenResponse",
+      "concurrentStepWriteAndFinishHaveOneVersionedWinner",
+      "concurrentStepWritesRejectExactlyOneStaleVersion",
+      "createsImmutableManifestExecutesAndRerunsWithoutChangingSource",
+      "executionBuildingStillRejectsHistoricalManifestAndTerminalAttemptWrites",
+      "finishedAttemptRejectsLateStepEventsButFinishEventIsPersisted",
+      "gridFiltersBeforeLimitAndContinuesAcrossInstancesWithoutOtherSetLeak",
+      "manifestAssignmentAndOldAttemptStayFrozenAfterReassignmentRenameAndRevision",
+      "outboxInsertFailureRollsBackFinish",
+      "outboxInsertFailureRollsBackRunCreation",
+      "outboxInsertFailureRollsBackStepAndAttemptVersion",
+      "pagedExecutionReadsAndSummaryUseStableProjectScopedCounts",
+      "pauseReplayReturnsTheOriginalFrozenResponseAfterResume",
+      "runtimeCannotForgeAssignmentIdentityVersionScopeOrFrozenEvidenceIdentity",
+      "runtimeCannotMutateSealedManifestOrFinishedAttempt",
+      "sameKeyDifferentStepContentIsRejectedWithoutSideEffects",
+      "setPaginationContinuesBeyondDefaultPageWithStableTimestampTiesAndNoScopeLeak",
+      "sourceRevisionChangesDoNotRewriteAnExistingRunManifest",
+      "summarySeparatesUnrunActiveAndLatestCompletedResultsAcrossAuthorizedScopes",
+      "zeroStepRevisionCannotStartAManualRun"
+    ],
+    "com.test365alm.server.execution.ManualExecutionMigrationUpgradeIT": [
+      "v13NonEmptyExecutionDatabaseUpgradesToV16",
+      "v14NonEmptyExecutionDatabaseUpgradesToV16",
+      "v16NonEmptyExecutionDatabaseUpgradesToV17WithoutLosingHistoryOrReplay",
+      "v22NonEmptyExecutionDatabaseUpgradesToV24WithUnknownHistoricalClocks"
+    ],
+    "com.test365alm.server.folder.FolderDatabaseIT": [
+      "concurrentOppositeMovesCannotCreateCycleAndStaleWritesFail",
+      "createReplayFreezesResponseAndReauthorizesAfterDeletion",
+      "crossProjectAndCrossTreeReferencesAreRejectedByServiceAndDatabase",
+      "cyclesDuplicateSiblingNamesAndNonemptyFoldersAreRejected",
+      "labPlacementAndRootPaginationUseTheSameModel",
+      "memberCreatesRenamesMovesReordersAndDeletesEmptyFolders",
+      "outboxFailureRollsBackFolderAuditAndIdempotency",
+      "placementsFilterBeforePaginationAndPreserveSavedRevisions",
+      "viewerAndTenantAdminWithoutProjectGrantCannotWrite"
+    ],
+    "com.test365alm.server.history.HistoryDatabaseIT": [
+      "cursorPagesAreContiguousWithoutDuplicatesOrGaps",
+      "defectTransitionsShowStatusBeforeAndAfter",
+      "outsidersForeignProjectsAndUnknownTypesAreRejected",
+      "runStepRecordPauseResumeFinishAndRerun",
+      "testCaseCreateAndReviseShowFieldAndStepChanges"
+    ],
+    "com.test365alm.server.identity.OidcCallbackSecurityIT": [
+      "expiredTokenIsRejectedAfterRealTokenExchangeWithoutPrincipalWrite",
+      "failedCallbackDoesNotPoisonClientAndFreshLegalAuthorizationRecovers",
+      "legalTokenCompletesHttpCallbackAndPersistsPrincipal",
+      "realHttpApplicationUsesRestrictedRuntimeRole",
+      "realOidcAssetHttpIntegrityCsrfRolesAndIdempotency",
+      "realOidcAssetHttpTerminalCompleteFreezesRejectionAndReauthorizesReplay",
+      "realOidcAssetHttpTypedLinksFrozenVersionsAndLiveDownloadRevocation",
+      "realOidcDefectHttpFailedSourceRetestAndClosePreserveOriginalEvidence",
+      "realOidcDefectHttpMemberEtagsCsrfStrictInputAndViewerBoundary",
+      "realOidcFieldMetadataHttpAdminViewerCsrfTypesVersionsAndScope",
+      "realOidcFolderHttpCsrfVersionsPlacementsAndViewerBoundary",
+      "realOidcManualExecutionHttpRunsAndRejectsViewerWrites",
+      "realOidcProjectHttpScopesTenantsAndRejectsViewerWrites",
+      "realOidcReleaseHttpAdminDatesEtagsCsrfAndRoleBoundary",
+      "realOidcReleaseHttpTypedScopeSnapshotsAndOldSessionRevocation",
+      "realOidcRequirementHttpEnforcesStrongEtagsCsrfAndMembershipScope",
+      "realOidcSessionCanUseProjectHttpEndpointsThroughRuntimeDatasource",
+      "realOidcTestCaseHttpEnforcesStrongEtagsCsrfAndInputBoundary",
+      "realOidcTestCaseHttpScopesReferencesAndRefreshesOldSessionPermissions",
+      "realOidcTraceHttpTypedEndpointsViewerCsrfRevokeAndNoIllegalEffects",
+      "unbootstrappedOidcSubjectCannotCreateTenantOrProjectAccess",
+      "wrongAudienceIsRejectedAfterRealTokenExchangeWithoutPrincipalWrite",
+      "wrongIssuerIsRejectedAfterRealTokenExchangeWithoutPrincipalWrite",
+      "wrongNonceIsRejectedAfterRealTokenExchangeWithoutPrincipalWrite",
+      "wrongSignatureIsRejectedAfterRealTokenExchangeWithoutPrincipalWrite"
+    ],
+    "com.test365alm.server.PlatformDatabaseIsolationIT": [
+      "destructiveTargetCheckLeavesSeparateControlDatabaseUntouched"
+    ],
+    "com.test365alm.server.PlatformDatabaseIT": [
+      "authorizationVersionLastAdminAndAuditAreTransactional",
+      "concurrentAdminRevokesRetainOneAdministrator",
+      "concurrentFirstLoginCreatesOnePrincipal",
+      "migratesDatabaseAndServesPlatformEndpoints",
+      "oidcIdentityIsStableAndNeverMergedByDisplayName",
+      "projectSliceCreatesAuditsGrantsViewerAndRevokesWithoutCrossTenantLeak",
+      "rerunningFlywayPreservesExistingMetadata",
+      "revokedTenantMembershipInvalidatesExistingProjectMembership",
+      "runtimeRoleHasDmlButNoDdlOrBypassRls",
+      "runtimeRoleSeesOnlyTheCurrentTenantThroughRls",
+      "tenantAdminOnlySeesProjectsWhereTheyAreExplicitlyJoined",
+      "unauthenticatedIdentityRequestsNeverTrustHeadersOrReturnLoginHtml"
+    ],
+    "com.test365alm.server.PrincipalUpgradeIT": [
+      "v1DataSurvivesUpgradeToV2"
+    ],
+    "com.test365alm.server.ProjectAuthorizationIT": [
+      "auditInsertFailureRollsBackProjectAndMemberCommands",
+      "effectiveLastAdminExcludesDisabledOrInvalidAdministratorsAndAllowsValidSelfRevoke",
+      "inactiveTenantDomainAndProjectAreRejectedBeforeCommands",
+      "poolOneClearsContextsAndConcurrentStrictVersionsSerialize",
+      "runtimeIdentityAndDirectSqlWritesAreConstrained"
+    ],
+    "com.test365alm.server.release.ReleaseCycleDatabaseIT": [
+      "adminCreatesReleaseCycleAndFrozenIdempotentResultsWithAtomicEvents",
+      "adminOnlyRuntimeRlsRejectsMembersForeignScopesAndIdentityLoss",
+      "archivedReleaseAndClosedCycleRejectIllegalWritesAndTransitions",
+      "auditAndOutboxFailuresRollbackCreateEditScopeAndEvaluateExactly",
+      "boundedListsContinueWithoutDuplicatesOrForeignProjects",
+      "datesRejectInvalidCyclesAndParentShrinkWithoutSideEffects",
+      "metricsExcludeInactiveTraceActiveRerunsAndUnrelatedRevisionPass",
+      "runtimeCannotRewriteSnapshotsOrForgeCrossScopeRelations",
+      "sameKeyConcurrentCreatesEvaluateAndScopeHaveOneFrozenResult",
+      "snapshotsStayImmutableWhileTraceExecutionDefectAndScopeFactsChange",
+      "twoAdminsUpdatingReleaseOrCycleHaveOneExactStaleLoser",
+      "typedScopeFreezesCurrentRevisionsAndRejectsForeignOrWrongTargets"
+    ],
+    "com.test365alm.server.release.ReleaseMigrationUpgradeIT": [
+      "nonemptyV18RequirementsTestsExecutionDefectsAndTraceSurviveV19AndRemainUsable"
+    ],
+    "com.test365alm.server.requirement.RequirementDatabaseIT": [
+      "auditAndOutboxFailuresRollBackTheWholeRequirementTransaction",
+      "auditAndOutboxUpdateFailuresRollBackExistingRequirementState",
+      "compositeScopeForeignKeysRejectCrossRequirementReferencesWithSqlState",
+      "concurrentCreatesWithDifferentKeysAllocateUniqueNumbers",
+      "concurrentCreatesWithSameKeyProduceOneFrozenResult",
+      "concurrentUpdatesWithTheSameEtagProduceOneRevisionAndOnePreconditionFailure",
+      "idempotencyReplayIsFrozenAndExpiryStartsANewIntent",
+      "memberCanCreateEditAndReadImmutableHistory",
+      "migratedV7ReplayIsRejectedWithoutLeakingHistoryAndRejectionSurvivesRevocation",
+      "patchHashDistinguishesOmittedFieldFromLiteralNullText",
+      "runtimeViewerCannotWriteRequirementSliceAndRevisionIsImmutable",
+      "sameCreateKeyIsIdempotentAndDifferentPayloadConflicts",
+      "viewerReadsButCannotWriteAndStaleVersionDoesNotCreateRevision"
+    ],
+    "com.test365alm.server.requirement.RequirementMigrationUpgradeIT": [
+      "v7RowsUpgradeRejectsUnsafeLegacyReplayThroughRuntimeService"
+    ],
+    "com.test365alm.server.testcase.TestCaseDatabaseIT": [
+      "auditAndOutboxFailuresRollBack",
+      "concurrentRevisionSavesOneWins",
+      "crossScopeReferencesRejectedAndHistoryImmutable",
+      "idempotentCreateAndRevisionReplay",
+      "memberCreatesAndReadsInitialSteps",
+      "sameKeyConcurrentCreatesProduceOneCaseAndDifferentKeysKeepNumbersUnique",
+      "sameKeyConcurrentRevisionRequestsReturnOneFrozenResult",
+      "savedRevisionStepsAreImmutableForRuntimeMember",
+      "stepEditsCreateImmutableRevision",
+      "viewerCannotModifyHistoryOrWriteOutboxThroughRuntimeRls"
+    ],
+    "com.test365alm.server.testcase.TestCaseHttpSecurityIT": [
+      "httpMatrixRejectsUnauthorizedAndInvalidInput"
+    ],
+    "com.test365alm.server.testcase.TestCaseMigrationUpgradeIT": [
+      "v9DataSurvivesV11Upgrade"
+    ]
+  }
+}

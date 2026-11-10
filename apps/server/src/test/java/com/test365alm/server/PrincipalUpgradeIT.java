@@ -1,6 +1,8 @@
 package com.test365alm.server;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.sql.DriverManager;
 
@@ -39,22 +41,31 @@ class PrincipalUpgradeIT {
         assertEquals(1, v2.migrate().migrationsExecuted);
         try (var connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
                 var statement = connection.createStatement()) {
+            var roles = statement.executeQuery("SELECT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='test365alm_runtime')");
+            assertTrue(roles.next());
+            assertFalse(roles.getBoolean(1), "schema-only upgrades must not require a pre-provisioned runtime role");
             statement.executeUpdate("INSERT INTO principal (issuer, subject, display_name) "
                     + "VALUES ('https://upgrade.example', 'survives-v2', 'Survives V2')");
         }
 
         var latest = Flyway.configure().dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
                 .locations("classpath:db/migration").load();
-        // V3 through V23 (including the requirement slice, its integrity
+        // V3 through V24 (including the requirement slice, its integrity
         // boundary, legacy replay guard, sealed manual test-case slice and
         // the manual execution slice, its runtime cleanup permission and
         // build/terminal execution guards) are
         // pending after the V2 checkpoint;
         // each must apply exactly once.
-        assertEquals(21, latest.migrate().migrationsExecuted);
+        assertEquals(22, latest.migrate().migrationsExecuted);
         assertEquals(0, latest.migrate().migrationsExecuted);
         try (var connection = DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
                 var statement = connection.createStatement()) {
+            var roles = statement.executeQuery("SELECT EXISTS(SELECT 1 FROM pg_roles WHERE rolname='test365alm_runtime')");
+            assertTrue(roles.next());
+            assertFalse(roles.getBoolean(1), "migrations must not create operator-managed runtime roles");
+            var executionAcl = statement.executeQuery("SELECT NOT EXISTS(SELECT 1 FROM aclexplode(proacl) a WHERE a.grantee=0 AND a.privilege_type='EXECUTE') FROM pg_proc WHERE proname='app_execution_people'");
+            assertTrue(executionAcl.next());
+            assertTrue(executionAcl.getBoolean(1), "absence of runtime must never grant PUBLIC execution identity access");
             var result = statement.executeQuery("SELECT metadata_value FROM platform_metadata "
                     + "WHERE metadata_key = 'schema-purpose'");
             result.next();
