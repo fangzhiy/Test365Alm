@@ -43,7 +43,11 @@ step results and the private asset scanner. It adds no review, signature or repo
   separate step identities. The existing upload/PUT/real-scan/complete/CLEAN
   asset revision flow, immutable links and proxy downloads are unchanged.
 
-Formal migration: V24 only; V1–V22 unchanged, V23 reserved to business fields.
-The branch has 23 formal migrations, not 24. The coordinator owns shared upgrade
-counts and the V25 intentional failure probe. Unit/frontend checks precede any
-approved serial Docker slot; database/browser results must be reported separately.
+This slice adds formal V24 only; V1–V22 remain unchanged and V23 belongs to business
+fields. C's independent branch had 23 actual migrations (original 22 plus V24).
+The combined B+C tree has 24 actual migration files (original 22 plus B's V23 and
+C's V24); counts come from those files, not the highest version number. The
+coordinator owns shared upgrade counts and the V25 intentional failure probe;
+later D migration/probe numbering must be coordinated at integration.
+Unit/frontend checks precede any approved serial Docker slot; database/browser
+results must be reported separately.

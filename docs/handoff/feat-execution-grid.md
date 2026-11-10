@@ -1,5 +1,7 @@
 # C: execution grid and manual runner
 
+Current handoff: C implementation and its authorized real validation are complete; coordinator review/integration remains. Browser source `8f48057d8b2a460d4b7dc2a9b71d5b75be15deec` passed all three real-owned flows in run7dfd6f17; backend source96def34 passed93/187 in rund3142b41. Final exact evidence/limits are at the end; earlier NOT_RUN/failed/pending entries are retained historical states.
+
 Code checkpoints: contract `a799e5e`, API/DB `4473978`, UI `19ab02c`, regression/legacy-clock fixes `3ec2f9c`. Latest local dev `8bd7408e3c7dc1f65ed19721d40c98136b0fa5b7` merged as `0aee514bfd9adc89b34694168f0f5e2e6c05c901`, including the announced audit integration. No push, PR or merge into dev by this worker.
 
 Latest combination: B runtime/test/facility source `a2b45d29f42138e3d4d4c8ca38bab12e7e745e2e` merged as `f13547530f1fb40623e6ef80a18356482364f3b6`; accepted B documentation/archive source `23d138cda8fd6d34ec598064778b42b121175109` merged as `3f94d4d5fcb03f015788c8cd2f835c654ad3c714`. Current evidence and pending work are in the final section below; earlier entries record the earlier independent checkpoints.
@@ -154,3 +156,24 @@ Exact next failure reproduced offline: current ExecutionGrid was rendered in Vit
 Only the two browser selector uses (assign and later clear owner) are corrected. Every valid writer/name/save/reload/run-freeze/text/conclusion/time/real attachment/history/defect assertion remains. No production frontend/backend, migrations, runner, facilities, test inventory or backend gate changed relative to d4c1f2a. Actual offline checks after selector correction:40 execution/grid component tests passed, normal Playwright --list discovers the exact one manual flow (discovery only), lint exit0/same9warnings and build exit0. The prior unchanged frontend279/Python190 and accepted d3142b41 backend93/187 evidence retain their exact-source limits; no new backend run is claimed.
 
 Pending coordinator review/release of this test-only correction, then all three real --with-assets browser flows at the new exact source. Do not count the two already-green flows as new-source acceptance or skip the full three-flow rerun.
+
+
+## Final worker handoff: real validation complete
+
+Contract: `contracts/execution-grid.md`. Combined source includes accepted B, C's V24 execution slice and reviewed facilities; actual formal migration files=24 (original22+B23+C24), while C alone added exactly1. Contract wording now distinguishes the independent23-file tree from the combined24-file tree. No runtime/test/gate change is made in this final documentation checkpoint.
+
+**Backend actual run**, source `96def34c6c6928f42ed4370d90b8c179501f2b48`, run `d3142b4157bf457ca66da0171cc4495e`: scan93/1, unit93, focused93/51, unique full93/187, all exit0 and0F/E/S, fixed per-method inventory matched. Formal no-role upgrade regressions actually passed. Evidence root `local-evidence/linux-tests/d3142b4157bf457ca66da0171cc4495e/`: scan.json,unit.json,focused.json,integration.json,run.json,ownership-start.json,cleanup-verification.json. Cleanup=true, events empty, independent same default-context/Engine53/53 captured containers absent and run labels empty. Backend/runtime/migrations/fixed gate remain byte-identical at the browser source; coordinator explicitly approved evidence reuse, not a claim that187 were rerun after docs/browser-only edits.
+
+**Browser actual run**, source `8f48057d8b2a460d4b7dc2a9b71d5b75be15deec`, run `r03-local-7dfd6f17387f4be4ab8e373d774f0fa9`: desktop-linux / Engine `a6f010ac-61a2-4544-b133-c2b0d92d11d3`, real-owned S3/ClamAV preflight PASSED, formal scanner LOGIN provision with both independent SCRAM connections PASSED. All3 exact UI cases PASSED,1worker/0retry/0skip,exit0:
+
+- `real Keycloak UI manual execution creates, resumes, finishes and reruns a two-step run`
+- `real Keycloak UI member creates defect from FAIL retests PASS closes and preserves history`
+- `real Keycloak UI manual test case flow creates steps, edits order, and keeps viewer read-only`
+
+The original owner assignment/name/clear/save, frozen manifest/reload, independent actual/conclusion and server execution/save clocks, real uploaded/scanned/CLEAN step evidence, history, viewer denial and defect FAIL→retest PASS→close assertions all remain and actually ran. Every named manual execution diagnostic step succeeded, including real scanning, independent text restoration, pause/resume, FAIL then PASS rerun, reopen/history and viewer denial. The two UI corrections address independently reproduced pending-read cancellation and substring label ambiguity; no wait/retry/time limit or business assertion was weakened.
+
+Browser evidence root `local-evidence/local-browser/7dfd6f17387f4be4ab8e373d774f0fa9/`: results.json,run.json,manifest.json,ownership-start.json,cleanup-verification.json,cleanup-process-verification.json; bounded timelines under repo/local-evidence/r03/{manual-execution,defect-ui,manual-test-case}-context-full.json. Runner cleanup/processes_stopped=true. Independent exact-ID checks on the same context/Engine confirm4 complete container IDs,1 complete network ID and3 exact named volumes absent, both same-project and same-run label inventories empty,3 secret files removed and0 owned Java/Node processes. No delete retry or resource mutation followed cleanup.
+
+**Offline evidence retained with source limits:** d4c1f2a frontend279/29files passed plus Python190, lint0/same9warnings/build0; after the test-only locator change at8f48057, execution/grid40 passed, normal Playwright discovery found the one manual flow, lint/build passed. Production frontend tree is identical between these sources. Scoped trail check for8f48057 passed; prior d4c1f2a scoped lexical false positive is explained in that commit, not silently presented as green. Original failed database/browser and cleanup=false reports were preserved; later green runs do not rewrite them.
+
+**Left for coordinator:** independently review exact-source evidence and integrate this branch into dev; reconcile D's later formalV25/probeV26 and any combined inventory changes. This worker did not merge dev, push or create a PR, did not touch W1/daily.env/Defender and left only pre-existing automatic config modifications unstaged. Review/signature/report and the later full A03 OQ cycle remain outside C; three browser flows do not claim those modules accepted. No authorized C validation remains NOT_RUN; no new backend rerun is claimed after byte-identical backend/UI-test/document-only changes.
