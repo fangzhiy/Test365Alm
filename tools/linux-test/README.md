@@ -23,11 +23,16 @@ creation times and image identities. The test-only Testcontainers SPI preserves 
 labels and adds the same provenance to sibling containers, including Ryuk. Ryuk remains
 enabled and unprivileged. A separate disposable HTTP peer first checks
 `host.docker.internal` published-port connectivity. Then the existing real ClamAV/EICAR
-method runs, followed by units and the full integration suite, sequentially. Each phase
+method runs, followed by units, the fixed combined focused phase, and the full integration suite, sequentially. Each phase
 uses the same immutable source snapshot and runner. A failed phase stops progression.
 
-The combined folder/history snapshot expects 85 unit and 167 integration methods, with no failures/errors/
-skips or duplicate identities. Changing those counts requires reviewing the actual tests.
+The last audited folder/history totals, 85 units and 167 integrations, remain in
+the gate until the final B+C merge is inventoried by exact method identity. This
+preparation checkpoint intentionally refuses the newer source's totals; it is
+not ready for a real combined run until those totals are reviewed and committed.
+93/187 are forecasts, not verified combined inventory or passing execution.
+All phases require zero failures/errors/skips and duplicate identities.
+Changing the total gates requires reviewing the actual merged tests.
 Compared with the history-only snapshot, folders add three unit methods, nine
 `FolderDatabaseIT` methods and one real OIDC folder HTTP method. Existing migration
 assertions now require V22; they remain assertions rather than additional methods.
@@ -41,3 +46,32 @@ run/source-labelled container IDs. `docker rm -v` includes their attached anonym
 volumes; no named-volume, network, prefix-based or project-wide deletion is performed.
 If daemon/identity/ownership changes, cleanup reports failure and refuses those mutations.
 This is independent of CI-owned browser acceptance; it sets no CI identity variables.
+
+## Fixed combined focused gate
+
+Reuses B's reviewed phase facility from `55490a957879d5c1b5a476813ca32c3c72d62042`.
+The coordinator approved C43 plus B8, requiring all **51 exact method identities**
+in `linux_test_inside.FOCUSED_METHODS` in both focused and full reports. The selector
+is compiled into `PHASES`; no arbitrary selector/count CLI parameters are accepted.
+
+| Selected suite/method | Exact methods |
+| --- | ---: |
+| BusinessFieldsDatabaseIT | 7 |
+| BusinessFieldsMigrationUpgradeIT | 1 |
+| ManualExecutionDatabaseIT | 31 |
+| ManualExecutionMigrationUpgradeIT | 4 |
+| AssetDatabaseIT#stepEvidence* | 3 |
+| OidcCallbackSecurityIT#realOidcManualExecutionHttpRunsAndRejectsViewerWrites | 1 |
+| AssetMigrationUpgradeIT | 1 |
+| DefectMigrationUpgradeIT | 1 |
+| ReleaseMigrationUpgradeIT | 1 |
+| AssetProvisioningUpgradeIT#upgradedDatabaseUsesProvisionedRestrictedScannerLogin | 1 |
+
+The second AssetProvisioningUpgradeIT method is deliberately outside this approved
+focus; the full phase still runs it. Missing, substituted, duplicate or extra focused
+methods, per-case or aggregate failures/errors/skips, or any nonzero phase stop
+progression without retry. The scan phase also requires the exact real clean/EICAR
+method identity. Offline regressions are in `test_execution_focus` and the existing
+`test_linux_test_runner`; their synthetic reports do not count as real execution.
+Do not start Docker before the coordinator supplies the final combined source and
+serial execution window. B's final verified implementation is not merged here yet.
