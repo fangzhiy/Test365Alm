@@ -115,3 +115,45 @@ R07 非空执行库升级专项：先在 `apps/server` 运行 `.\mvnw.cmd -B -nt
 - R06-M09-001-FIX02 的真实数据库门禁要求 `ManualExecutionDatabaseIT` 的 17 个确切用例（正常闭环、并发版本/终态、同键冻结重放、sealed runtime 完整性、audit/Outbox 故障回滚和暂停重放）；总测试数不能替代名称门禁。`OidcCallbackSecurityIT.realOidcManualExecutionHttpRunsAndRejectsViewerWrites` 必须走真实 OIDC 会话、CSRF、Spring HTTP 和受限 runtime 数据源；浏览器 CI 还必须执行 `real Keycloak UI manual execution creates, resumes, finishes and reruns a two-step run`，共享 Keycloak 时固定 workers=1、retries=0。缺失报告、失败、错误或跳过均为失败，不能用历史 CI 数量冒充本轮证据。
 - R06-M09-001-FIX04 的分页/汇总接口与工作台必须使用有限 keyset 页面而不是旧的全量数组接口：`/runs/page` 可带 `testSetId`，且过滤在数据库分页前执行；`/runs/summary` 可带同一 `testSetId`，无参数时才是完整项目范围。页面必须保存并继续使用不透明 `nextCursor`，把项目级与测试集级汇总清楚标示，历史列表和具体 attempt 详情分开读取；仅有后端 page/summary 方法而未有页面请求证据不能写成已接通。
 - FIX05：历史分页的 AttemptSummary 无步骤，不能覆盖当前完整 attempt 详情；组件夹具须覆盖该真实形状。M09 报告门禁另外要求生命周期汇总和53条同时间戳分页测试。浏览器诊断只保存命名步骤、API pathname/status 和有限面板状态，不上传原始 trace、Cookie、token、表单值；业务与清理失败分别保留。
+
+<!-- trail:start -->
+## Trail — repo context graph
+
+This repo is indexed in `.trail/cache/`: small linked markdown nodes that explain each
+system and carry exact file:line spans, kept in sync with the code through git.
+
+For ANY task here — understanding how something works, finding where code lives,
+or scoping a change — get context from the graph before grepping or opening
+source files. Re-ask freely (it's cheap) and reuse literal identifiers you
+already have (symbol, error string, file name) as the query. New to this repo?
+Run `trail map` first — a token-budgeted orientation (dir clusters, hubs,
+hotspots), no LLM, no key.
+
+- Run `trail ask "<your question>" --source` → ranked nodes with the relevant
+  code spans inlined (each hit's ≤8-line crux by default; `--full` for whole
+  definitions when the crux isn't enough). Match the tool to the task shape:
+  for understanding or editing, the top node IS the answer — cite its
+  `covers:` file:line spans and edit straight from `--source`. For
+  exhaustive tasks ("every occurrence / every caller of this pattern"), ranked
+  results are top-N, not complete — run `trail grep "<literal>"` instead
+  (exhaustive over indexed files, grouped by enclosing symbol), falling back
+  to raw `grep -rn` only for unindexed files.
+- `trail skeleton <file>` → every definition's signature + span, ~10× cheaper
+  than reading the file; use it to skim an API surface.
+- `trail callers <symbol>` gives precomputed, exact edges — who calls this.
+  Add `--direction out` for what it calls, or `--depth N` to walk
+  transitively for the full blast radius. For structural questions, skip
+  ranking and use this directly.
+- Or browse: `.trail/cache/INDEX.md` lists every node; follow the links.
+- Monorepos and folders of multiple repos rank fairly across sub-projects —
+  hits carry `[scope/]` labels naming which one they're from. Narrow with
+  `trail ask "<task>" --in <scope>/` once you know where you're working.
+
+If a returned span is truncated ("+N more lines"), open the file at that exact
+range before finalizing. Only open source files when a node genuinely lacks a
+needed detail, and then at the exact file:line the node points to — never
+re-read whole files.
+
+After big code changes, refresh the graph with `trail build` (deterministic,
+no API key, $0).
+<!-- trail:end -->
