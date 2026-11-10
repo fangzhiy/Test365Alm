@@ -26,11 +26,17 @@ enabled and unprivileged. A separate disposable HTTP peer first checks
 method runs, followed by units and the full integration suite, sequentially. Each phase
 uses the same immutable source snapshot and runner. A failed phase stops progression.
 
-The combined folder/history snapshot expects 85 unit and 167 integration methods, with no failures/errors/
+The business-fields/folder/history snapshot expects 89 unit and 174 integration methods, with no failures/errors/
 skips or duplicate identities. Changing those counts requires reviewing the actual tests.
 Compared with the history-only snapshot, folders add three unit methods, nine
-`FolderDatabaseIT` methods and one real OIDC folder HTTP method. Existing migration
-assertions now require V22; they remain assertions rather than additional methods.
+`FolderDatabaseIT` methods and one real OIDC folder HTTP method. Business fields add four `BusinessFieldsTest` unit methods, six
+`BusinessFieldsDatabaseIT` methods and one `BusinessFieldsMigrationUpgradeIT` method.
+The scan preflight expects exactly 89 units and one real scan method; unit expects
+89 units; full integration expects 89 units and 174 integrations. Existing latest
+migration assertions require formal V23 (23 migrations); the deliberate failure
+probe is V25, with V24 reserved for the execution workline. These remain assertions
+rather than additional methods. The coordinator explicitly authorized this exact
+inventory update; commands, zero-failure checks and resource guards stay fixed.
 Raw Maven logs, upload temp files, caches and EICAR bytes stay inside Linux. Only runtime
 versions, package names/versions, method identities and aggregate status JSON are exported
 under ignored `local-evidence/linux-tests/<run>/`. No XML properties/system-out, exception
