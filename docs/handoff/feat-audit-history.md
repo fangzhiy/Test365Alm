@@ -1,5 +1,44 @@
 # 交接：feat/audit-history（路线图阶段 2c 审计追踪查看）
 
+## 第三次接力：审查与失败定位（2026-11-11，优先于下文）
+
+当前总管已改为外层 Codex，稳定入口为主工作区 `docs/coordinator-handoff.md`；原 Claude 不再负责最终决定。起始提交 `a797f3f`。本轮独立提交：
+
+- `814d5db`：修复缺陷发起复测／同版本显式刷新后审计面板不刷新。复测只增加事件，不改变缺陷 rowVersion；增加本地刷新计数，成功写入或成功详情 GET 后刷新。新增回归先红后绿，不重发已确认命令。
+- `4764d63`：仅附件测试设施兼容修复和七项守卫测试，与业务修复分开提交。
+
+### 审查结论
+
+已核对历史还原使用不可变用例／缺陷修订与运行事件 payload；查询先授权、再检查对象 tenant/project 范围，运行 join 同项目 attempt/step；倒序 `(timestamp,id)` keyset。已有五项真实数据库测试覆盖还原、权限撤销、跨范围／类型错配及分页。未修改生产上传语义、迁移、权限或审计写入路径。刷新遗漏已修复；未发现其他确定的阻塞性历史功能问题。这是本分支自审，仍交总管复核。
+
+### 验证与证据
+
+- 最终前端全套：21 文件、235 项，0 失败／跳过；lint 退出 0，保留原 9 warning；build 通过。
+- 最终 Java 21 单元：79 项、0 failure/error/skipped，其中新增守卫 7 项。
+- 最终两个真实故障恢复方法均通过（2 项、0 failure/error/skipped）：`AssetDatabaseIT.scannerUnavailableAndTimeoutRemainRetryableWithoutPublication`、`AssetTerminalOutcomeIT.scannerTransientFailureSameKeyRemainsRetryable`。
+- 前者修复前单独复现 `Owned scanner has no real published endpoint`，修复后通过真实扫描超时、恢复和同键重试发布。根因：Docker Desktop 暂停容器时 `NetworkSettings.Ports` 为空；原 post-pause 检查在调用者 try/finally 之前抛错，留下暂停的 clamd，后续共享资源测试连锁超时。新建独立带随机标签的 probe 也复现运行时有 Ports、暂停时空；每次操作核对标签，只删除本 probe。
+- 守卫仍要求本轮标签、容器 ID、启动时间、运行／暂停状态及配置绑定一致；暂停期间仅允许 live Ports 缺失，有值必须相同；恢复后实际发布端口必须严格匹配。暂停后检查异常会尝试恢复同一可证明归属的进程，再抛原异常。七个单元回归：post-pause 检查异常恢复；初始未知归属拒绝；进程替换拒绝；配置绑定变化拒绝；进程重启拒绝；暂停后归属丢失拒绝；恢复后实际发布端口变化判失败。失败恢复不扩大到其他容器。
+- 本轮完整集成（首次兼容修复后、抽取同一守卫供单元测试前）：157 项、1 failure / 5 errors / 0 skipped，仍 **失败**；HistoryDatabaseIT 五项通过。最终守卫抽取后跑了上述全单元与两个真实方法，未重复跑整套。原本 2F/21E 的扫描器连锁故障已消除，不能把剩余失败当绿色。
+- 剩余 error 方法：`AssetDatabaseIT.realClamdCleanAndEicarProduceSafeTerminalStates`；`AssetTerminalOutcomeIT.infectedCompleteSameKeyDifferentRequestIsRejected`、`infectedCompleteSameKeyReplaysFrozenTerminalRejection`、`infectedCompleteNewKeyReturnsAlreadyRejectedWithoutRescan`、`terminalReplayReauthorizesRevokedDisabledAndExpiredPrincipals`。均为 EICAR 上传阶段 `Storage unavailable`。
+- 剩余 failure：`OidcCallbackSecurityIT.realOidcAssetHttpTerminalCompleteFreezesRejectionAndReauthorizesReplay`，EICAR PUT 预期 200，实际 503。
+- 对应本轮 00:48—00:50 时间窗，Windows Defender Operational 有 6 条 1116 `Virus:DOS/EICAR_Test_File` 检测，均为 Java 进程生成的 `test365alm-upload-*.bin`，另有 1117 隔离。已核对六个失败均上传 EICAR；这是明确宿主环境干扰证据。未改 Defender 设置／排除项，不把真实 ClamAV断言改为 mock、skip 或重试。原始事件路径只在忽略证据中，未提交。
+- 忽略证据根目录 `local-evidence/audit-history/`：`retest-red.log`、`review-web-final.log`、`review-lint.log`、`review-build.log`；`scanner-repro.log`（红）、`scanner-green.log`（首次绿）、`scanner-guards.log`、`scanner-final.log`（最终 79 单元＋2 真实方法）；`review-integration.log`、`review-failures.json`、`defender-events.json`。旧完整报告保存在 `review-baseline/failsafe-reports/`，本轮完整报告快照在 `review-full-reports/`，避免最终专项报告覆盖；完整日志的 157 项汇总为本轮全套权威计数。
+- trail build 完成、trail check 退出 0，无冲突（关键词提醒保留）。未推送、未开 PR、未移动 dev，未触碰现有演示服务或其他项目容器；两个已有自动刷新文件继续保留。
+
+### 真实浏览器与集成依赖
+
+三条增加审计断言的真实 Keycloak 浏览器流程仍 **NOT_RUN**：缺少真实 CI-owned R03 资源、有效 run ID/项目标签和资源 manifest；本进程无 `GITHUB_RUN_ID`、`GITHUB_RUN_ATTEMPT`、`R03_COMPOSE_PROJECT`、`R03_RUN_ID`。不得通过设置假 CI 变量放行。合成夹具不替代这三条验收。
+
+复核时 dev 已从 a667343 前进到 `158fc98`，均为总管文档更新；`60e1989` 仍不是 dev 祖先，目录树业务尚未入 dev。因此本轮不集成其他线；总管批准目录树集成并通知后，再将最新 dev 合入本分支并保留双方 UI 改动。原 W1/W2 接受附件基线只为历史局部决定；当前审计要求完整集成全绿与真实验收，仍未满足，**可供审查但不可合并**。
+
+### Linux 测试进程最小方案评估（未执行，待总管明确权限边界）
+
+现有 `.github/workflows/ci.yml` 在 Ubuntu host 运行 Java21/Maven＋Python3＋Docker；没有现成容器内 Maven runner。`r02_resource_guard.py`/`r03_resource_guard.py` 的 manifest 以 Compose project 资源归属为前提，不能直接宣称覆盖新的裸 runner。当前 Docker Engine 为 Linux Docker Desktop，本机无 Maven/JDK21 runner 镜像。
+
+最小方案：固定 digest 的 Linux runner 包含 Java21/Maven、Python3和 Docker CLI（正式 scanner provision 测试会调用 Python 工具再 docker exec）；只将 Git 受控文件归档复制入容器自己的可写层，源码、target、`/tmp`、Maven缓存均不绑定 Windows 宿主；报告完成后才复制出容器。使用本机 Docker socket 创建兄弟 Testcontainers，显式验证 `host.docker.internal` 到临时发布端口可达，不使用日常 .env，不设置 CI-owned 浏览器变量，不用 privileged/DinD。必须先记录 daemon/context、随机 run 标签、runner ID／启动身份和每个新增资源精确 ID，操作／清理逐一核对归属，拒绝项目级清理，保留 Ryuk 正常回收。
+
+限制／BLOCKED：这需要新增固定 runner 镜像／测试工具依赖，以及向 runner 挂载 Docker socket（会授予本机 daemon 控制权限），现有 Compose 守卫没有直接支持的入口。按总管最新要求，先说明这两个边界并等明确决定，再制作测试设施及离线归属回归；本轮尚未拉取／构建 runner 或挂 socket。全绿门槛与真实浏览器缺口继续保留，不能因 Linux 方案待定自行豁免。
+
 ## Codex 接力更新（2026-11-10，优先于下面的原交接）
 
 ### 第二次接力：三个历史入口均已接入
