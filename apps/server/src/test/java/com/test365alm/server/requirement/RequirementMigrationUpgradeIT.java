@@ -121,11 +121,11 @@ class RequirementMigrationUpgradeIT {
         }
 
         Flyway latest = flyway(null);
-        assertEquals(16, latest.migrate().migrationsExecuted);
-        assertEquals(0, latest.migrate().migrationsExecuted, "V8 through V23 must be idempotent after the upgrade");
+        assertEquals(17, latest.migrate().migrationsExecuted);
+        assertEquals(0, latest.migrate().migrationsExecuted, "V8 through V24 must be idempotent after the upgrade");
 
         try (Connection connection = ownerConnection()) {
-            assertEquals(23, scalar(connection, "SELECT COUNT(*) FROM flyway_schema_history WHERE success = TRUE"));
+            assertEquals(24, scalar(connection, "SELECT COUNT(*) FROM flyway_schema_history WHERE success = TRUE"));
             assertEquals(1, scalar(connection, "SELECT COUNT(*) FROM flyway_schema_history WHERE version = '8' AND success = TRUE"));
             assertEquals(1, scalar(connection, "SELECT COUNT(*) FROM flyway_schema_history WHERE version = '9' AND success = TRUE"));
             assertEquals(1, scalar(connection, "SELECT COUNT(*) FROM flyway_schema_history WHERE version = '10' AND success = TRUE"));

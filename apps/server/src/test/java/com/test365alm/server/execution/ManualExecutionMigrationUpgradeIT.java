@@ -51,6 +51,8 @@ class ManualExecutionMigrationUpgradeIT {
     @Test void v14NonEmptyExecutionDatabaseUpgradesToV16() throws Exception { verifyUpgrade(14,16,false); }
     @Test void v16NonEmptyExecutionDatabaseUpgradesToV17WithoutLosingHistoryOrReplay() throws Exception { verifyUpgrade(14,17,true); }
 
+    @Test void v22NonEmptyExecutionDatabaseUpgradesToV24WithUnknownHistoricalClocks() throws Exception { verifyUpgrade(14,24,false); }
+
     private void verifyUpgrade(int version,int target,boolean via16) throws Exception {
         try (var pg = new PostgreSQLContainer<>(DockerImageName.parse(IMAGE).asCompatibleSubstituteFor("postgres"))
                 .withDatabaseName("r07_owned_upgrade").withUsername("r07_owner").withPassword(UUID.randomUUID().toString())
@@ -62,6 +64,11 @@ class ManualExecutionMigrationUpgradeIT {
                 assertEquals(Integer.toString(version), scalar(owner, "SELECT max(version::int)::text FROM flyway_schema_history WHERE success"));
                 assertEquals(version == 14 ? "1" : "0", scalar(owner, "SELECT count(*)::text FROM information_schema.columns WHERE table_name='execution_idempotency' AND column_name='response_json'"));
                 Fixture f = seed(owner, version);
+                if(target==24) {
+                    // A legitimate pre-V24 active PASS has no business timestamp.
+                    execute(owner,"UPDATE run_step SET actual_result='legacy active actual',conclusion='PASS',row_version=row_version+1,updated_by=? WHERE attempt_id=? AND ordinal=1",f.actor(),f.runs().get(3).attempt());
+                    execute(owner,"UPDATE run_attempt SET row_version=row_version+1 WHERE id=?",f.runs().get(3).attempt());
+                }
                 Map<String, List<String>> before = snapshot(owner, version, null);
                 assertEquals(4, before.get("execution_run").size());
                 assertEquals(8, before.get("run_step").size());
@@ -74,8 +81,19 @@ class ManualExecutionMigrationUpgradeIT {
                     assertEquals(before,snapshot(owner,version,null));
                     assertEquals("16",scalar(owner,"SELECT max(version::int)::text FROM flyway_schema_history WHERE success"));
                 }
+                int stage = via16 ? 16 : version;
+                if (target == 24) {
+                    assertEquals(22-stage, flyway(pg,"22").migrate().migrationsExecuted);
+                    assertEquals(before, snapshot(owner,version,null), "non-empty V22 baseline preserves all old execution data");
+                    assertEquals("22",scalar(owner,"SELECT max(version::int)::text FROM flyway_schema_history WHERE success"));
+                    stage = 22;
+                }
                 Flyway latest = flyway(pg, Integer.toString(target));
-                assertEquals(target - (via16?16:version), latest.migrate().migrationsExecuted);
+                final int fromStage = stage;
+                int expected = (int) java.util.Arrays.stream(latest.info().all())
+                        .filter(m -> m.getVersion()!=null && m.getVersion().compareTo(org.flywaydb.core.api.MigrationVersion.fromVersion(Integer.toString(fromStage)))>0
+                                && m.getVersion().compareTo(org.flywaydb.core.api.MigrationVersion.fromVersion(Integer.toString(target)))<=0).count();
+                assertEquals(expected, latest.migrate().migrationsExecuted);
                 assertEquals(before, snapshot(owner, version, null), "all pre-existing columns and rows must survive the upgrade");
                 assertEquals(Integer.toString(target), scalar(owner, "SELECT max(version::int)::text FROM flyway_schema_history WHERE success"));
                 assertEquals("4", scalar(owner, "SELECT count(*)::text FROM execution_manifest WHERE build_complete"));
@@ -83,6 +101,14 @@ class ManualExecutionMigrationUpgradeIT {
                 assertEquals("8", scalar(owner, "SELECT count(*)::text FROM run_step s JOIN run_attempt a ON a.id=s.attempt_id WHERE s.manifest_id=a.manifest_id"));
                 assertEquals(0, latest.migrate().migrationsExecuted);
                 assertEquals(before, snapshot(owner, version, null), "second migrate must not generate business rows");
+
+                // The historical target above remains independently verified. Current
+                // production services require the current schema, including V24.
+                flyway(pg,null).migrate();
+                assertEquals(before,snapshot(owner,version,null),"current additive schema must preserve every historical field");
+                assertEquals("8:8:0",scalar(owner,"SELECT count(*)::text||':'||count(DISTINCT id)::text||':'||count(executed_at)::text FROM run_step"));
+                assertEquals("0",scalar(owner,"SELECT count(*)::text FROM execution_manifest WHERE assignee_id IS NOT NULL OR assignee_name IS NOT NULL"));
+                assertEquals(0,flyway(pg,null).migrate().migrationsExecuted);
 
                 try (var pool = new HikariDataSource()) {
                     pool.setJdbcUrl(pg.getJdbcUrl()); pool.setUsername(RUNTIME); pool.setPassword(PASSWORD);
@@ -114,6 +140,7 @@ class ManualExecutionMigrationUpgradeIT {
             assertEquals(old.hash(), detail.manifest().snapshotHash());
             assertEquals(version == 13 ? "m09-manifest-1" : "m09-manifest-2", detail.manifest().formatVersion());
             assertEquals("m09-manual-results-1", detail.manifest().rulesVersion());
+            assertNull(detail.manifest().assigneeId()); assertNull(detail.manifest().assigneeName());
             assertEquals(f.testCase(), detail.manifest().sourceTestCaseId()); assertEquals(old.revision(), detail.manifest().sourceRevisionId());
             assertEquals("Historical case", detail.manifest().title()); assertEquals("original description", detail.manifest().description());
             assertEquals("original setup", detail.manifest().preconditions());
@@ -124,6 +151,8 @@ class ManualExecutionMigrationUpgradeIT {
             assertEquals(List.of(1, 2), attempt.steps().stream().map(ExecutionService.RunStepView::ordinal).toList());
             assertEquals(List.of("Open", "Check"), attempt.steps().stream().map(ExecutionService.RunStepView::action).toList());
             assertEquals(List.of("Visible", "Correct"), attempt.steps().stream().map(ExecutionService.RunStepView::expected).toList());
+            assertTrue(attempt.steps().stream().allMatch(s->s.runStepId()!=null && s.executedAt()==null),
+                    "upgrade allocates evidence identity without inventing historical business time");
             assertEquals("old actual 1", attempt.steps().get(0).actualResult()); assertEquals(2, attempt.steps().get(0).rowVersion());
         }
         var summary = service.summary(f.actor(), f.project(), f.set());
@@ -137,7 +166,14 @@ class ManualExecutionMigrationUpgradeIT {
             assertError(409, "IDEMPOTENCY_KEY_REUSED", () -> service.createRun(f.actor(), f.project(), f.runs().get(1).instance(), OLD_KEY));
         } else {
             var replay = service.finish(f.actor(), f.project(), first.run(), first.attempt(), 3, OLD_KEY);
-            assertEquals(service.attempt(f.actor(), f.project(), first.run(), first.attempt()), replay);
+            var current = service.attempt(f.actor(), f.project(), first.run(), first.attempt());
+            var historicalShape=new ExecutionService.AttemptView(current.id(),current.runId(),current.attemptNo(),current.status(),
+                    current.conclusion(),current.rowVersion(),current.startedBy(),current.startedAt(),current.finishedAt(),
+                    current.steps().stream().map(step->new ExecutionService.RunStepView(step.stepKey(),step.ordinal(),step.action(),
+                            step.expected(),step.actualResult(),step.conclusion(),step.rowVersion(),step.updatedBy(),step.updatedAt())).toList());
+            assertEquals(historicalShape,replay,"every original response field remains frozen");
+            assertTrue(replay.steps().stream().allMatch(s->s.runStepId()==null && s.executedAt()==null),
+                    "old frozen response cannot invent new step identities or execution times");
             assertError(409, "IDEMPOTENCY_KEY_REUSED", () -> service.finish(f.actor(), f.project(), first.run(), first.attempt(), 2, OLD_KEY));
         }
         assertEquals(replayBefore, snapshot(owner, version, null), "old-key rejection/replay must have zero side effects");
@@ -158,16 +194,22 @@ class ManualExecutionMigrationUpgradeIT {
         // Continue the real pre-upgrade active attempt; the application pool is never owner.
         Run active = f.runs().get(3);
         var running = service.run(f.actor(), f.project(), active.run()).currentAttempt();
-        assertEquals("RUNNING", running.status()); assertEquals(1, running.rowVersion());
-        assertEquals(List.of(1L, 1L), running.steps().stream().map(ExecutionService.RunStepView::rowVersion).toList());
-        var saved = service.saveStep(f.actor(), f.project(), active.run(), active.attempt(), f.steps().get(0), "upgraded actual", "PASS", 1, "r07-new-step-key-1");
+        assertEquals("RUNNING", running.status());
+        boolean legacyActivePass="PASS".equals(running.steps().get(0).conclusion());
+        assertEquals(legacyActivePass?2:1,running.rowVersion());
+        assertEquals(List.of(legacyActivePass?2L:1L,1L),running.steps().stream().map(ExecutionService.RunStepView::rowVersion).toList());
+        assertNull(running.steps().get(0).executedAt());
+        long stepVersion=running.steps().get(0).rowVersion();
+        var saved = service.saveStep(f.actor(), f.project(), active.run(), active.attempt(), f.steps().get(0), "upgraded actual", "PASS", stepVersion, "r07-new-step-key-1");
+        if(legacyActivePass) assertNull(saved.steps().get(0).executedAt(),"correcting old PASS text cannot fabricate a first execution date");
+        else assertNotNull(saved.steps().get(0).executedAt());
         Map<String, List<String>> savedState = snapshot(owner, version, null);
-        assertEquals(saved, service.saveStep(f.actor(), f.project(), active.run(), active.attempt(), f.steps().get(0), "upgraded actual", "PASS", 1, "r07-new-step-key-1"));
+        assertEquals(saved, service.saveStep(f.actor(), f.project(), active.run(), active.attempt(), f.steps().get(0), "upgraded actual", "PASS", stepVersion, "r07-new-step-key-1"));
         assertEquals(savedState, snapshot(owner, version, null), "new frozen replay must not duplicate events");
         saved = service.saveStep(f.actor(), f.project(), active.run(), active.attempt(), f.steps().get(1), "upgraded second", "PASS", 1, "r07-new-step-key-2");
-        assertEquals(3, saved.rowVersion());
-        var finished = service.finish(f.actor(), f.project(), active.run(), active.attempt(), 3, "r07-new-finish-key");
-        assertEquals("PASS", finished.conclusion()); assertEquals(4, finished.rowVersion());
+        assertEquals(legacyActivePass?4:3,saved.rowVersion());
+        var finished = service.finish(f.actor(), f.project(), active.run(), active.attempt(), saved.rowVersion(), "r07-new-finish-key");
+        assertEquals("PASS",finished.conclusion()); assertEquals(saved.rowVersion()+1,finished.rowVersion());
         assertEquals("1:1:1:1", scalar(owner, """
                 SELECT (SELECT count(*) FROM execution_event WHERE attempt_id=? AND event_type='RUN_FINISHED')::text||':'||
                 (SELECT count(*) FROM execution_outbox_event WHERE attempt_id=? AND event_type='RUN_FINISHED')::text||':'||
@@ -285,7 +327,10 @@ class ManualExecutionMigrationUpgradeIT {
                 q.setObject(1,first.attempt()); try(var rows=q.executeQuery()) {while(rows.next()) frozenSteps.add(new ExecutionService.RunStepView(rows.getObject(1,UUID.class),rows.getInt(2),rows.getString(3),rows.getString(4),rows.getString(5),rows.getString(6),rows.getLong(7),rows.getObject(8,UUID.class),rows.getObject(9,OffsetDateTime.class)));}
             }
             var frozen=new ExecutionService.AttemptView(first.attempt(),first.run(),1,"FINISHED","FAIL",4,actor,TIME,TIME.plusMinutes(1),frozenSteps);
-            String response=JsonMapper.builder().findAndAddModules().build().writeValueAsString(frozen);
+            var mapper=JsonMapper.builder().findAndAddModules().build();
+            var oldResponse=mapper.valueToTree(frozen);
+            for(var step:oldResponse.get("steps")) ((tools.jackson.databind.node.ObjectNode)step).remove(List.of("runStepId","executedAt"));
+            String response=mapper.writeValueAsString(oldResponse);
             execute(c,"INSERT INTO execution_idempotency(tenant_id,project_id,principal_id,route,idempotency_key,request_hash,object_id,object_type,response_json) VALUES(?,?,?,?,?,?,?,'ATTEMPT',?::jsonb)",tenant,project,actor,"finish:"+first.attempt(),OLD_KEY,oldHash("finish",first.run().toString(),first.attempt().toString(),"3"),first.attempt(),response);
         }
         return new Fixture(tenant,project,actor,viewer,other,foreignTenant,foreign,test,revision,set,steps,runs);
@@ -305,7 +350,13 @@ class ManualExecutionMigrationUpgradeIT {
     private static Map<String,List<String>> snapshot(Connection c,int oldVersion,UUID unused) throws SQLException {
         Map<String,List<String>> result=new LinkedHashMap<>();
         for(String table:TABLES) {
-            String projection="to_jsonb(t)";
+            String projection="to_jsonb(t)" + switch(table) {
+                case "test_revision" -> "-'business_fields'";
+                case "test_instance" -> "-'assignee_id'-'assignee_name'-'assignment_version'";
+                case "execution_manifest" -> "-'assignee_id'-'assignee_name'";
+                case "run_step" -> "-'id'-'executed_at'";
+                default -> "";
+            };
             if(oldVersion==13) projection+=switch(table) {
                 case "execution_manifest" -> "-'build_complete'";
                 case "run_attempt","run_step" -> "-'manifest_id'";

@@ -32,7 +32,7 @@ import com.test365alm.server.project.ProjectService;
 @Service
 public class ExecutionService {
     /** Canonical snapshot encoding is length-prefixed and unambiguous. */
-    static final String FORMAT_VERSION = "m09-manifest-2";
+    static final String FORMAT_VERSION = "m09-manifest-3";
     static final String RULES_VERSION = "m09-manual-results-1";
     private static final JsonMapper JSON = JsonMapper.builder().findAndAddModules().build();
     private final JdbcTemplate jdbc;
@@ -219,6 +219,104 @@ public class ExecutionService {
         return new InstancePage(items, next);
     }
 
+    @Transactional(readOnly = true)
+    public GridPage executionGrid(UUID actor, UUID projectId, UUID setId, String cursor, Integer requestedLimit,
+            String status, UUID assigneeId) {
+        var project = readProject(actor, projectId);
+        setContext(project, actor);
+        int limit = boundedLimit(requestedLimit);
+        String filter = gridStatus(status);
+        CursorValue after = cursorValueForInstance(cursor);
+        String sql = """
+                SELECT i.id, i.project_id, i.test_set_id, i.test_case_id, i.test_revision_id, r.revision_no,
+                       r.title, i.display_order, i.created_at, i.assignee_id, i.assignee_name, i.assignment_version,
+                       latest.run_id, latest.attempt_id, COALESCE(latest.status,'NOT_RUN') AS grid_status,
+                       latest.conclusion, latest.started_at AS execution_date
+                FROM test_instance i
+                JOIN test_revision r ON r.tenant_id=i.tenant_id AND r.project_id=i.project_id
+                  AND r.test_case_id=i.test_case_id AND r.id=i.test_revision_id
+                LEFT JOIN LATERAL (
+                  SELECT er.id AS run_id, a.id AS attempt_id, a.status, a.conclusion, a.started_at
+                  FROM execution_run er JOIN run_attempt a
+                    ON a.tenant_id=er.tenant_id AND a.project_id=er.project_id AND a.run_id=er.id
+                  WHERE er.tenant_id=i.tenant_id AND er.project_id=i.project_id AND er.test_instance_id=i.id
+                  ORDER BY a.started_at DESC, er.id DESC, a.id DESC LIMIT 1
+                ) latest ON true
+                WHERE i.tenant_id=? AND i.project_id=? AND i.test_set_id=?
+                """;
+        List<Object> args = new ArrayList<>(List.of(project.tenantId(), projectId, setId));
+        if (filter != null) { sql += " AND COALESCE(latest.status,'NOT_RUN')=?"; args.add(filter); }
+        if (assigneeId != null) { sql += " AND i.assignee_id=?"; args.add(assigneeId); }
+        if (after != null) { sql += " AND (i.display_order,i.id)>(?,?)"; args.add(after.order()); args.add(after.id()); }
+        sql += " ORDER BY i.display_order,i.id LIMIT ?"; args.add(limit + 1);
+        List<GridRow> rows = jdbc.query(sql, (rs, row) -> new GridRow(mapInstance(rs, row),
+                rs.getObject("assignee_id", UUID.class), rs.getString("assignee_name"), rs.getLong("assignment_version"),
+                rs.getObject("run_id", UUID.class), rs.getObject("attempt_id", UUID.class), rs.getString("grid_status"),
+                rs.getString("conclusion"), rs.getObject("execution_date", OffsetDateTime.class)), args.toArray());
+        boolean more = rows.size() > limit;
+        var items = more ? rows.subList(0, limit) : rows;
+        var last = items.isEmpty() ? null : items.get(items.size() - 1).instance();
+        return new GridPage(items, more ? cursorFor(last.displayOrder(), last.id()) : null);
+    }
+
+    static String gridStatus(String status) {
+        if (status == null || status.isBlank()) return null;
+        if (!List.of("NOT_RUN", "RUNNING", "PAUSED", "FINISHED").contains(status)) {
+            throw ProjectAccessException.invalid("Unsupported execution grid status");
+        }
+        return status;
+    }
+
+    @Transactional(readOnly = true)
+    public AssigneePage executionAssignees(UUID actor, UUID projectId, String cursor, Integer requestedLimit) {
+        var project = readProject(actor, projectId);
+        setContext(project, actor);
+        int limit = boundedLimit(requestedLimit);
+        UUID after = new UUID(0, 0);
+        if (cursor != null && !cursor.isBlank()) {
+            try { after = UUID.fromString(new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8)); }
+            catch (IllegalArgumentException ex) { throw ProjectAccessException.invalid("Invalid assignee cursor"); }
+        }
+        var rows = jdbc.query("SELECT id,display_name FROM app_execution_people(?,?,NULL,?,?,false)",
+                (rs, row) -> new Assignee(rs.getObject("id", UUID.class), rs.getString("display_name")),
+                project.tenantId(), projectId, after, limit + 1);
+        boolean more = rows.size() > limit;
+        var items = more ? rows.subList(0, limit) : rows;
+        return new AssigneePage(items, more ? encodeCursor(items.get(items.size()-1).id().toString()) : null);
+    }
+
+    @Transactional
+    public AssignmentView assignInstance(UUID actor, UUID projectId, UUID instanceId, UUID assigneeId, long expectedVersion, String key) {
+        var project = writeProject(actor, projectId);
+        requireKey(key);
+        if (expectedVersion < 1) throw ProjectAccessException.invalid("Assignment version must be positive");
+        setContext(project, actor);
+        String route = "instance:assign:" + instanceId;
+        String hash = hash(route, assigneeId == null ? null : assigneeId.toString(), Long.toString(expectedVersion));
+        Claim replay = claim(project, actor, route, key, hash);
+        if (replay != null) return decode(replay.responseJson(), AssignmentView.class);
+        var before = jdbc.query("SELECT assignee_id,assignee_name,assignment_version FROM test_instance WHERE tenant_id=? AND project_id=? AND id=? FOR UPDATE",
+                (rs, row) -> new AssignmentView(instanceId, rs.getObject("assignee_id", UUID.class), rs.getString("assignee_name"), rs.getLong("assignment_version")),
+                project.tenantId(), projectId, instanceId).stream().findFirst().orElseThrow(ProjectAccessException::notFound);
+        if (before.assignmentVersion() != expectedVersion) throw ProjectAccessException.preconditionFailed("STALE_VERSION", "Assignment version is stale");
+        String name = assigneeName(project, assigneeId);
+        jdbc.update("UPDATE test_instance SET assignee_id=?,assignee_name=?,assignment_version=assignment_version+1 WHERE tenant_id=? AND project_id=? AND id=?",
+                assigneeId, name, project.tenantId(), projectId, instanceId);
+        var result = new AssignmentView(instanceId, assigneeId, name, expectedVersion + 1);
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("before", before); payload.put("after", result);
+        appendEvent(project, actor, null, null, "TEST_INSTANCE_ASSIGNED", "test_instance", instanceId, serialize(payload));
+        saveClaim(project, actor, route, key, hash, instanceId, "TEST_INSTANCE", result);
+        return result;
+    }
+
+    private String assigneeName(ProjectService.ProjectView project, UUID assigneeId) {
+        if (assigneeId == null) return null;
+        return jdbc.query("SELECT display_name FROM app_execution_people(?,?,?,NULL,1,true)",
+                (rs, row) -> rs.getString("display_name"), project.tenantId(), project.id(), assigneeId)
+                .stream().findFirst().orElseThrow(() -> ProjectAccessException.invalid("Assignee must be an active project ADMIN or MEMBER"));
+    }
+
     @Transactional
     public RunDetail createRun(UUID actor, UUID projectId, UUID instanceId, String key) {
         ProjectService.ProjectView project = writeProject(actor, projectId);
@@ -235,10 +333,10 @@ public class ExecutionService {
         String snapshotHash = manifestHash(instance, steps);
         jdbc.update("""
                 INSERT INTO execution_manifest (tenant_id, project_id, id, test_instance_id, source_test_case_id,
-                    source_revision_id, source_revision_no, title, description, preconditions, format_version, rules_version, snapshot_hash)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    source_revision_id, source_revision_no, title, description, preconditions, format_version, rules_version, snapshot_hash, assignee_id, assignee_name)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, project.tenantId(), projectId, manifestId, instance.id(), instance.testCaseId(), instance.revisionId(),
-                instance.revisionNo(), instance.title(), instance.description(), instance.preconditions(), FORMAT_VERSION, RULES_VERSION, snapshotHash);
+                instance.revisionNo(), instance.title(), instance.description(), instance.preconditions(), FORMAT_VERSION, RULES_VERSION, snapshotHash, instance.assigneeId(), instance.assigneeName());
         for (StepSnapshot step : steps) {
             jdbc.update("""
                     INSERT INTO execution_manifest_step (tenant_id, project_id, manifest_id, step_key, ordinal, action, expected)
@@ -624,15 +722,17 @@ public class ExecutionService {
 
     private InstanceSnapshot instanceSnapshot(ProjectService.ProjectView project, UUID projectId, UUID id) {
         List<InstanceSnapshot> values = jdbc.query("""
-                SELECT i.id, i.test_case_id, i.test_revision_id, r.revision_no, r.title, r.description, r.preconditions
+                SELECT i.id, i.test_case_id, i.test_revision_id, r.revision_no, r.title, r.description, r.preconditions, i.assignee_id
                 FROM test_instance i JOIN test_revision r ON r.tenant_id=i.tenant_id AND r.project_id=i.project_id
                  AND r.test_case_id=i.test_case_id AND r.id=i.test_revision_id
-                WHERE i.tenant_id=? AND i.project_id=? AND i.id=?
+                WHERE i.tenant_id=? AND i.project_id=? AND i.id=? FOR SHARE OF i
                 """, (rs, row) -> new InstanceSnapshot(rs.getObject("id", UUID.class), rs.getObject("test_case_id", UUID.class),
                         rs.getObject("test_revision_id", UUID.class), rs.getLong("revision_no"), rs.getString("title"),
-                        rs.getString("description"), rs.getString("preconditions")), project.tenantId(), projectId, id);
+                        rs.getString("description"), rs.getString("preconditions"), rs.getObject("assignee_id", UUID.class), null), project.tenantId(), projectId, id);
         if (values.isEmpty()) throw ProjectAccessException.notFound();
-        return values.get(0);
+        var value = values.get(0);
+        return new InstanceSnapshot(value.id(), value.testCaseId(), value.revisionId(), value.revisionNo(), value.title(),
+                value.description(), value.preconditions(), value.assigneeId(), assigneeName(project, value.assigneeId()));
     }
 
     private List<StepSnapshot> sourceSteps(ProjectService.ProjectView project, UUID projectId, UUID testCaseId, UUID revisionId) {
@@ -644,13 +744,13 @@ public class ExecutionService {
     private ManifestView manifest(ProjectService.ProjectView project, UUID projectId, UUID manifestId) {
         List<ManifestView> values = jdbc.query("""
                 SELECT id, test_instance_id, source_test_case_id, source_revision_id, source_revision_no, title,
-                       description, preconditions, format_version, rules_version, snapshot_hash, created_at
+                       description, preconditions, format_version, rules_version, snapshot_hash, created_at, assignee_id, assignee_name
                 FROM execution_manifest WHERE tenant_id=? AND project_id=? AND id=?
                 """, (rs, row) -> new ManifestView(rs.getObject("id", UUID.class), rs.getObject("test_instance_id", UUID.class),
                         rs.getObject("source_test_case_id", UUID.class), rs.getObject("source_revision_id", UUID.class), rs.getLong("source_revision_no"),
                         rs.getString("title"), rs.getString("description"), rs.getString("preconditions"), rs.getString("format_version"),
                         rs.getString("rules_version"), rs.getString("snapshot_hash"), rs.getObject("created_at", OffsetDateTime.class),
-                        List.of()), project.tenantId(), projectId, manifestId);
+                        List.of(), rs.getObject("assignee_id", UUID.class), rs.getString("assignee_name")), project.tenantId(), projectId, manifestId);
         if (values.isEmpty()) throw ProjectAccessException.notFound();
         ManifestView m = values.get(0);
         List<StepSnapshot> steps = jdbc.query("SELECT step_key, ordinal, action, expected FROM execution_manifest_step WHERE tenant_id=? AND project_id=? AND manifest_id=? ORDER BY ordinal",
@@ -661,11 +761,13 @@ public class ExecutionService {
 
     private List<RunStepView> steps(ProjectService.ProjectView project, UUID projectId, UUID attemptId) {
         return jdbc.query("""
-                SELECT step_key, ordinal, action, expected, actual_result, conclusion, row_version, updated_by, updated_at
+                SELECT id, step_key, ordinal, action, expected, actual_result, conclusion, row_version, updated_by,
+                       CASE WHEN updated_by IS NULL THEN NULL ELSE updated_at END AS updated_at, executed_at
                 FROM run_step WHERE tenant_id=? AND project_id=? AND attempt_id=? ORDER BY ordinal
                 """, (rs, row) -> new RunStepView(rs.getObject("step_key", UUID.class), rs.getInt("ordinal"), rs.getString("action"),
                         rs.getString("expected"), rs.getString("actual_result"), rs.getString("conclusion"), rs.getLong("row_version"),
-                        rs.getObject("updated_by", UUID.class), rs.getObject("updated_at", OffsetDateTime.class)), project.tenantId(), projectId, attemptId);
+                        rs.getObject("updated_by", UUID.class), rs.getObject("updated_at", OffsetDateTime.class), rs.getObject("id", UUID.class),
+                        rs.getObject("executed_at", OffsetDateTime.class)), project.tenantId(), projectId, attemptId);
     }
 
     private AttemptView mapAttempt(ResultSet rs, List<RunStepView> steps) throws SQLException {
@@ -865,6 +967,8 @@ public class ExecutionService {
         fields.add(instance.title());
         fields.add(instance.description());
         fields.add(instance.preconditions());
+        fields.add(instance.assigneeId() == null ? null : instance.assigneeId().toString());
+        fields.add(instance.assigneeName());
         fields.add(Integer.toString(steps.size()));
         for (StepSnapshot step : steps) {
             fields.add(step.stepKey().toString());
@@ -881,13 +985,24 @@ public class ExecutionService {
     public record InstanceView(UUID id, UUID projectId, UUID testSetId, UUID testCaseId, UUID testRevisionId,
             long revisionNo, long revisionNumber, String title, int displayOrder, OffsetDateTime createdAt) { }
     public record InstancePage(List<InstanceView> items, String nextCursor) { }
+    public record GridRow(InstanceView instance, UUID assigneeId, String assigneeName, long assignmentVersion,
+            UUID runId, UUID attemptId, String status, String conclusion, OffsetDateTime executionDate) { }
+    public record GridPage(List<GridRow> items, String nextCursor) { }
+    public record AssignmentView(UUID instanceId, UUID assigneeId, String assigneeName, long assignmentVersion) { }
+    public record Assignee(UUID id, String displayName) { }
+    public record AssigneePage(List<Assignee> items, String nextCursor) { }
     public record RunView(UUID id, UUID projectId, UUID testInstanceId, UUID manifestId, String status, long rowVersion, OffsetDateTime createdAt) { }
     public record RunPage(List<RunView> items, String nextCursor) { }
     public record ManifestView(UUID id, UUID testInstanceId, UUID sourceTestCaseId, UUID sourceRevisionId, long sourceRevisionNo,
             String title, String description, String preconditions, String formatVersion, String rulesVersion, String snapshotHash,
-            OffsetDateTime createdAt, List<StepSnapshot> steps) {
+            OffsetDateTime createdAt, List<StepSnapshot> steps, UUID assigneeId, String assigneeName) {
+        public ManifestView(UUID id, UUID testInstanceId, UUID sourceTestCaseId, UUID sourceRevisionId, long sourceRevisionNo,
+                String title, String description, String preconditions, String formatVersion, String rulesVersion, String snapshotHash,
+                OffsetDateTime createdAt, List<StepSnapshot> steps) {
+            this(id,testInstanceId,sourceTestCaseId,sourceRevisionId,sourceRevisionNo,title,description,preconditions,formatVersion,rulesVersion,snapshotHash,createdAt,steps,null,null);
+        }
         ManifestView withSteps(List<StepSnapshot> value) { return new ManifestView(id, testInstanceId, sourceTestCaseId, sourceRevisionId, sourceRevisionNo,
-                title, description, preconditions, formatVersion, rulesVersion, snapshotHash, createdAt, value); }
+                title, description, preconditions, formatVersion, rulesVersion, snapshotHash, createdAt, value, assigneeId, assigneeName); }
     }
     public record RunDetail(RunView run, ManifestView manifest, AttemptView currentAttempt, List<AttemptSummary> attempts) { }
     public record AttemptSummary(UUID id, int attemptNo, String status, String conclusion, long rowVersion) { }
@@ -900,10 +1015,15 @@ public class ExecutionService {
     public record RunSummary(long totalInstances, long unrunInstances, long activeAttempts,
             long latestCompletedPass, long latestCompletedFail, long latestCompletedBlocked) { }
     public record RunStepView(UUID stepKey, int ordinal, String action, String expected, String actualResult, String conclusion,
-            long rowVersion, UUID updatedBy, OffsetDateTime updatedAt) { }
+            long rowVersion, UUID updatedBy, OffsetDateTime updatedAt, UUID runStepId, OffsetDateTime executedAt) {
+        public RunStepView(UUID stepKey, int ordinal, String action, String expected, String actualResult, String conclusion,
+                long rowVersion, UUID updatedBy, OffsetDateTime updatedAt) {
+            this(stepKey,ordinal,action,expected,actualResult,conclusion,rowVersion,updatedBy,updatedAt,null,null);
+        }
+    }
     public record StepSnapshot(UUID stepKey, int ordinal, String action, String expected) { }
     private record SourceRevision(UUID id, UUID testCaseId, long revisionNo, String title, String description, String preconditions, OffsetDateTime sealedAt) { }
-    private record InstanceSnapshot(UUID id, UUID testCaseId, UUID revisionId, long revisionNo, String title, String description, String preconditions) { }
+    private record InstanceSnapshot(UUID id, UUID testCaseId, UUID revisionId, long revisionNo, String title, String description, String preconditions, UUID assigneeId, String assigneeName) { }
     private record Claim(String hash, UUID id, String responseJson) { }
     private record StepState(String actualResult, String conclusion, long rowVersion) { }
     private record AttemptState(String status, long rowVersion) { }

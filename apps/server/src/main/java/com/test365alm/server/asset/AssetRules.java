@@ -31,14 +31,14 @@ public final class AssetRules {
         return safe;
     }
     public static LinkCommand link(JsonNode n) {
-        FieldRules.fields(n,Set.of("kind","requirementId","testCaseId","defectId","assetId","assetRevisionId"));
+        FieldRules.fields(n,Set.of("kind","requirementId","testCaseId","defectId","runStepId","assetId","assetRevisionId"));
         String kind=FieldRules.text(n.get("kind"));String field=targetField(kind);
-        for(String other:List.of("requirementId","testCaseId","defectId"))if(!other.equals(field)&&n.has(other))throw ProjectAccessException.invalid("Exactly one typed attachment target is required");
+        for(String other:List.of("requirementId","testCaseId","defectId","runStepId"))if(!other.equals(field)&&n.has(other))throw ProjectAccessException.invalid("Exactly one typed attachment target is required");
         return new LinkCommand(kind,uuid(n.get(field)),uuid(n.get("assetId")),uuid(n.get("assetRevisionId")));
     }
     public static String targetField(String kind) {
         if(kind==null)throw ProjectAccessException.invalid("kind is required");
-        return switch(kind){case "REQUIREMENT"->"requirementId";case "TEST_CASE"->"testCaseId";case "DEFECT"->"defectId";default->throw ProjectAccessException.invalid("Unsupported attachment kind");};
+        return switch(kind){case "REQUIREMENT"->"requirementId";case "TEST_CASE"->"testCaseId";case "DEFECT"->"defectId";case "RUN_STEP"->"runStepId";default->throw ProjectAccessException.invalid("Unsupported attachment kind");};
     }
     public static UUID uuid(JsonNode n) {
         String s=FieldRules.text(n);try{if(!s.matches("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"))throw new IllegalArgumentException();return UUID.fromString(s);}catch(IllegalArgumentException ex){throw ProjectAccessException.invalid("Invalid UUID");}

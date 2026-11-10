@@ -66,6 +66,9 @@ class AssetProvisioningUpgradeIT {
             assertEquals(0,latest.migrate().migrationsExecuted);assertEquals(before,snapshot(owner,tables));
             assertEquals(2,migration(pg,"23").migrate().migrationsExecuted);assertEquals(before,snapshot(owner,tables),"latest preserves all original columns before current service verification");
 
+            assertEquals(1,Flyway.configure().dataSource(pg.getJdbcUrl(),pg.getUsername(),pg.getPassword()).load().migrate().migrationsExecuted);
+            assertEquals(before,snapshot(owner,tables),"latest must preserve all original asset fields before current runtime calls");
+            assertEquals(0,owner.queryForObject("SELECT count(*) FROM attachment_link WHERE run_step_id IS NOT NULL",Integer.class));
             String newLogin=login(),newSecret=secret();
             assertEquals(0,AssetTestInfrastructure.repositoryScannerProvision(pg,newLogin,newSecret));
             String roleBefore=roleSnapshot(owner);
@@ -245,7 +248,7 @@ class AssetProvisioningUpgradeIT {
         try(var download=assets.download(f.member,f.project,upload.assetId(),upload.revisionId()).stream()){assertArrayEquals(content,download.readAllBytes());}
     }
     private static AnnotationConfigApplicationContext context(DataSource runtime,DataSource scanner,boolean legacy) {
-        var c=new AnnotationConfigApplicationContext();c.registerBean(DataSource.class,()->runtime);c.register(RuntimeConfig.class,ProjectService.class,CoreCommands.class,AssetService.class);
+        var c=new AnnotationConfigApplicationContext();c.registerBean(DataSource.class,()->runtime);c.register(RuntimeConfig.class,ProjectService.class,CoreCommands.class);c.register(legacy?LegacyAttachmentService61711294.class:AssetService.class);
         com.test365alm.server.businessfields.LegacyContentServices.requirement(c,legacy);c.registerBean(BlobStore.class,AssetTestInfrastructure::store);c.registerBean(MalwareScanner.class,AssetTestInfrastructure::scanner);c.registerBean(ScanResultWriter.class,()->new JdbcScanResultWriter(scanner));c.refresh();return c;
     }
     private static PostgreSQLContainer<?> ownedDatabase(String suffix) {
@@ -258,7 +261,7 @@ class AssetProvisioningUpgradeIT {
     private static JdbcTemplate owner(PostgreSQLContainer<?> pg){return new JdbcTemplate(new DriverManagerDataSource(pg.getJdbcUrl(),pg.getUsername(),pg.getPassword()));}
     private static DataSource runtime(PostgreSQLContainer<?> pg){return new DriverManagerDataSource(pg.getJdbcUrl(),"test365alm_runtime","r03_isolated_test_role_only");}
     private static DataSource scanner(PostgreSQLContainer<?> pg,String user,String password){return new DriverManagerDataSource(pg.getJdbcUrl(),user,password);}
-    private static Map<String,List<String>> snapshot(JdbcTemplate db,List<String> tables){var result=new TreeMap<String,List<String>>();for(String table:tables)result.put(table,db.query("SELECT (to_jsonb(t)-'business_fields'-'result_business_fields')::text FROM \""+table+"\" t ORDER BY to_jsonb(t)::text",(r,i)->r.getString(1)));return result;}
+    private static Map<String,List<String>> snapshot(JdbcTemplate db,List<String> tables){return com.test365alm.server.fixture.HistoricalExecutionUpgradeSupport.originalColumnsSnapshot(db,tables);}
     /** Kept in memory for equality only. Never interpolate catalog credentials into assertion output. */
     private static String roleSnapshot(JdbcTemplate db){return db.queryForObject("SELECT jsonb_build_object('roles',(SELECT jsonb_agg(to_jsonb(r) ORDER BY oid) FROM pg_authid r),'members',(SELECT jsonb_agg(to_jsonb(m) ORDER BY oid) FROM pg_auth_members m),'settings',(SELECT jsonb_agg(to_jsonb(s) ORDER BY setdatabase,setrole) FROM pg_db_role_setting s),'dependencies',(SELECT jsonb_agg(to_jsonb(d) ORDER BY dbid,classid,objid,objsubid,refclassid,refobjid,deptype) FROM pg_shdepend d))::text",String.class);}
     private static String groupSnapshot(JdbcTemplate db){return db.queryForObject("SELECT to_jsonb(r)::text FROM pg_authid r WHERE rolname='test365alm_scanner'",String.class);}

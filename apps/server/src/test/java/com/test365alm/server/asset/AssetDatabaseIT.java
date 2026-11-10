@@ -42,12 +42,13 @@ class AssetDatabaseIT {
     @Autowired TestCaseService tests; @Autowired DefectService defects; @Autowired JdbcTemplate runtime;
     @Autowired CoreCommands commands; @Autowired PlatformTransactionManager transactions; @Autowired BlobStore blobs; @Autowired MalwareScanner scanner;
     @Autowired ScanResultWriter scanWriter;
+    @Autowired com.test365alm.server.execution.ExecutionService executions;
     static final byte[] TEXT="R11 harmless private text\n".getBytes(StandardCharsets.UTF_8);
     private static final JsonNode EMPTY=CoreCommands.JSON.readTree("{}");
 
     @Test void memberUploadUsesPrivateQuarantineAndServerVerifiedReceipt() throws Exception {
         var f=fixture();assertEquals("test365alm_runtime",runtime.queryForObject("SELECT current_user",String.class));
-        assertEquals(23,owner().queryForObject("SELECT count(*) FROM flyway_schema_history WHERE success",Integer.class));
+        assertEquals(24,owner().queryForObject("SELECT count(*) FROM flyway_schema_history WHERE success",Integer.class));
         var body=body(TEXT,"../../report\r\n\".txt",null);String intent=key();var upload=assets.createUpload(f.member,f.project,body,intent);
         assertEquals(upload,assets.createUpload(f.member,f.project,body,intent));assertNull(upload.assetId());assertNull(upload.revisionId());assertEquals("CREATED",upload.state());
         String q=internal(upload.id(),"quarantine_key");assertEquals("quarantine/"+f.tenant+"/"+f.project+"/"+upload.id(),q);assertFalse(q.contains("report"));
@@ -331,6 +332,57 @@ class AssetDatabaseIT {
         assertEquals(0,count("asset_revision",f.project));var ready=assets.complete(f.member,f.project,u.id(),EMPTY,key());assertEquals("PUBLISHED",ready.state());
         var foreign=fixture();var foreignAsset=publish(foreign,TEXT,null);UUID req=requirement(f);
         try(var c=connection(f,f.member)) {var ex=assertThrows(SQLException.class,()->sql(c,"INSERT INTO attachment_link(tenant_id,project_id,id,kind,requirement_id,asset_id,asset_revision_id,created_by) VALUES(?,?,?,'REQUIREMENT',?,?,?,?)",f.tenant,f.project,UUID.randomUUID(),req,foreignAsset.assetId(),foreignAsset.revisionId(),f.member));assertEquals("23514",ex.getSQLState());assertTrue(ex.getMessage().contains("published CLEAN revision"));}
+    }
+
+    @Test void stepEvidenceUsesRealCleanRevisionAndPreservesOldAttemptOnRetry() throws Exception {
+        var f=fixture();var run=stepRun(f);var step=run.currentAttempt().steps().get(0);var a=publish(f,TEXT,null);
+        var body=link("RUN_STEP",step.runStepId(),a);String intent=key();
+        var linked=assets.createAttachment(f.member,f.project,body,intent);
+        assertEquals(step.runStepId(),linked.runStepId());assertEquals("CLEAN",linked.revision().scanStatus());
+        assertEquals(linked,assets.createAttachment(f.member,f.project,body,intent));
+        assertEquals(List.of(linked),assets.attachments(f.viewer,f.project,"RUN_STEP",step.runStepId(),null,1).items());
+        assertArrayEquals(TEXT,download(f.viewer,f.project,a.assetId(),a.revisionId()));
+        var updated=executions.saveStep(f.member,f.project,run.run().id(),run.currentAttempt().id(),step.stepKey(),"done","PASS",1,key());
+        executions.finish(f.member,f.project,run.run().id(),updated.id(),updated.rowVersion(),key());
+        assertEquals(linked,assets.createAttachment(f.member,f.project,body,intent),"frozen successful replay remains valid after finish");
+        var retry=executions.rerun(f.member,f.project,run.run().id(),key());
+        assertNotEquals(step.runStepId(),retry.steps().get(0).runStepId());
+        assertTrue(assets.attachments(f.member,f.project,"RUN_STEP",retry.steps().get(0).runStepId(),null,25).items().isEmpty());
+        publish(f,"new clean revision".getBytes(StandardCharsets.UTF_8),a.assetId());
+        assertEquals(a.revisionId(),assets.attachments(f.viewer,f.project,"RUN_STEP",step.runStepId(),null,25).items().get(0).assetRevisionId());
+        assertArrayEquals(TEXT,download(f.viewer,f.project,linked.assetId(),linked.assetRevisionId()));
+    }
+    @Test void stepEvidenceRejectsViewerForeignPausedAndFinishedTargets() throws Exception {
+        var f=fixture();var other=sibling(f);var run=stepRun(f);var a=publish(f,TEXT,null);var step=run.currentAttempt().steps().get(0);
+        var body=link("RUN_STEP",step.runStepId(),a);
+        denied(403,"FORBIDDEN",()->assets.createAttachment(f.viewer,f.project,body,key()));
+        denied(404,"NOT_FOUND",()->assets.createAttachment(f.outsider,f.project,body,key()));
+        var otherAsset=publish(other,TEXT,null);
+        denied(404,"NOT_FOUND",()->assets.createAttachment(other.member,other.project,link("RUN_STEP",step.runStepId(),otherAsset),key()));
+        var paused=executions.pause(f.member,f.project,run.run().id(),run.currentAttempt().id(),1,key());
+        denied(409,"ATTEMPT_NOT_RUNNING",()->assets.createAttachment(f.member,f.project,body,key()));
+        var resumed=executions.resume(f.member,f.project,run.run().id(),paused.id(),paused.rowVersion(),key());
+        var saved=executions.saveStep(f.member,f.project,run.run().id(),resumed.id(),step.stepKey(),"done","PASS",1,key());
+        executions.finish(f.member,f.project,run.run().id(),saved.id(),saved.rowVersion(),key());
+        denied(409,"ATTEMPT_NOT_RUNNING",()->assets.createAttachment(f.member,f.project,body,key()));
+        assertEquals(0,count("attachment_link",f.project));
+    }
+    @Test void stepEvidenceAuditAndOutboxFailureRollBackLinkAndFrozenClaim() {
+        var f=fixture();var a=publish(f,TEXT,null);
+        for(String table:List.of("audit_event","asset_outbox_event")) {
+            var run=stepRun(f);var body=link("RUN_STEP",run.currentAttempt().steps().get(0).runStepId(),a);String intent=key();
+            var before=snapshot(f.project);owner().execute("REVOKE INSERT ON "+table+" FROM test365alm_runtime");
+            try{fault(table,()->assets.createAttachment(f.member,f.project,body,intent));}finally{owner().execute("GRANT INSERT ON "+table+" TO test365alm_runtime");}
+            assertEquals(before,snapshot(f.project));var linked=assets.createAttachment(f.member,f.project,body,intent);
+            assertEquals(linked,assets.createAttachment(f.member,f.project,body,intent));
+        }
+        assertEquals(2,count("attachment_link",f.project));
+    }
+    private com.test365alm.server.execution.ExecutionService.RunDetail stepRun(Fixture f) {
+        var source=tests.create(f.member,f.project,new TestCaseService.CreateCommand("MANUAL","Step evidence","","",List.of(new TestCaseService.StepCommand(null,1,"Act","Expected"))),key());
+        var set=executions.createSet(f.member,f.project,"Evidence set","",key());
+        var instance=executions.addInstance(f.member,f.project,set.id(),source.id(),source.currentRevision().id(),key());
+        return executions.createRun(f.member,f.project,instance.id(),key());
     }
 
     private record Fixture(UUID admin,UUID member,UUID viewer,UUID outsider,UUID tenant,UUID domain,UUID project) { }

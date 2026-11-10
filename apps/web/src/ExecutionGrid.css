@@ -1,0 +1,11 @@
+.execution-grid { margin-block: 1rem; }
+.execution-grid-tools, .execution-grid-actions, .execution-assignment { display: flex; flex-wrap: wrap; align-items: end; gap: .6rem; }
+.execution-grid-tools label, .execution-assignment label { display: grid; gap: .3rem; }
+.execution-grid-scroll { overflow-x: auto; margin-block: .8rem; }
+.execution-grid table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+.execution-grid th, .execution-grid td { padding: .75rem; border-bottom: 1px solid var(--border, #d8dce2); text-align: left; vertical-align: top; }
+.execution-grid thead { background: var(--surface-subtle, #f5f7fa); }
+.execution-grid tbody th { min-width: 10rem; font-weight: 600; }
+.execution-grid time { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.execution-assignment { padding: 1rem; border: 1px solid var(--border, #d8dce2); border-radius: .5rem; }
+.execution-grid select { min-height: 2.5rem; padding: .4rem .6rem; }

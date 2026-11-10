@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readFileSync } from 'node:fs'
-import { assertLocalContainer, localManifestMatches } from './localOwnership'
+import { assertLocalAssets, assertLocalContainer, localManifestMatches } from './localOwnership'
 import type { LocalManifest } from './localOwnership'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
@@ -32,6 +32,18 @@ function localManifest(): LocalManifest | null {
 export function isOwnedRun(): boolean {
   if(isOwnedCiRun())return true
   try{return localManifest()!==null}catch{return false}
+}
+
+/** Local evidence must prove the real asset services before any UI writes. */
+export function assertStepEvidenceFacilities(): void {
+  const local=localManifest()
+  if(!local)return // CI retains its existing independently guarded R11 stack.
+  const containers=Object.fromEntries((['asset-store','asset-scanner'] as const).map(service=>{
+    const expected=local.services[service]
+    if(!expected)throw new Error('Missing explicitly owned step evidence service')
+    return [service,JSON.parse(docker(['inspect',expected.id]))[0]]
+  }))
+  assertLocalAssets(local,process.env,containers,docker(['context','show']),docker(['info','--format','{{.ID}}']))
 }
 
 function docker(args: string[]): string {

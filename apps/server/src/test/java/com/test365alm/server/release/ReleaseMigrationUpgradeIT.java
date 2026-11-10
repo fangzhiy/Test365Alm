@@ -17,6 +17,8 @@ import com.test365alm.server.project.ProjectService;
 import com.test365alm.server.requirement.RequirementService;
 import com.test365alm.server.testcase.TestCaseService;
 import com.test365alm.server.execution.ExecutionService;
+import com.test365alm.server.fixture.HistoricalExecutionService61711294;
+import com.test365alm.server.fixture.HistoricalExecutionUpgradeSupport;
 import com.test365alm.server.trace.TraceLinkService;
 import com.test365alm.server.metadata.FieldDefinitionService;
 import com.test365alm.server.defect.*;
@@ -39,6 +41,7 @@ class ReleaseMigrationUpgradeIT {
             owner.update("INSERT INTO tenant_member(tenant_id,principal_id,roles) VALUES(?,?,'{TENANT_ADMIN}')",tenant,admin);owner.update("INSERT INTO tenant_member(tenant_id,principal_id,roles) VALUES(?,?,'{MEMBER}')",tenant,member);
             var ds=new DriverManagerDataSource(pg.getJdbcUrl(),"test365alm_runtime","r03_isolated_test_role_only");
             UUID project,requirement,test,run,attempt,defect;String traceKey=key(),defectKey=key();TraceLinkService.LinkView originalLink;DefectService.DefectView originalDefect;
+            String legacyRunKey=key(),legacyManifestHash;
             try(var c=context(ds,false)) {
                 var projects=c.getBean(ProjectService.class);project=projects.createProject(admin,tenant,domain,"UP-"+key(),"Upgrade").id();projects.putMember(admin,project,member,List.of("PROJECT_MEMBER"),0L,false);
                 var requirements=c.getBean(RequirementService.class);var req=requirements.create(member,project,new RequirementService.CreateCommand("Original requirement","original body","HIGH"),key());requirement=req.id();
@@ -47,7 +50,7 @@ class ReleaseMigrationUpgradeIT {
                 tc=tests.appendRevision(member,project,test,new TestCaseService.RevisionCommand("Revised test","revised description","",List.of(new TestCaseService.StepCommand(tc.currentRevision().steps().get(1).stepKey(),1,"Second act","Second expected"),new TestCaseService.StepCommand(tc.currentRevision().steps().get(0).stepKey(),2,"First act","First expected"))),"\"1\"",key());
                 c.getBean(FieldDefinitionService.class).create(admin,project,CoreCommands.JSON.readTree("{\"key\":\"upgrade_note\",\"type\":\"TEXT\",\"required\":false,\"maxLength\":30}"),key());
                 originalLink=c.getBean(TraceLinkService.class).create(member,project,requirement,test,traceKey);
-                var e=c.getBean(ExecutionService.class);var set=e.createSet(member,project,"Old set","",key());var instance=e.addInstance(member,project,set.id(),test,tc.currentRevision().id(),key());var r=e.createRun(member,project,instance.id(),key());run=r.run().id();attempt=r.currentAttempt().id();
+                var e=c.getBean(HistoricalExecutionService61711294.class);var set=e.createSet(member,project,"Old set","",key());var instance=e.addInstance(member,project,set.id(),test,tc.currentRevision().id(),key());var r=e.createRun(member,project,instance.id(),legacyRunKey);legacyManifestHash=r.manifest().snapshotHash();run=r.run().id();attempt=r.currentAttempt().id();
                 for(var step:r.currentAttempt().steps())e.saveStep(member,project,run,attempt,step.stepKey(),"V18 FAIL "+step.ordinal(),"FAIL",step.rowVersion(),key());e.finish(member,project,run,attempt,e.attempt(member,project,run,attempt).rowVersion(),key());
                 var d=c.getBean(DefectService.class);originalDefect=d.fromStep(member,project,defectBody(),run,attempt,r.currentAttempt().steps().get(0).stepKey(),defectKey);defect=originalDefect.id();
                 d.edit(member,project,defect,CoreCommands.JSON.readTree("{\"title\":\"Edited old defect\",\"description\":\"V18 history\",\"severity\":\"HIGH\",\"priority\":\"MEDIUM\"}"),"\"1\"",key());
@@ -56,8 +59,9 @@ class ReleaseMigrationUpgradeIT {
             for(String table:List.of("tenant","project","project_member","requirement","requirement_revision","test_case","test_revision","test_step","trace_link","trace_link_revision","execution_run","execution_manifest","execution_manifest_step","run_attempt","run_step","execution_event","execution_idempotency","defect","defect_revision","defect_link","defect_outbox_event","audit_event","core_command_idempotency"))assertFalse(before.get(table).isEmpty(),table+" must contain actual V18 business data before upgrade");
             assertEquals(2,owner.queryForObject("SELECT count(*) FROM requirement_revision WHERE project_id=?",Integer.class,project));assertEquals(2,owner.queryForObject("SELECT count(*) FROM test_revision WHERE project_id=?",Integer.class,project));assertEquals(2,owner.queryForObject("SELECT count(*) FROM defect_revision WHERE project_id=?",Integer.class,project));
             var latest=Flyway.configure().dataSource(pg.getJdbcUrl(),pg.getUsername(),pg.getPassword()).target("19").load();assertEquals(1,latest.migrate().migrationsExecuted);assertEquals(before,snapshot(owner,tables),"every old table and column must survive byte-for-byte JSON representation");assertEquals(0,latest.migrate().migrationsExecuted);assertEquals(before,snapshot(owner,tables));
-            assertEquals(4,Flyway.configure().dataSource(pg.getJdbcUrl(),pg.getUsername(),pg.getPassword()).load().migrate().migrationsExecuted);
+            assertEquals(5,Flyway.configure().dataSource(pg.getJdbcUrl(),pg.getUsername(),pg.getPassword()).load().migrate().migrationsExecuted);
             assertEquals(before,snapshot(owner,tables),"latest preserves every original column before current runtime verification");
+            HistoricalExecutionUpgradeSupport.assertLegacyColumns(owner,before);
 
             try(var c=context(ds,true)) {
                 assertTrue(c.getBean(DefectService.class).get(member,project,defect).currentRevision().businessFields().isEmpty());
@@ -66,6 +70,7 @@ class ReleaseMigrationUpgradeIT {
                 assertEquals("revised body",c.getBean(RequirementService.class).getAuthorized(member,project,requirement).body());assertEquals(originalLink,c.getBean(TraceLinkService.class).create(member,project,requirement,test,traceKey));
                 assertEquals("Revised test",c.getBean(TestCaseService.class).getAuthorized(member,project,test).currentRevision().title());
                 assertEquals("FAIL",c.getBean(ExecutionService.class).attempt(member,project,run,attempt).conclusion());
+                HistoricalExecutionUpgradeSupport.assertCurrentReadAndFrozenReplay(c.getBean(ExecutionService.class),member,project,run,attempt,legacyManifestHash,legacyRunKey);
                 assertEquals(originalDefect,c.getBean(DefectService.class).fromStep(member,project,defectBody(),run,attempt,originalDefect.links().stream().filter(l->l.kind().equals("RUN_STEP")).findFirst().orElseThrow().stepKey(),defectKey),"old key returns frozen result rather than edited defect");
                 var release=releases.create(admin,project,CoreCommands.JSON.readTree("{\"name\":\"Upgraded release\",\"startDate\":\"2026-10-01\",\"endDate\":\"2026-10-31\"}"),key());
                 releases.addScope(admin,project,release.id(),CoreCommands.JSON.readTree("{\"kind\":\"REQUIREMENT\",\"requirementId\":\""+requirement+"\"}"),key());releases.addScope(admin,project,release.id(),CoreCommands.JSON.readTree("{\"kind\":\"TEST_CASE\",\"testCaseId\":\""+test+"\"}"),key());
@@ -74,8 +79,15 @@ class ReleaseMigrationUpgradeIT {
             }
         }
     }
-    private static AnnotationConfigApplicationContext context(DataSource ds,boolean releases){var c=new AnnotationConfigApplicationContext();c.registerBean(DataSource.class,()->ds);c.register(RuntimeConfig.class,ProjectService.class,CoreCommands.class,ExecutionService.class,TraceLinkService.class,FieldDefinitionService.class,DefectEvidence.class);if(releases)c.register(ReleaseService.class,ReleaseMetrics.class);com.test365alm.server.businessfields.LegacyContentServices.register(c,!releases,true);c.refresh();return c;}
-    private static Map<String,List<String>> snapshot(JdbcTemplate db,List<String> tables){var m=new TreeMap<String,List<String>>();for(String table:tables)m.put(table,db.query("SELECT (to_jsonb(t)-'business_fields'-'result_business_fields')::text FROM \""+table+"\" t ORDER BY to_jsonb(t)::text",(r,i)->r.getString(1)));return m;}
+    private static AnnotationConfigApplicationContext context(DataSource ds,boolean releases){
+        var c=new AnnotationConfigApplicationContext();c.registerBean(DataSource.class,()->ds);
+        c.register(RuntimeConfig.class,ProjectService.class,CoreCommands.class,ExecutionService.class,
+                HistoricalExecutionService61711294.class,TraceLinkService.class,FieldDefinitionService.class);
+        c.register(releases?DefectEvidence.class:com.test365alm.server.fixture.HistoricalDefectEvidence61711294.class);
+        if(releases)c.register(ReleaseService.class,ReleaseMetrics.class);
+        com.test365alm.server.businessfields.LegacyContentServices.register(c,!releases,true);c.refresh();return c;
+    }
+    private static Map<String,List<String>> snapshot(JdbcTemplate db,List<String> tables){return com.test365alm.server.fixture.HistoricalExecutionUpgradeSupport.originalColumnsSnapshot(db,tables);}
     private static tools.jackson.databind.JsonNode defectBody(){return CoreCommands.JSON.readTree("{\"title\":\"Old failure\",\"description\":\"V18 source\",\"severity\":\"HIGH\",\"priority\":\"MEDIUM\"}");}
     private static String key(){return UUID.randomUUID().toString();}
 }
