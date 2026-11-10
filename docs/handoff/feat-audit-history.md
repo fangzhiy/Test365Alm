@@ -2,6 +2,17 @@
 
 ## Codex 接力更新（2026-11-10，优先于下面的原交接）
 
+### 第二次接力：三个历史入口均已接入
+
+- 用户要求“继续”后，在当前分支补齐用例与运行入口（目录树尚未合入 dev；两个产品文件均只加 import 与一行组件，未合入其他功能分支）。
+- TestCasesPanel 用稳定 test id / rowVersion 刷新历史；仅在详情加载成功后显示。
+- TestExecutionPanel 使用 runId 查询历史，刷新 key 包含 attempt id、attempt rowVersion 和每个步骤的 rowVersion；步骤独立写入不一定改变 attempt rowVersion，不能只监听 attempt 版本。草稿文字不进入刷新 key。
+- 新增四项组件回归：用例保存后重载、用例 VIEWER 历史 404 保留详情、运行步骤/暂停/继续/完成/重跑均重载、运行 VIEWER 历史 403 保留详情。既有五处状态断言改为按具体业务消息查找，避免与新增历史面板的 status 混淆。
+- 已给现有用例、运行、缺陷的真实 Keycloak 浏览器流程增加审计差异与事件断言，保留原测试名、单 worker、零 retry。Playwright 发现 14 个原有测试，三个修改文件的独立 TypeScript 检查通过；本机没有 CI-owned 资源，真实流程 NOT_RUN，没有伪造归属或绕过保护。
+- 第二次接力验证：前端全套 21 文件、234 项全部通过；lint / build 通过，原有 9 个 warning 未增加。后端代码没有变化，沿用下方已记录的 72 单元通过、完整集成失败结果，未重复运行。
+- Playwright CLI 使用合成夹具实际点击用例保存、打开运行、暂停、继续，观察两个历史面板自动更新，控制台零错误/警告。夹具在 apps/web/local-evidence/history-entries/，截图和诊断在根目录 local-evidence/audit-history/，均忽略。测试浏览器和经进程路径确认归属的 15174 预览服务已关闭。
+- 下一步为 Claude 审查、与已审核目录树分支集成、CI-owned 真实浏览器验收及资产集成失败的独立排查；三个历史入口本身不再待开发。尚未推送/合并，不标记阶段 2c 已验收完成。
+
 ### 已完成
 
 - 原“下一步”1—4 已完成：`historyApi.ts` 复用 requestJson 并验证页/事件/主体/时间/修订号/字段值，保留 HTTP 错误 status，固定 limit=25，编码路径与不透明 cursor。
@@ -24,8 +35,8 @@
 ### 接下来
 
 1. Claude 审查本次前端改动。
-2. 原第 5 步仍待做：目录树分支合并到 dev 后再集成最新 dev，在 TestCasesPanel / TestExecutionPanel 各加 import 和一行 HistoryPanel。使用真实稳定对象 ID；运行传 runId，不是 attemptId。按对象身份和已保存版本/event 更新 key，验证切换与写入后的刷新。
-3. 给两个入口补测试，运行真实登录下三类对象的历史查看流程。
+2. 两个入口与组件测试在第二次接力中完成；目录树分支合并到 dev 后再集成最新 dev，保留两边的面板接入。
+3. 在 CI-owned 环境实际运行已补审计断言的三条真实登录流程。本机未运行，不以合成夹具检查代替。
 4. 全套后端集成绿色前不可合并。合并后再删除本文件、更新路线图第 7 节；当前不标记整个 2c 完成。未推送、未合并。
 
 beforeEach 初始化 mock 使用花括号，不隐式返回 mock 函数（Vitest 会把函数返回值当清理函数调用）。原有两个自动刷新钩子文件的改动继续保留，不混入功能提交。

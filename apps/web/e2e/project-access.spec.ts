@@ -654,6 +654,11 @@ test('real Keycloak UI manual test case flow creates steps, edits order, and kee
       await panel.getByRole('button', { name: '保存为新修订' }).click()
       await expect(panel).toContainText('测试用例已保存为新修订')
       await expect(panel).toContainText('2 个修订')
+      const audit = panel.getByRole('region', { name: '审计历史', exact: true })
+      const changedDescription = audit.getByRole('row').filter({ hasText: 'The second revision preserves stable step keys.' })
+      await expect(changedDescription).toContainText('A browser-driven manual test definition.')
+      await expect(changedDescription).toContainText('修改用例')
+      await expect(changedDescription).toContainText('R03 Member')
       await expect(panel.locator('.test-step code')).toHaveText([initialStepKeys[1], initialStepKeys[0]])
       await expect(panel.getByRole('region', { name: '测试用例修订历史' }).getByRole('button', { name: /修订 1/ })).toBeVisible()
       await panel.getByRole('region', { name: '测试用例修订历史' }).getByRole('button', { name: /修订 1/ }).click()
@@ -678,6 +683,7 @@ test('real Keycloak UI manual test case flow creates steps, edits order, and kee
       await expect(viewerPanel.getByRole('button', { name: '保存为新修订' })).not.toBeVisible()
       await expect(viewerPanel.getByRole('button', { name: '新增步骤' })).not.toBeVisible()
       await expect(viewerPanel.locator('.revision-row')).toHaveCount(2)
+      await expect(viewerPanel.getByRole('region', { name: '审计历史', exact: true })).toContainText('修改用例')
     })
 
     await diagnostics.step(viewerPage, 'manual test viewer write denied', async () => {
