@@ -118,12 +118,43 @@ class SignatureDatabaseIT {
         assertEquals(1,count(f,"signature_record"));assertEquals(1,count(f,"signature_outbox_event"));
     }
     @Test void outboxFailureRollsBackSignatureAuditAndIdempotencyAndOriginalIntentRecovers()throws Exception {
+        for(String table:List.of("audit_event","signature_outbox_event"))assertSignatureRollback(table);
+    }
+    private void assertSignatureRollback(String table)throws Exception {
         var f=fixture();var t=approved(f);var c=prepare(f,t);String key=key();int before=count(f,"audit_event");
         try(var db=owner()) {db.createStatement().execute("CREATE FUNCTION fail_signature_"+f.tenant.toString().replace("-","")+"() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.tenant_id='"+f.tenant+"'::uuid THEN RAISE EXCEPTION 'signature isolated fault'; END IF; RETURN NEW; END $$");
-            db.createStatement().execute("CREATE TRIGGER fail_signature_"+f.tenant.toString().replace("-","")+" BEFORE INSERT ON signature_outbox_event FOR EACH ROW EXECUTE FUNCTION fail_signature_"+f.tenant.toString().replace("-","")+"()");}
-        try {assertThrows(RuntimeException.class,()->sign(f,t,c,proof(f,c),key));assertEquals(0,count(f,"signature_record"));assertEquals(before,count(f,"audit_event"));}
-        finally {try(var db=owner()){db.createStatement().execute("DROP TRIGGER fail_signature_"+f.tenant.toString().replace("-","")+" ON signature_outbox_event");db.createStatement().execute("DROP FUNCTION fail_signature_"+f.tenant.toString().replace("-","")+"()");}}
+            db.createStatement().execute("CREATE TRIGGER fail_signature_"+f.tenant.toString().replace("-","")+" BEFORE INSERT ON "+table+" FOR EACH ROW EXECUTE FUNCTION fail_signature_"+f.tenant.toString().replace("-","")+"()");}
+        try {assertThrows(RuntimeException.class,()->sign(f,t,c,proof(f,c),key));assertEquals(0,count(f,"signature_record"));assertEquals(0,count(f,"signature_outbox_event"));assertEquals(before,count(f,"audit_event"));}
+        finally {try(var db=owner()){db.createStatement().execute("DROP TRIGGER fail_signature_"+f.tenant.toString().replace("-","")+" ON "+table);db.createStatement().execute("DROP FUNCTION fail_signature_"+f.tenant.toString().replace("-","")+"()");}}
         assertNotNull(sign(f,t,c,proof(f,c),key).signature());
+    }
+    @Test void concurrentDistinctChallengesProduceExactlyOneSignatureAndOneConflict()throws Exception {
+        var f=fixture();var t=approved(f);var a=prepare(f,t);var b=prepare(f,t);
+        var pool=Executors.newFixedThreadPool(2);var start=new CountDownLatch(1);
+        try {
+            var futures=List.of(a,b).stream().map(c->pool.submit(()->{
+                assertTrue(start.await(10,TimeUnit.SECONDS));
+                try {sign(f,t,c,proof(f,c),key());return "signed";}
+                catch(ProjectAccessException e){return e.code();}
+            })).toList();start.countDown();
+            var outcomes=new ArrayList<String>();for(var future:futures)outcomes.add(future.get(30,TimeUnit.SECONDS));
+            assertEquals(1,Collections.frequency(outcomes,"signed"));assertEquals(1,Collections.frequency(outcomes,"ALREADY_SIGNED"));
+        }finally{pool.shutdownNow();}
+        assertEquals(1,count(f,"signature_record"));assertEquals(1,count(f,"signature_outbox_event"));
+    }
+    @Test void concurrentContentRevisionAndSigningSerializeWithoutSigningChangedContent()throws Exception {
+        var f=fixture();var t=approved(f);var c=prepare(f,t);var old=t.currentRevision();
+        var command=new TestCaseService.RevisionCommand("Concurrent revision",old.description(),old.preconditions(),old.steps().stream().map(s->new TestCaseService.StepCommand(s.stepKey(),s.ordinal(),s.action(),s.expected())).toList());
+        var pool=Executors.newFixedThreadPool(2);var start=new CountDownLatch(1);
+        try {
+            var signing=pool.submit(()->{assertTrue(start.await(10,TimeUnit.SECONDS));try{return sign(f,t,c,proof(f,c),key()).signature();}catch(ProjectAccessException e){assertTrue(Set.of("SIGNATURE_NOT_ALLOWED","STALE_VERSION").contains(e.code()));return null;}});
+            var editing=pool.submit(()->{assertTrue(start.await(10,TimeUnit.SECONDS));return tests.appendRevision(f.actor,f.project,t.id(),command,tag(t.rowVersion()),key());});
+            start.countDown();var signed=signing.get(30,TimeUnit.SECONDS);var edited=editing.get(30,TimeUnit.SECONDS);
+            assertNotEquals(old.id(),edited.currentRevision().id());assertEquals(old,tests.revision(f.actor,f.project,t.id(),old.id()));
+            assertFalse(signatures.get(f.actor,f.project,SignatureRules.Kind.TEST_APPROVAL,t.id(),edited.currentRevision().id()).canSign());
+            var history=signatures.get(f.viewer,f.project,SignatureRules.Kind.TEST_APPROVAL,t.id(),old.id()).signature();
+            assertEquals(signed,history);if(history!=null)assertEquals(old.id(),history.snapshotId());
+        }finally{pool.shutdownNow();}
     }
     @Test void terminalRunAndClosedDeviationSignExactSnapshotsWithoutMutatingTheirVersions()throws Exception {
         var f=fixture();var t=create(f);var set=execution.createSet(f.actor,f.project,"Signature set","",key());
@@ -148,9 +179,14 @@ class SignatureDatabaseIT {
         var f=fixture();var t=approved(f);var c=prepare(f,t);sign(f,t,c,proof(f,c),key());
         try(var db=runtime(f,f.actor)) {
             for(String table:List.of("signature_record","signature_challenge","signature_outbox_event")) {
+                assertThrows(SQLException.class,()->db.createStatement().executeUpdate("UPDATE "+table+" SET id=id"));
                 assertThrows(SQLException.class,()->db.createStatement().executeUpdate("DELETE FROM "+table));
                 assertThrows(SQLException.class,()->db.createStatement().executeUpdate("TRUNCATE "+table+" CASCADE"));
             }
+        }
+        try(var db=runtime(f,f.viewer)) {
+            assertThrows(SQLException.class,()->sql(db,"INSERT INTO signature_challenge SELECT gen_random_uuid(),tenant_id,project_id,kind,object_id,snapshot_id,source_version,?,issuer,subject,display_name,session_binding,content_snapshot,content_digest,created_at FROM signature_challenge WHERE id=?",f.viewer,c.id()));
+            assertThrows(SQLException.class,()->sql(db,"INSERT INTO signature_record SELECT gen_random_uuid(),tenant_id,project_id,challenge_id,kind,object_id,snapshot_id,?,content_digest,payload FROM signature_record",f.viewer));
         }
         var other=fixture();try(var db=runtime(other,other.actor);var rs=db.createStatement().executeQuery("SELECT count(*) FROM signature_record")){assertTrue(rs.next());assertEquals(0,rs.getInt(1));}
     }

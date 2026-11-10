@@ -21,3 +21,9 @@
 - 真实OIDC测试切片：沿用同CookieManager/真实过滤器链，本地IdP只新增可选签名auth_time，旧场景不增加claim；3个HTTP方法覆盖同主体、CSRF/版本、未认证挑战、换主体/缺少或旧auth_time/错nonce、跨会话/撤权/退出。已编译，实际HTTP NOT_RUN。
 - UI切片：三个业务入口/历史用例、同源真实IdP弹窗回调、显式确认；前端只传challengeId，不收密码或token。API/面板先缺模块RED→GREEN；初次GREEN存在不完整测试夹具导致1未捕获错误，已补全真实签署夹具，后续零未捕获错误。初次build发现历史attempt版本可空，未伪造版本；只有真实正数版本才能显示运行签署。
 - 最新前端实际366项/36文件全过，23新增聚焦项全过，lint/build退出0（保留原有8条lint warnings，没有新增抑制）。14项父组件回归证明same/other、原生Enter、刷新、迟到目录回调不能丢原挑战意图；真实项目/身份/权限/session teardown abort并忽略迟到响应。真实浏览器仍NOT_RUN。
+
+## Offline regression extension (2026-11-11)
+
+- Added two distinct-challenge and content-edit/sign serialization database methods; strengthened existing rollback case to inject both audit and Outbox failures and existing runtime test to attempt VIEWER inserts and updates.
+- Java 21 `mvn -B -ntp test`: 102 tests, zero failures/errors/skips (`local-evidence/signature/concurrency-unit.log`); new IT compiled only, PostgreSQL execution remains NOT_RUN pending coordinator resource window.
+- Prepared real IdP popup assertions for all three meanings; wrong-password and other-subject negatives are UI source only until the real owned browser run.
