@@ -19,8 +19,8 @@
 
 ## 待验收
 
-1. Linux runner 的镜像与源码固定、socket 范围、精确资源归属／清理实现及最终退出结果；完整集成须全绿，不凭专项通过认定整套通过。
-2. 目录树已进 `dev@da47293`；`integration/audit` 保留目录与历史入口。总管实跑前端 246、Java 单元 85、Python 152 通过，lint/build 通过（9 个既有 lint 警告）。组合完整集成尚未运行。对照测试差异确认比审计单线新增 9 个 FolderDatabaseIT 和 1 个真实 OIDC 方法，Linux 精确门槛调整为 85 单元／167 集成，不沿用 82／157。
+1. Linux组合后端门槛已通过：源 `34c19f615c8f80a4e28c64e233be613a3360b7d5`，run `f9aa5b46eb0647908e62affaabeb5eb3`；总管已独立读取该工作区 `local-evidence/linux-tests/<run>/` 的scan/unit/integration/run脱敏JSON，真实扫描预检1、单元85、唯一完整集成167均0F/E/S、退出0、计数验证true、cleanup true。镜像内容ID `sha256:9e97c60376cf6eefaee97ff7e0906abcc07207de5172e1f1c0d9cbe74921adba`。不将后加浏览器设施算入这个被测源。
+2. 目录树已进 `dev@da47293`；`integration/audit` 保留目录与历史入口。总管实跑前端 246、Java 单元 85、Python最终155通过，lint/build通过（9个既有lint警告）。对照测试差异确认比审计单线新增9个FolderDatabaseIT和1个真实OIDC方法，Linux精确门槛为85单元／167集成。
 3. 三条真实 Keycloak 浏览器流程仍 NOT_RUN，合成夹具不替代实际验收；不伪造 CI-owned 变量。
 4. 性能建议（非本阶段阻塞）：用例历史按修订缓存，相邻修订仍逐版读取，最坏请求数随页大小增长；演示数据少且页大小有上限，数据量增大时再测量并批量读取，不提前扩大本轮改动。
 
@@ -29,3 +29,7 @@
 ## 经验导入冲突
 
 目录树记录与审计分支两份记录共用 `l-0b383489`。目录记录原文保留；两份审计原始字节分别归档到本目录 `audit-history-original-learning.md`、`audit-history-storage-original-learning.md`，审计决策由新建的独立 ID 经验继续提供。未手改旧经验内容或 ID；活动经验 ID 已逐项验证唯一。
+
+## 浏览器资源守卫前置修复
+
+总管复核 `c8724e4`：`verify_manifest` 的标签判断错误位于内层循环之外，只有同类最后一个资源被判断；现在对每个container/network/volume都检查项目及run标签。回归以首个foreign/最后owned容器证明旧实现错误接受。保留context/Engine和所有权失败拒绝路径，未放宽CI识别。总管组合该提交后实际跑Python156项通过。浏览器local-owned设施仍在worker开发中，不提前批准其实现或宣称真实UI通过。

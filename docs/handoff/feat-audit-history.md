@@ -1,5 +1,23 @@
 # 交接：feat/audit-history（路线图阶段 2c 审计追踪查看）
 
+## 第四次接力：Linux 原分支全绿检查点（2026-11-11，优先于下文）
+
+总管消息 `msg_db2022705bbf` 已明确批准仅本机 Linux 测试设施和当前本机 Docker socket。socket 拥有完整 daemon 权限，标签只限制本工具操作，不是权限隔离。
+
+- 独立设施提交 `ef27b7a`：官方 Maven/Temurin 与 Docker CLI 基础 manifest 固定 digest，Ubuntu 签名包源安装 Python3；不升级生产依赖。受控 `git archive` 复制进 runner 可写层，源码／target／tmp／缓存不绑 Windows，不复制 .git、日常 .env 或用户凭据；保持 Ryuk 开启且非 privileged。
+- 标签 SPI 三项 Java 回归通过；七项初始 Python 离线守卫通过。后续仅离线测试提交 `2e74df5` 新增总入口异常 finally 清理、报告脱敏和重复方法身份拒绝三项，Python 总 10 项通过，不改变运行器行为。
+- 实际验证源为 **ef27b7a0f77d5c39e62abd4ea1cacb07e07a18de**，与后加离线测试明确区分。命令 `python tools/linux_test_runner.py --source ef27b7a0f77d5c39e62abd4ea1cacb07e07a18de`，最终退出 0。
+- 本轮 run ID `e319bf4bb24440a5bb472ea6559700b6`；local context `default`，Engine `a6f010ac-61a2-4544-b133-c2b0d92d11d3`，与此前 desktop-linux 核验的同一本机 Linux daemon 一致。
+- runner 内容 ID `sha256:03d50f52b39246e0892c9827ff3c0d4dfcf5c3d6c79197bb7e92846364624af4`；官方基础 manifest digest 在 `tools/linux-test/Dockerfile`。Java 21.0.10、Maven 3.9.14、Python 3.12.3、Docker CLI 29.7.2，完整安装包版本已记录。
+- `host.docker.internal` 到本轮一次性临时发布端口的连通性通过。随后串行：真实 `AssetDatabaseIT.realClamdCleanAndEicarProduceSafeTerminalStates` 预检 1 项通过；独立全单元 **82 项通过**；唯一完整集成 **157 项通过**，每个阶段均 0 failures/errors/skipped，退出均 0，无重复方法。完整 verify 内的 82 单元也通过。无测试 retry／skip／删改原业务断言。
+- 原 Windows 六个 EICAR 失败方法已逐方法核对在本轮完整报告中通过，包括四个 AssetTerminalOutcomeIT 方法和 OIDC terminal complete PUT。失败／错误／跳过方法清单为空。证明本机 Linux 路径可完成真实 CLEAN/EICAR 断言，不把 Windows 的 1F/5E 历史报告改写为通过。
+- 清理结果 true，记录 33 个本轮容器精确 ID／创建身份／image，Ryuk 正常回收，剩余资源逐 ID/标签/daemon 复核后删除；清理后再查询 run 标签容器为空。仅包含这些容器附属的匿名卷清理，不删除其他项目、named volume 或网络。runner 镜像和 build cache 明确保留作本地构建制品，没有 prune 共享缓存。
+- 忽略证据 `local-evidence/linux-tests/e319bf4bb24440a5bb472ea6559700b6/`：`run.json`、`connectivity.json`、`tool-versions.json`、`scan.json`、`unit.json`、`integration.json`；宿主启动日志在 `local-evidence/audit-history/linux-run.log`。只导出测试身份、计数、状态、版本，不复制 XML properties/system-out、异常消息、原始 Maven 日志、临时文件或 EICAR 样本。
+
+本检查点只证明上述原分支快照。总管已将目录树合入 dev@da47293，并在独立工作区组合为 **integration/audit@bdeace0124301ecd90cc4deb11757f02d64e0e23**；明确下一步由本分支合入该组合（不移动 dev），对新的确切 SHA 运行组合 **85 单元／167 集成**，不能沿用 82/157 门槛或重复原157。
+
+三条真实 Keycloak 浏览器仍 NOT_RUN。总管 `msg_da003110f80f` 新授权新增明确 local-owned 模式和一次性资源，保持原 CI 归属门禁；先提交设施及离线负例，再真实零重试／单 worker 验证并精确清理。不得伪造 GITHUB 变量、使用演示栈／5173／8080／日常 .env。组合分支仍待验收，未批准业务合并。
+
 ## 第三次接力：审查与失败定位（2026-11-11，优先于下文）
 
 当前总管已改为外层 Codex，稳定入口为主工作区 `docs/coordinator-handoff.md`；原 Claude 不再负责最终决定。起始提交 `a797f3f`。本轮独立提交：
