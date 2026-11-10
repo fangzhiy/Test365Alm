@@ -57,7 +57,7 @@ public class DefectService {
   if(status.equals("CLOSED") && old.links().stream().anyMatch(l->l.kind().equals("RUN_STEP")) && !evidence.verification(p,id).eligible())
    throw ProjectAccessException.conflict("RETEST_PASS_REQUIRED","A successful related retest in this resolution cycle is required");
   var c=new DefectRules.Content(r.title(),r.description(),r.severity(),r.priority());UUID revision=UUID.randomUUID();
-  append(p,actor,id,revision,version+1,c,status,reason,r.businessFields());update(p,id,revision,version+1,c,status,revision,status.equals("RESOLVED"));
+  append(p,actor,id,revision,version+1,c,status,reason,BusinessFields.normalize("defect",r.businessFields(),jdbc,p));update(p,id,revision,version+1,c,status,revision,status.equals("RESOLVED"));
   var result=read(p,id);event(p,actor,result,"defect.transitioned");commands.save(p,actor,route,key,hash,result);return result;
  }
  @Transactional public DefectEvidence.RetestStart retest(UUID actor,UUID project,UUID id,String tag,String key){

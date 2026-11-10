@@ -20,6 +20,11 @@ public final class BusinessFields {
     public static JsonNode empty(){return CoreCommands.JSON.createObjectNode();}
     public static JsonNode read(String json){return json==null?empty():CoreCommands.JSON.readTree(json);}
     public static String hash(JsonNode n){return n==null?null:CoreCommands.canonical(n);}
+    private static UUID uuid(String text) {
+        UUID value=UUID.fromString(text);
+        if(!value.toString().equalsIgnoreCase(text))throw new IllegalArgumentException("Canonical UUID required");
+        return value;
+    }
     public static JsonNode normalize(String kind,JsonNode supplied,JdbcTemplate jdbc,ProjectService.ProjectView p) {
         if(supplied==null)return empty();
         FieldRules.fields(supplied,KEYS.get(kind));
@@ -29,7 +34,7 @@ public final class BusinessFields {
             FieldRules.fields(entry,Set.of("fieldId","revision","value","kind","definition"));
             UUID field=null;long revision=1;JsonNode definition;
             if(entry.hasNonNull("fieldId")) {
-                try{field=UUID.fromString(FieldRules.text(entry.get("fieldId")));}catch(IllegalArgumentException ex){throw ProjectAccessException.invalid("Invalid fieldId");}
+                try{field=uuid(FieldRules.text(entry.get("fieldId")));}catch(IllegalArgumentException ex){throw ProjectAccessException.invalid("Invalid fieldId");}
                 var v=entry.get("revision");
                 if(v==null||!v.isIntegralNumber()||!v.canConvertToLong()||v.longValue()<1)throw ProjectAccessException.invalid("Positive field revision required");
                 revision=v.longValue();
@@ -46,7 +51,7 @@ public final class BusinessFields {
             var value=FieldRules.value(definition,entry.get("value"));
             if(key.equals("reviewer")&&!value.isNull()&&!value.asText().isBlank()) {
                 UUID reviewer;
-                try{reviewer=UUID.fromString(value.asText());}catch(IllegalArgumentException ex){throw ProjectAccessException.unprocessable("Reviewer must be a local principal UUID");}
+                try{reviewer=uuid(value.asText());}catch(IllegalArgumentException ex){throw ProjectAccessException.unprocessable("Reviewer must be a local principal UUID");}
                 if(jdbc==null||p==null||!Boolean.TRUE.equals(jdbc.queryForObject("SELECT app_has_active_project_member(?,?,?)",Boolean.class,p.tenantId(),p.id(),reviewer)))throw ProjectAccessException.unprocessable("Reviewer must be an active project member");
             }
             var frozen=CoreCommands.JSON.createObjectNode().put("kind",field==null?"SYSTEM":"CUSTOM").put("revision",revision);

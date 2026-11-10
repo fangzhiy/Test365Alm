@@ -48,7 +48,12 @@ class BusinessFieldsDatabaseIT {
         var f=fixture();String key=key();var input=create(f,"original");
         var first=tests.create(f.member,f.project,input,key);
         assertEquals("original",first.currentRevision().businessFields().path("test_purpose").path("value").asText());
+        var set=executions.createSet(f.member,f.project,"Frozen","",key());
+        var instance=executions.addInstance(f.member,f.project,set.id(),first.id(),first.currentRevision().id(),key());
+        var run=executions.createRun(f.member,f.project,instance.id(),key());
+        String frozenManifest;try(var c=owner();var stmt=c.prepareStatement("SELECT to_jsonb(m)::text FROM execution_manifest m WHERE id=?")){stmt.setObject(1,run.run().manifestId());try(var rs=stmt.executeQuery()){rs.next();frozenManifest=rs.getString(1);}}
         var second=revise(f,first,"new purpose",key());
+        try(var c=owner();var stmt=c.prepareStatement("SELECT to_jsonb(m)::text FROM execution_manifest m WHERE id=?")){stmt.setObject(1,run.run().manifestId());try(var rs=stmt.executeQuery()){rs.next();assertEquals(frozenManifest,rs.getString(1));}}
         assertEquals(2,second.rowVersion());
         assertEquals(first,tests.create(f.member,f.project,input,key));
         assertEquals(first.currentRevision(),tests.revision(f.member,f.project,first.id(),first.currentRevision().id()));
@@ -104,7 +109,6 @@ class BusinessFieldsDatabaseIT {
         var f=fixture();var foreign=fixture();var saved=tests.create(f.member,f.project,create(f,"purpose"),key());
         try(var c=runtime(f,f.member)) {
             assertThrows(SQLException.class,()->sql(c,"UPDATE test_revision SET business_fields='{}' WHERE id=?",saved.currentRevision().id()));
-            var forged=BusinessFields.normalize("test_case",json("{\"test_purpose\":{\"value\":\"x\"}}"),null,null);
             var bad=com.test365alm.server.core.CoreCommands.JSON.createObjectNode();
             bad.set("reviewer",com.test365alm.server.core.CoreCommands.JSON.createObjectNode().put("kind","SYSTEM").put("revision",1).set("definition",json("{\"key\":\"reviewer\",\"type\":\"TEXT\",\"required\":false,\"maxLength\":36}")));
             ((tools.jackson.databind.node.ObjectNode)bad.get("reviewer")).put("value",foreign.member.toString());
