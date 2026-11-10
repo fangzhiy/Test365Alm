@@ -45,7 +45,7 @@ class AssetProvisioningUpgradeIT {
             AssetTestInfrastructure.start();
             Fixture fixture;AssetService.Upload first,second;AssetService.Attachment attachment;
             String firstKey=key();byte[] firstBytes=bytes("Original V20 evidence one"),secondBytes=bytes("Original V20 evidence two");
-            try(var context=context(runtime,originalScanner)) {
+            try(var context=context(runtime,originalScanner,true)) {
                 fixture=fixture(owner,context);var assets=context.getBean(AssetService.class);
                 first=published(assets,fixture,firstBytes,null,firstKey);
                 attachment=assets.createAttachment(fixture.member,fixture.project,CoreCommands.JSON.createObjectNode()
@@ -64,6 +64,7 @@ class AssetProvisioningUpgradeIT {
             var latest=migration(pg,"21");assertEquals(1,latest.migrate().migrationsExecuted);
             assertEquals(before,snapshot(owner,tables),"V21 must preserve every V20 row and field, including storage keys and frozen response JSON");
             assertEquals(0,latest.migrate().migrationsExecuted);assertEquals(before,snapshot(owner,tables));
+            assertEquals(2,migration(pg,"23").migrate().migrationsExecuted);assertEquals(before,snapshot(owner,tables),"latest preserves all original columns before current service verification");
 
             String newLogin=login(),newSecret=secret();
             assertEquals(0,AssetTestInfrastructure.repositoryScannerProvision(pg,newLogin,newSecret));
@@ -71,7 +72,8 @@ class AssetProvisioningUpgradeIT {
             assertEquals(0,AssetTestInfrastructure.repositoryScannerProvision(pg,newLogin,newSecret));
             assertTrue(roleBefore.equals(roleSnapshot(owner)),"safe repeat must preserve role flags, credentials, memberships, settings and privileges");
             var scanner=scanner(pg,newLogin,newSecret);assertScannerIdentity(scanner,newLogin);
-            try(var context=context(runtime,scanner)) {
+            try(var context=context(runtime,scanner,false)) {
+                assertEquals("Original V20 body",context.getBean(RequirementService.class).getAuthorized(fixture.member,fixture.project,fixture.requirement).body());
                 var assets=context.getBean(AssetService.class);
                 assertEquals(first,assets.complete(fixture.member,fixture.project,first.id(),EMPTY,firstKey),"old successful key keeps its frozen revision 1 response");
                 assertEquals(2,assets.get(fixture.member,fixture.project,first.assetId()).currentRevision().revisionNumber());
@@ -242,9 +244,9 @@ class AssetProvisioningUpgradeIT {
     private static void assertDownloaded(AssetService assets,Fixture f,AssetService.Upload upload,byte[] content) throws Exception {
         try(var download=assets.download(f.member,f.project,upload.assetId(),upload.revisionId()).stream()){assertArrayEquals(content,download.readAllBytes());}
     }
-    private static AnnotationConfigApplicationContext context(DataSource runtime,DataSource scanner) {
-        var c=new AnnotationConfigApplicationContext();c.registerBean(DataSource.class,()->runtime);c.register(RuntimeConfig.class,ProjectService.class,CoreCommands.class,RequirementService.class,AssetService.class);
-        c.registerBean(BlobStore.class,AssetTestInfrastructure::store);c.registerBean(MalwareScanner.class,AssetTestInfrastructure::scanner);c.registerBean(ScanResultWriter.class,()->new JdbcScanResultWriter(scanner));c.refresh();return c;
+    private static AnnotationConfigApplicationContext context(DataSource runtime,DataSource scanner,boolean legacy) {
+        var c=new AnnotationConfigApplicationContext();c.registerBean(DataSource.class,()->runtime);c.register(RuntimeConfig.class,ProjectService.class,CoreCommands.class,AssetService.class);
+        com.test365alm.server.businessfields.LegacyContentServices.requirement(c,legacy);c.registerBean(BlobStore.class,AssetTestInfrastructure::store);c.registerBean(MalwareScanner.class,AssetTestInfrastructure::scanner);c.registerBean(ScanResultWriter.class,()->new JdbcScanResultWriter(scanner));c.refresh();return c;
     }
     private static PostgreSQLContainer<?> ownedDatabase(String suffix) {
         return new PostgreSQLContainer<>(DockerImageName.parse("postgres:17.11@sha256:f4c66b820c6f974249089d3d16d86a3698eae11e8746eb6644b2271031e91232").asCompatibleSubstituteFor("postgres"))
@@ -256,7 +258,7 @@ class AssetProvisioningUpgradeIT {
     private static JdbcTemplate owner(PostgreSQLContainer<?> pg){return new JdbcTemplate(new DriverManagerDataSource(pg.getJdbcUrl(),pg.getUsername(),pg.getPassword()));}
     private static DataSource runtime(PostgreSQLContainer<?> pg){return new DriverManagerDataSource(pg.getJdbcUrl(),"test365alm_runtime","r03_isolated_test_role_only");}
     private static DataSource scanner(PostgreSQLContainer<?> pg,String user,String password){return new DriverManagerDataSource(pg.getJdbcUrl(),user,password);}
-    private static Map<String,List<String>> snapshot(JdbcTemplate db,List<String> tables){var result=new TreeMap<String,List<String>>();for(String table:tables)result.put(table,db.query("SELECT to_jsonb(t)::text FROM \""+table+"\" t ORDER BY to_jsonb(t)::text",(r,i)->r.getString(1)));return result;}
+    private static Map<String,List<String>> snapshot(JdbcTemplate db,List<String> tables){var result=new TreeMap<String,List<String>>();for(String table:tables)result.put(table,db.query("SELECT (to_jsonb(t)-'business_fields'-'result_business_fields')::text FROM \""+table+"\" t ORDER BY to_jsonb(t)::text",(r,i)->r.getString(1)));return result;}
     /** Kept in memory for equality only. Never interpolate catalog credentials into assertion output. */
     private static String roleSnapshot(JdbcTemplate db){return db.queryForObject("SELECT jsonb_build_object('roles',(SELECT jsonb_agg(to_jsonb(r) ORDER BY oid) FROM pg_authid r),'members',(SELECT jsonb_agg(to_jsonb(m) ORDER BY oid) FROM pg_auth_members m),'settings',(SELECT jsonb_agg(to_jsonb(s) ORDER BY setdatabase,setrole) FROM pg_db_role_setting s),'dependencies',(SELECT jsonb_agg(to_jsonb(d) ORDER BY dbid,classid,objid,objsubid,refclassid,refobjid,deptype) FROM pg_shdepend d))::text",String.class);}
     private static String groupSnapshot(JdbcTemplate db){return db.queryForObject("SELECT to_jsonb(r)::text FROM pg_authid r WHERE rolname='test365alm_scanner'",String.class);}
