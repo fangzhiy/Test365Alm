@@ -1,0 +1,7 @@
+.history-panel { min-width: 0; }
+.history-table-scroll { max-width: 100%; overflow-x: auto; }
+.history-panel table { width: 100%; border-collapse: collapse; }
+.history-panel th, .history-panel td { padding: .5rem; text-align: left; vertical-align: top; border-bottom: 1px solid currentColor; }
+.history-panel td { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 6rem; }
+.history-panel td:last-child { min-width: 12rem; }
+.history-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }

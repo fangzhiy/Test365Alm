@@ -1,5 +1,35 @@
 # 交接：feat/audit-history（路线图阶段 2c 审计追踪查看）
 
+## Codex 接力更新（2026-11-10，优先于下面的原交接）
+
+### 已完成
+
+- 原“下一步”1—4 已完成：`historyApi.ts` 复用 requestJson 并验证页/事件/主体/时间/修订号/字段值，保留 HTTP 错误 status，固定 limit=25，编码路径与不透明 cursor。
+- `HistoryPanel.tsx` / `HistoryPanel.css`：中文动作/字段标签、时间、主体名或 ID、前后值、最新在前、追加分页、空状态、错误与重试、表格局部横向滚动。无字段变化的事件仍显示。
+- 面板独立处理请求；403/404 只在面板提示并清空旧数据，401 提示重新登录。分页失败保留原页和游标。切换对象、卸载、StrictMode 重放均取消请求；迟到响应不会覆盖当前对象。
+- DefectDetail 在不可变修订历史附近接入，key 使用 current.rowVersion，保存新修订后重载。DefectsPanel 测试已 mock historyApi，增加历史 404 不关闭详情及保存后重载的回归。
+- 新增 historyApi 测试 8 项、HistoryPanel 测试 8 项，以及上述缺陷入口回归。
+
+### 验证
+
+- 通过：npm ci；前端全套 21 文件、230 项，零失败/跳过；npm run build。
+- 通过：npm run lint 退出 0；其他文件保留原有 9 个 warning，本次新增文件无 warning。
+- 通过：Java 21 下后端单元 72 项，零失败/错误/跳过。
+- 未通过：Java 21 下完整 `mvn -B -ntp -Pintegration verify`，耗时 8:41，157 项、2 failures / 21 errors / 0 skipped。HistoryDatabaseIT 本轮 22:25 的 5 项全部通过。资产四个测试类共 1 failure / 19 errors（扫描器不可用、容器发布端点检查失败、存储不可用等）；OidcCallbackSecurityIT 的三个资产 HTTP 方法共 1 failure / 2 errors（terminal complete 预期 200 实际 503；typed links 与 integrity 方法请求超时）。其余测试类通过。本轮只改前端，未修改这些后端测试/服务；失败根因尚未证明，不能宣称已修复或可合并。
+- Playwright CLI 组件检查通过：独立端口 15174，合成数据验证 320/768/1024/1440 宽度、长文本、追加分页和可访问表格结构，重载后控制台零错误/警告。不是实际 OIDC/业务端到端验收。浏览器和临时 Vite 已关闭，没有修改原演示服务。
+- trail check 退出 0，无冲突；仅有分支已有文档与学习的关键词提醒。
+- 实际环境 Java 21.0.13、Node 26.0.0、npm 11.12.1；Node 与目标 24 LTS 存在差异。
+- 忽略证据在根目录 local-evidence/audit-history/（日志）和 apps/web/local-evidence/history-preview/（合成夹具/截图），不提交。
+
+### 接下来
+
+1. Claude 审查本次前端改动。
+2. 原第 5 步仍待做：目录树分支合并到 dev 后再集成最新 dev，在 TestCasesPanel / TestExecutionPanel 各加 import 和一行 HistoryPanel。使用真实稳定对象 ID；运行传 runId，不是 attemptId。按对象身份和已保存版本/event 更新 key，验证切换与写入后的刷新。
+3. 给两个入口补测试，运行真实登录下三类对象的历史查看流程。
+4. 全套后端集成绿色前不可合并。合并后再删除本文件、更新路线图第 7 节；当前不标记整个 2c 完成。未推送、未合并。
+
+beforeEach 初始化 mock 使用花括号，不隐式返回 mock 函数（Vitest 会把函数返回值当清理函数调用）。原有两个自动刷新钩子文件的改动继续保留，不混入功能提交。
+
 ## 目标
 
 用例、运行、缺陷各有一个历史页，显示：谁、何时、做了什么、旧值 → 新值。只读功能，不改写入路径，不加迁移。

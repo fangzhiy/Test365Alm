@@ -7,6 +7,7 @@ import { useCoreRequest } from './useCoreRequest'
 import DefectForm from './DefectForm'
 import DefectAttempt from './DefectAttempt'
 import AttachmentsPanel from './AttachmentsPanel'
+import HistoryPanel from './HistoryPanel'
 type Intent={key:string;target:Defect;kind:'edit'|'transition'|'retest';content:DefectContent;status:DefectStatus;reason:string}
 const edges:Record<DefectStatus,DefectStatus[]>={OPEN:['IN_PROGRESS','RESOLVED'],IN_PROGRESS:['RESOLVED'],RESOLVED:['CLOSED','REOPENED'],REOPENED:['IN_PROGRESS','RESOLVED'],CLOSED:[]}
 export default function DefectDetail({projectId,id,access,onLockChange,onDenied}:{projectId:string;id:string;access:ProjectAccess;onLockChange:(v:boolean)=>void;onDenied:()=>void}) {
@@ -46,6 +47,7 @@ export default function DefectDetail({projectId,id,access,onLockChange,onDenied}
    {current.currentRevision.status==='RESOLVED'&&access.permissions.includes('run:write')&&access.permissions.includes('defect:update')&&<button disabled={locked||conflict||dirty} onClick={()=>void persist('retest')}>开始复测</button>}</div>}
   {current.links.filter(l=>l.kind==='REQUIREMENT').map(l=><p key={l.id}>关联需求 {l.requirementId} · 冻结修订 {l.requirementRevisionId}</p>)}
   <p>PASS verification：{verification?verification.eligible?'可用相关 PASS':'未满足关闭证据':'待刷新确认'}</p>
+  <HistoryPanel key={current.rowVersion} projectId={projectId} objectType="defect" objectId={id}/>
   <h4>不可变状态/内容历史</h4>{history.map(r=><button disabled={locked} key={r.id} onClick={()=>void run(signal=>defectsApi.revision(projectId,id,r.id,{signal}),setViewed)}>修订 {r.revisionNo} · {r.status}</button>)}
   {historyCursor&&<button disabled={locked} onClick={()=>void run(signal=>defectsApi.history(projectId,id,historyCursor,{signal}),p=>{setHistory(old=>[...old,...p.items]);setHistoryCursor(p.nextCursor)})}>更多缺陷历史</button>}
   {viewed&&<article aria-label="缺陷历史快照"><h4>历史 v{viewed.revisionNo} · {viewed.status}</h4><p>{viewed.title}</p><p>{viewed.description}</p><p>{viewed.reason}</p></article>}
