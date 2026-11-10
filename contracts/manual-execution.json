@@ -20,6 +20,7 @@
     "response": { "items": "bounded page of the resource", "nextCursor": "opaque token or null" },
     "ordering": "stable resource-specific keyset order; callers must follow nextCursor rather than increasing an offset",
     "filters": {
+      "testSetsPage.folderId": "optional root or TEST_LAB folder UUID; absent means the complete project; placement filtering precedes keyset pagination; organization commands are defined in folders.md",
       "runsPage.testSetId": "optional UUID; the test-set join is applied before the database keyset limit",
       "runSummary.testSetId": "optional UUID; when supplied all counts are restricted to instances in that test set"
     }

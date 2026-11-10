@@ -88,6 +88,12 @@ public class TestCaseService {
 
     @Transactional(readOnly = true)
     public TestCasePage list(UUID actor, UUID projectId, String query, String cursor, Integer requestedLimit) {
+        return list(actor, projectId, query, cursor, requestedLimit, null);
+    }
+
+    @Transactional(readOnly = true)
+    public TestCasePage list(UUID actor, UUID projectId, String query, String cursor, Integer requestedLimit, String folderId) {
+        com.test365alm.server.folder.FolderService.filter(folderId);
         ProjectService.ProjectView project = authorizedProject(actor, projectId, false);
         setContext(project.tenantId(), actor, projectId);
         int limit = requestedLimit == null ? 50 : requestedLimit;
@@ -110,13 +116,16 @@ public class TestCaseService {
                   ON r.tenant_id = t.tenant_id AND r.project_id = t.project_id
                  AND r.test_case_id = t.id AND r.id = t.current_revision_id
                 WHERE t.tenant_id = ? AND t.project_id = ?
+                  AND (?::text IS NULL OR (SELECT fp.folder_id FROM folder_placement fp
+                       WHERE fp.project_id=t.project_id AND fp.kind='TEST_PLAN' AND fp.object_id=t.id)
+                       IS NOT DISTINCT FROM NULLIF(?, 'root')::uuid)
                   AND t.display_number > COALESCE(NULLIF(?, '')::BIGINT, 0)
                   AND (? = '' OR r.title ILIKE ? ESCAPE '\\'
                        OR CAST(t.display_number AS TEXT) LIKE ? ESCAPE '\\')
                 ORDER BY t.display_number
                 LIMIT ?
                 """, TestCaseService::mapSummary, project.tenantId(), projectId,
-                cursorValue, q, like, like, limit + 1);
+                folderId, folderId, cursorValue, q, like, like, limit + 1);
         boolean hasMore = fetched.size() > limit;
         List<TestCaseSummary> items = hasMore ? fetched.subList(0, limit) : fetched;
         String nextCursor = hasMore ? Long.toString(items.get(items.size() - 1).displayNumber()) : null;

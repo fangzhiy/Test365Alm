@@ -49,8 +49,9 @@ public class TestCaseController {
     public TestCaseService.TestCasePage list(Authentication authentication, @PathVariable UUID projectId,
             @RequestParam(name = "q", required = false) String query,
             @RequestParam(name = "cursor", required = false) String cursor,
-            @RequestParam(name = "limit", required = false) Integer limit) {
-        return tests.list(actors.requirePrincipal(authentication), projectId, query, cursor, limit);
+            @RequestParam(name = "limit", required = false) Integer limit,
+            @RequestParam(name = "folderId", required = false) String folderId) {
+        return tests.list(actors.requirePrincipal(authentication), projectId, query, cursor, limit, folderId);
     }
 
     @GetMapping("/{testCaseId}")
