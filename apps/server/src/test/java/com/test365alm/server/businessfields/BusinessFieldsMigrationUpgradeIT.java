@@ -39,6 +39,7 @@ class BusinessFieldsMigrationUpgradeIT {
    sql(c,"INSERT INTO defect_revision(tenant_id,project_id,defect_id,id,revision_no,title,description,status,severity,priority,created_by) VALUES(?,?,?,?,1,'Legacy deviation','Original details','OPEN','HIGH','HIGH',?)",tenant,project,defect,defectRevision,actor);
    c.commit();
    Map<String,String> before=snapshot(c);
+   c.commit(); // Release the snapshot's table locks before Flyway acquires ALTER TABLE locks.
    assertEquals(1,flyway("23").migrate().migrationsExecuted);
    assertEquals(before,snapshot(c));assertEquals(0,flyway("23").migrate().migrationsExecuted);
    for(String table:List.of("test_revision","requirement_revision","defect_revision"))try(var s=c.createStatement();var r=s.executeQuery("SELECT count(*) FROM "+table+" WHERE business_fields='{}'::jsonb")){r.next();assertEquals(1,r.getInt(1));}

@@ -43,7 +43,7 @@ public final class BusinessFields {
                 if(rows.isEmpty())throw ProjectAccessException.notFound();
                 definition=rows.get(0);
             } else {
-                if(entry.has("revision")&&(!entry.get("revision").isIntegralNumber()||entry.get("revision").longValue()!=1))throw ProjectAccessException.invalid("Unknown system field revision");
+                if(entry.has("revision")&&(!entry.get("revision").isIntegralNumber()||!entry.get("revision").canConvertToLong()||entry.get("revision").longValue()!=1))throw ProjectAccessException.invalid("Unknown system field revision");
                 definition=CoreCommands.JSON.createObjectNode().put("key",key).put("type","TEXT").put("required",false).put("maxLength",key.equals("test_purpose")?4000:key.equals("reviewer")?36:200);
             }
             if(entry.has("definition")&&!entry.get("definition").equals(definition))throw ProjectAccessException.invalid("Definition does not match its frozen revision");

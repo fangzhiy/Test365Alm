@@ -17,7 +17,7 @@ class BusinessFieldsTest {
         assertThrows(ProjectAccessException.class,()->BusinessFields.normalize("requirement",CoreCommands.JSON.readTree("{\"equipment_system_id\":{\"value\":\""+"x".repeat(201)+"\"}}"),null,null));
     }
     @Test void forgedDefinitionsAndIncompleteCustomReferencesAreRejected() {
-        for(String value:java.util.List.of("{\"test_purpose\":{\"value\":\"x\",\"revision\":2}}", "{\"test_purpose\":{\"value\":\"x\",\"fieldId\":\"bad\"}}", "{\"test_purpose\":{\"value\":\"x\",\"unknown\":true}}"))
+        for(String value:java.util.List.of("{\"test_purpose\":{\"value\":\"x\",\"revision\":18446744073709551617}}", "{\"test_purpose\":{\"value\":\"x\",\"revision\":2}}", "{\"test_purpose\":{\"value\":\"x\",\"fieldId\":\"bad\"}}", "{\"test_purpose\":{\"value\":\"x\",\"unknown\":true}}"))
             assertThrows(ProjectAccessException.class,()->BusinessFields.normalize("test_case",CoreCommands.JSON.readTree(value),null,null));
     }
     @Test void customTypesDefaultsAndExactDefinitionVersionsAreValidated() {
