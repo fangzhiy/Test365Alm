@@ -115,35 +115,61 @@ public final class AssetTestInfrastructure {
     }
     /** Freeze the real owned scanner without replacing the endpoint cached by the application bean. */
     public static synchronized void pauseScanner(){
-        var before=owned(CLAMD);
+        pauseScanner(CLAMD);
+    }
+    static synchronized void pauseScanner(GenericContainer<?> resource){
+        var before=owned(resource);
         if(!Boolean.TRUE.equals(before.getState().getRunning())||Boolean.TRUE.equals(before.getState().getPaused())||pausedScanner!=null)
             throw new IllegalStateException("Owned scanner must be running and unpaused before fault injection");
         pausedScanner=scannerIdentity(before);
-        CLAMD.getDockerClient().pauseContainerCmd(CLAMD.getContainerId()).exec();
-        var paused=owned(CLAMD);
-        if(!Boolean.TRUE.equals(paused.getState().getPaused())||!pausedScanner.equals(scannerIdentity(paused)))
-            throw new IllegalStateException("Scanner pause changed its owned process or endpoint");
+        try {
+            resource.getDockerClient().pauseContainerCmd(resource.getContainerId()).exec();
+            requirePausedScanner(owned(resource));
+        } catch(RuntimeException failure) {
+            // The caller's finally has not started yet. Recover only the verified owned process.
+            try { resumeScanner(resource); } catch(RuntimeException recovery) { failure.addSuppressed(recovery); }
+            throw failure;
+        }
     }
     public static synchronized void resumeScanner(){
-        var before=owned(CLAMD);
-        if(pausedScanner==null||!pausedScanner.equals(scannerIdentity(before))||!Boolean.TRUE.equals(before.getState().getPaused()))
-            throw new IllegalStateException("Refusing to resume an unexpected scanner process or endpoint");
-        CLAMD.getDockerClient().unpauseContainerCmd(CLAMD.getContainerId()).exec();
-        var resumed=owned(CLAMD);
-        if(Boolean.TRUE.equals(resumed.getState().getPaused())||!Boolean.TRUE.equals(resumed.getState().getRunning())||!pausedScanner.equals(scannerIdentity(resumed)))
-            throw new IllegalStateException("Scanner resume did not preserve its owned process and endpoint");
-        pausedScanner=null;
+        resumeScanner(CLAMD);
         long end=System.nanoTime()+Duration.ofSeconds(60).toNanos();
         while(System.nanoTime()<end){if(scanner().scan(new ByteArrayInputStream(new byte[]{'a'})).status()==MalwareScanner.Status.CLEAN)return;
             try{Thread.sleep(250);}catch(InterruptedException ex){Thread.currentThread().interrupt();throw new IllegalStateException("Interrupted during scanner recovery");}}
         throw new IllegalStateException("Owned scanner did not recover a real CLEAN verdict after unpause");
     }
-    private record ScannerIdentity(String id,String startedAt,String ports) { }
+    static synchronized void resumeScanner(GenericContainer<?> resource){
+        var before=owned(resource);
+        requirePausedScanner(before);
+        resource.getDockerClient().unpauseContainerCmd(resource.getContainerId()).exec();
+        var resumed=owned(resource);
+        if(Boolean.TRUE.equals(resumed.getState().getPaused())||!Boolean.TRUE.equals(resumed.getState().getRunning())||!pausedScanner.equals(scannerIdentity(resumed)))
+            throw new IllegalStateException("Scanner resume did not preserve its owned process and endpoint");
+        pausedScanner=null;
+    }
+    private record ScannerIdentity(String id,String startedAt,String ports,String configuredPorts) { }
+    private static String portBindings(com.github.dockerjava.api.model.Ports ports) {
+        var bindings=ports.getBindings().get(ExposedPort.tcp(3310));
+        if(bindings==null||bindings.length==0)return "";
+        return java.util.Arrays.stream(bindings).map(b->b.getHostIp()+":"+b.getHostPortSpec()).sorted().collect(java.util.stream.Collectors.joining(","));
+    }
+    private static void requirePausedScanner(InspectContainerResponse actual) {
+        // Docker Desktop omits NetworkSettings.Ports while paused. The process and
+        // configured bindings must still match; check the real published port again after resume.
+        if(pausedScanner==null||!Boolean.TRUE.equals(actual.getState().getPaused())
+                ||!Boolean.TRUE.equals(actual.getState().getRunning())
+                ||!pausedScanner.id().equals(actual.getId())
+                ||!pausedScanner.startedAt().equals(actual.getState().getStartedAt())
+                ||!pausedScanner.configuredPorts().equals(portBindings(actual.getHostConfig().getPortBindings())))
+            throw new IllegalStateException("Refusing to resume an unexpected scanner process or endpoint");
+        String published=portBindings(actual.getNetworkSettings().getPorts());
+        if(!published.isEmpty()&&!pausedScanner.ports().equals(published))
+            throw new IllegalStateException("Scanner pause changed its published endpoint");
+    }
     private static ScannerIdentity scannerIdentity(InspectContainerResponse actual) {
-        var bindings=actual.getNetworkSettings().getPorts().getBindings().get(ExposedPort.tcp(3310));
-        if(bindings==null||bindings.length==0)throw new IllegalStateException("Owned scanner has no real published endpoint");
-        String ports=java.util.Arrays.stream(bindings).map(b->b.getHostIp()+":"+b.getHostPortSpec()).sorted().collect(java.util.stream.Collectors.joining(","));
-        return new ScannerIdentity(actual.getId(),actual.getState().getStartedAt(),ports);
+        String ports=portBindings(actual.getNetworkSettings().getPorts());
+        if(ports.isEmpty())throw new IllegalStateException("Owned scanner has no real published endpoint");
+        return new ScannerIdentity(actual.getId(),actual.getState().getStartedAt(),ports,portBindings(actual.getHostConfig().getPortBindings()));
     }
     private static InspectContainerResponse owned(GenericContainer<?> resource){
         var actual=resource.getDockerClient().inspectContainerCmd(resource.getContainerId()).exec();
