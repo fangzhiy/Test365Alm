@@ -29,9 +29,9 @@
 - GET 返回该确切快照的签署记录与服务端可签能力；先项目权限/RLS，最多一个不可变签署。
 - POST `/challenges`，body `{}`，强 `If-Match`（用例/偏差共享 rowVersion；运行使用 attempt rowVersion）、持久 `Idempotency-Key`；冻结目标及身份，返回无秘密挑战 ID、到期时间及认证 URL。
 - GET `/challenges/{challengeId}/authenticate`，再次核验同一会话/身份/权限，跳转原 OIDC 入口。回调以固定 webOrigin 返回有限成功/失败状态，不含 token/身份/证据秘密。
-- POST，body `{challengeId}`，同样强版本及持久幂等键，认证后显式确认签署。服务端重读前置/摘要，签署、挑战消费、共享版本增量、审计、Outbox、冻结幂等响应同事务。
+- POST，body `{challengeId}`，同样强版本及持久幂等键，认证后显式确认签署。服务端重读前置/摘要，签署、挑战消费、审计、Outbox、冻结幂等响应同事务。
 
-创建挑战不改业务版本。新签署递增用例/偏差 rowVersion；已完成 attempt 的终态数据不变，独立唯一键 `(tenant,project,kind,object,snapshot)` 排斥重复签署。运行版本条件验证 attempt 的终态版本；不为签署修改终态 attempt。挑战含自己的 expectedVersion，客户端必须相等。任何目标/版本/摘要变化要求重新创建挑战；未知结果保留原 body/etag/key 重试，不能自动换键。
+创建挑战及签署不改业务版本：现有 CLOSED 偏差版本与确切修订通过不可变外键绑定，完成 attempt 也不可更新；不能为了签署增加版本而破坏这些约束。签署在现有项目事务锁及目标行锁内验证用例/偏差/attempt 的强版本，并使用独立唯一键 `(tenant,project,kind,object,snapshot)` 排斥重复签署。挑战含自己的 expectedVersion，客户端必须相等。任何目标/版本/摘要变化要求重新创建挑战；未知结果保留原 body/etag/key 重试，不能自动换键。
 
 同键同意图在有效幂等期返回冻结响应，重放前重新核验当前主体/项目及指定复核人资格；成功后挑战已消费不阻止其原命令重放，新键复用已消费挑战拒绝。签署 record 包含 schema、固定含义、项目、object/snapshot 身份、完整规范化内容快照及 SHA-256、服务端冻结主体 issuer/subject/姓名、本地主体 ID、服务端签署时间、OIDC 再认证时间、明确模拟 provider ID 与非秘密 evidence。任何历史签署不可 UPDATE/DELETE/TRUNCATE；有外键/范围/RLS/不可变触发器及唯一约束。
 

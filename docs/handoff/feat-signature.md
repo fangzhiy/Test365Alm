@@ -14,3 +14,5 @@
 - 已读取 OIDC Core 官方规范及 Spring OAuth2 Login Advanced 文档，复用授权码/PKCE/state/nonce，不使用密码grant。
 - 下一步：独立提交后提供方/同主体再认证，再按目标逐个服务/DB/API/UI，最后设施闭集及总管审查。
 - 不勾选 E1/E2。原 202IT/66focused 是基线事实，本轮真实验证 NOT_RUN。
+- 提供方切片：`SignatureProvider` 接口及 `SimulatedSignatureProvider`，证据明确模拟、绑定服务端材料；测试先缺类RED。
+- 现有 `DefectService.read` 按 rowVersion 取对应修订，V18闭合外键/guard禁止 CLOSED 更新；因此签署只校验共享强版本，以独立签署唯一键和事务/目标锁排斥并发，不增加业务版本。完成attempt同样保持不变。
