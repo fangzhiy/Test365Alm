@@ -10,6 +10,7 @@ import AttachmentsPanel from './AttachmentsPanel'
 import FolderTree from './FolderTree'
 import HistoryPanel from './HistoryPanel'
 import ReviewPanel from './ReviewPanel'
+import SignaturePanel from './SignaturePanel'
 
 type PanelState = 'idle' | 'loading' | 'ready' | 'error'
 type Context = { projectId: string; resetSignal: number; accessKey: string }
@@ -56,8 +57,10 @@ export default function TestCasesPanel({ projectId, access, resetSignal = 0 }: T
   const [conflict, setConflict] = useState(false)
   const [contentSaving, setSaving] = useState(false)
   const [reviewLocked, setReviewLocked] = useState(false)
+  const [signatureLocked, setSignatureLocked] = useState(false)
+  const signatureLockContextRef = useRef<Context | null>(null)
   const reviewLockContextRef = useRef<Context | null>(null)
-  const saving = contentSaving || reviewLocked
+  const saving = contentSaving || reviewLocked || signatureLocked
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailReady, setDetailReady] = useState(false)
   const [scopeInvalid, setScopeInvalid] = useState(false)
@@ -88,7 +91,8 @@ export default function TestCasesPanel({ projectId, access, resetSignal = 0 }: T
   const cancelAll = () => { cancelRead(); cancelWrite() }
   const invalidateOperations = () => { readRoundRef.current += 1; writeRoundRef.current += 1; cancelAll() }
   const isCurrentContext = (context: Context) => contextRef.current.projectId === context.projectId && contextRef.current.resetSignal === context.resetSignal && contextRef.current.accessKey === context.accessKey
-  const reviewPendingInScope = () => reviewLockContextRef.current !== null && isCurrentContext(reviewLockContextRef.current)
+  const reviewPendingInScope = () => (reviewLockContextRef.current !== null && isCurrentContext(reviewLockContextRef.current)) || (signatureLockContextRef.current !== null && isCurrentContext(signatureLockContextRef.current))
+  const lockSignature = (locked: boolean) => { signatureLockContextRef.current = locked ? { ...contextRef.current } : null; setSignatureLocked(locked) }
   const lockReview = (locked: boolean) => {
     reviewLockContextRef.current = locked ? { ...contextRef.current } : null
     setReviewLocked(locked)
@@ -96,6 +100,7 @@ export default function TestCasesPanel({ projectId, access, resetSignal = 0 }: T
   const clearInvalidData = (message: string) => {
     invalidateOperations()
     lockReview(false)
+    lockSignature(false)
     setItems([]); setNextCursor(null); setSelected(null); setRevisions([]); setSelectedRevision(null)
     setBusinessFields(undefined);setTitle(''); setDescription(''); setPreconditions(''); setSteps([])
     setCreateBusinessFields(undefined);setCreateTitle(''); setCreateDescription(''); setCreatePreconditions(''); setCreateSteps([])
@@ -104,6 +109,7 @@ export default function TestCasesPanel({ projectId, access, resetSignal = 0 }: T
   }
   const resetData = () => {
     lockReview(false)
+    lockSignature(false)
     setState('idle'); setItems([]); setNextCursor(null); setSelected(null); setRevisions([]); setSelectedRevision(null)
     setBusinessFields(undefined);setTitle(''); setDescription(''); setPreconditions(''); setSteps([])
     setCreateBusinessFields(undefined);setCreateTitle(''); setCreateDescription(''); setCreatePreconditions(''); setCreateSteps([])
@@ -262,9 +268,11 @@ export default function TestCasesPanel({ projectId, access, resetSignal = 0 }: T
     {state !== 'loading' && state !== 'error' && items.length === 0 && <p className="access-empty" role="status">当前项目还没有手工测试用例。</p>}
     {items.length > 0 && <div className="test-cases-layout"><div className="test-case-list" aria-label="测试用例列表"><div className="member-list-heading"><strong>用例列表</strong><span>{items.length} 条</span></div>{items.map((item) => <button type="button" className={`requirement-row${selected?.id === item.id ? ' is-selected' : ''}`} key={item.id} disabled={saving} onClick={() => void selectTest(item)}><span><strong>{item.displayNumber}</strong><span>{item.title}</span></span><small>修订 {item.revisionNumber}</small></button>)}{nextCursor && <button type="button" className="secondary-button" onClick={() => void load(nextCursor)} disabled={state === 'loading' || saving}>加载更多用例</button>}</div>
       {selected && <div className="test-case-detail" aria-label="测试用例详情"><div className="requirement-detail-heading"><div><span className="panel-label">用例详情 · {selected.displayNumber}</span><h3>{selected.title}</h3><p>MANUAL · 修订 {selected.revisionNumber} · 版本 {selected.rowVersion}</p></div>{conflict && <span className="requirements-draft-badge">草稿已保留</span>}</div>{writable ? <form onSubmit={(event) => void save(event)}><BusinessFieldsForm kind="test_case" prefix="编辑" projectId={projectId} value={businessFields} onChange={writable?v=>{saveIntentRef.current=null;setBusinessFields(v)}:undefined} disabled={detailLoading||!detailReady||saving}/><label>标题<input aria-label="编辑测试用例标题" value={title} onChange={(event) => { saveIntentRef.current = null; setTitle(event.target.value) }} maxLength={500} required disabled={detailLoading || !detailReady || saving} /></label><label>说明<textarea aria-label="编辑测试用例说明" value={description} onChange={(event) => { saveIntentRef.current = null; setDescription(event.target.value) }} rows={3} maxLength={10000} disabled={detailLoading || !detailReady || saving} /></label><label>前置条件<textarea aria-label="编辑测试用例前置条件" value={preconditions} onChange={(event) => { saveIntentRef.current = null; setPreconditions(event.target.value) }} rows={3} maxLength={10000} disabled={detailLoading || !detailReady || saving} /></label>{renderSteps(steps, true, updateStep, (index) => setSteps((current) => normalizeSteps(current.filter((_step, position) => position !== index))), moveStep, detailLoading || !detailReady)}<div className="test-detail-actions"><button type="button" className="secondary-button" onClick={() => setSteps((current) => normalizeSteps([...current, newStep()]))} disabled={detailLoading || !detailReady || saving}>新增步骤</button><button className="primary-button" type="submit" disabled={saving || detailLoading || !detailReady}>{saving ? '保存中…' : '保存为新修订'}</button></div></form> : <><BusinessFieldsForm kind="test_case" projectId={projectId} value={selected.businessFields}/><p className="requirement-body">{selected.description || '（无说明）'}</p><p className="access-empty">只读用户可以查看用例和历史，但不能创建或保存。</p>{renderSteps(selected.steps, false, updateStep, () => undefined, moveStep)}</>}
-        {detailReady && !scopeInvalid && <ReviewPanel projectId={projectId} testCaseId={selected.id} revisionId={selected.currentRevisionId} rowVersion={selected.rowVersion} contextKey={`${accessKeyFor(access)}:${resetSignal}`} readOnly={!can(access,'test:update')} disabled={contentSaving} onLock={lockReview} onDenied={()=>clearInvalidData('当前测试用例复核范围不可访问，请重新选择项目')} onChanged={review=>{setSelected(old=>old&&old.id===review.testCaseId&&old.currentRevisionId===review.revisionId?{...old,rowVersion:review.rowVersion,etag:`"${review.rowVersion}"`}:old);setItems(old=>old.map(item=>item.id===review.testCaseId?{...item,rowVersion:review.rowVersion,etag:`"${review.rowVersion}"`}:item))}}/>}
+        {detailReady && !scopeInvalid && <SignaturePanel projectId={projectId} kind="TEST_APPROVAL" objectId={selected.id} snapshotId={selected.currentRevisionId} rowVersion={selected.rowVersion} contextKey={`${accessKeyFor(access)}:${resetSignal}`} readOnly={!can(access,'test:update')} disabled={contentSaving || reviewLocked} onLock={lockSignature} onDenied={()=>clearInvalidData('当前签署范围不可访问，请重新选择项目')}/> }
+        {detailReady && !scopeInvalid && <ReviewPanel projectId={projectId} testCaseId={selected.id} revisionId={selected.currentRevisionId} rowVersion={selected.rowVersion} contextKey={`${accessKeyFor(access)}:${resetSignal}`} readOnly={!can(access,'test:update')} disabled={contentSaving || signatureLocked} onLock={lockReview} onDenied={()=>clearInvalidData('当前测试用例复核范围不可访问，请重新选择项目')} onChanged={review=>{setSelected(old=>old&&old.id===review.testCaseId&&old.currentRevisionId===review.revisionId?{...old,rowVersion:review.rowVersion,etag:`"${review.rowVersion}"`}:old);setItems(old=>old.map(item=>item.id===review.testCaseId?{...item,rowVersion:review.rowVersion,etag:`"${review.rowVersion}"`}:item))}}/>}
         {detailReady && !scopeInvalid && <AttachmentsPanel projectId={projectId} target={{kind:'TEST_CASE',id:selected.id}} access={access} resetSignal={resetSignal} onDenied={()=>clearInvalidData('当前附件及测试用例范围不可访问，请重新选择项目')} />}
         {detailReady && !scopeInvalid && <HistoryPanel key={`${selected.id}:${selected.rowVersion}`} projectId={projectId} objectType="test_case" objectId={selected.id} />}
+        {historyReadable && selectedRevision && <SignaturePanel projectId={projectId} kind="TEST_APPROVAL" objectId={selected.id} snapshotId={selectedRevision.id} rowVersion={selected.rowVersion} contextKey={`${accessKeyFor(access)}:${resetSignal}`} readOnly/>}
         {historyReadable && <section className="requirement-history" aria-label="测试用例修订历史"><div className="member-list-heading"><strong>不可变修订历史</strong><span>{revisions.length} 个修订</span></div>{revisions.length === 0 ? <p className="access-empty">暂无修订历史。</p> : <div className="revision-list">{revisions.map((revision) => <button type="button" className="revision-row" key={revision.id} onClick={() => setSelectedRevision(revision)}><span>修订 {revision.revisionNumber}</span><small>{revision.createdBy} · {revision.createdAt}</small></button>)}</div>}{selectedRevision && <article className="revision-readonly"><strong>修订 {selectedRevision.revisionNumber}（只读）</strong><h4>{selectedRevision.title}</h4><p>{selectedRevision.description || '（无说明）'}</p><p>{selectedRevision.preconditions || '（无前置条件）'}</p><BusinessFieldsForm kind="test_case" projectId={projectId} value={selectedRevision.businessFields}/>{renderSteps(selectedRevision.steps, false, updateStep, () => undefined, moveStep)}<ReviewPanel projectId={projectId} testCaseId={selected.id} revisionId={selectedRevision.id} rowVersion={selected.rowVersion} contextKey={`${accessKeyFor(access)}:${resetSignal}`} readOnly historical/></article>}</section>}
       </div>}
     </div>}

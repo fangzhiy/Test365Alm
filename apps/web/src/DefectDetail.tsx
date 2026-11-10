@@ -9,15 +9,16 @@ import DefectForm from './DefectForm'
 import DefectAttempt from './DefectAttempt'
 import AttachmentsPanel from './AttachmentsPanel'
 import HistoryPanel from './HistoryPanel'
+import SignaturePanel from './SignaturePanel'
 type Intent={key:string;target:Defect;kind:'edit'|'transition'|'retest';content:DefectContent;status:DefectStatus;reason:string}
 const edges:Record<DefectStatus,DefectStatus[]>={OPEN:['IN_PROGRESS','RESOLVED'],IN_PROGRESS:['RESOLVED'],RESOLVED:['CLOSED','REOPENED'],REOPENED:['IN_PROGRESS','RESOLVED'],CLOSED:[]}
 export default function DefectDetail({projectId,id,access,onLockChange,onDenied}:{projectId:string;id:string;access:ProjectAccess;onLockChange:(v:boolean)=>void;onDenied:()=>void}) {
  const {run,busy,message,setMessage,denied}=useCoreRequest()
- const [auditRefresh,setAuditRefresh]=useState(0)
+ const [auditRefresh,setAuditRefresh]=useState(0),[signatureLocked,setSignatureLocked]=useState(false)
  const [current,setCurrent]=useState<Defect|null>(null),[latest,setLatest]=useState<Defect|null>(null),[draft,setDraft]=useState(emptyDefect),[dirty,setDirty]=useState(false)
  const [history,setHistory]=useState<DefectRevision[]>([]),[historyCursor,setHistoryCursor]=useState<string|null>(null),[retests,setRetests]=useState<Retest[]>([]),[retestCursor,setRetestCursor]=useState<string|null>(null),[verification,setVerification]=useState<Verification|null>(null)
  const [intent,setIntent]=useState<Intent|null>(null),[reason,setReason]=useState(''),[viewed,setViewed]=useState<DefectRevision|null>(null),[attempt,setAttempt]=useState<{runId:string;attemptId:string}|null>(null),[attemptLocked,setAttemptLocked]=useState(false)
- useEffect(()=>{onLockChange(busy||intent!==null||attemptLocked);return()=>onLockChange(false)},[busy,intent,attemptLocked,onLockChange])
+ useEffect(()=>{onLockChange(busy||intent!==null||attemptLocked||signatureLocked);return()=>onLockChange(false)},[busy,intent,attemptLocked,signatureLocked,onLockChange])
  useEffect(()=>{if(denied)onDenied()},[denied,onDenied])
  const initialLoad=useCallback(()=>run(signal=>Promise.all([defectsApi.get(projectId,id,{signal}),defectsApi.history(projectId,id,null,{signal}),defectsApi.verification(projectId,id,{signal}),defectsApi.retests(projectId,id,null,{signal})]),([d,h,v,r])=>{setCurrent(d);setDraft(defectContent(d.currentRevision));setHistory(h.items);setHistoryCursor(h.nextCursor);setVerification(v);setRetests(r.items);setRetestCursor(r.nextCursor)}),[projectId,id,run])
  useEffect(()=>{void initialLoad()},[initialLoad])
@@ -33,7 +34,7 @@ export default function DefectDetail({projectId,id,access,onLockChange,onDenied}
   },v=>{setAuditRefresh(n=>n+1);if(v.defect){setCurrent(v.defect);setDraft(defectContent(v.defect.currentRevision));setDirty(false);setLatest(null)}if(v.attempt)setAttempt(v.attempt);setVerification(null);setHistory([]);setRetests([]);setMessage(command.kind==='retest'?'复测已确认创建；下方使用原执行服务':'缺陷写入已确认；刷新详情/历史只执行 GET')})
   if(result==='ok'||result==='rejected')setIntent(null)
  }
- const locked=busy||intent!==null||attemptLocked,closed=(latest??current)?.currentRevision.status==='CLOSED',conflict=latest!==null&&latest.rowVersion!==current?.rowVersion
+ const locked=busy||intent!==null||attemptLocked||signatureLocked,closed=(latest??current)?.currentRevision.status==='CLOSED',conflict=latest!==null&&latest.rowVersion!==current?.rowVersion
  if(!current)return <section aria-label="缺陷详情"><button disabled={locked} onClick={()=>void initialLoad()}>重新读取缺陷详情</button><p role="status">{busy?'读取详情中…':message}</p></section>
  const source=current.links.find(l=>l.kind==='RUN_STEP')
  return <section aria-label="缺陷详情"><h3>BUG-{current.displayNumber} · {current.currentRevision.status} · v{current.rowVersion}</h3>
@@ -49,6 +50,7 @@ export default function DefectDetail({projectId,id,access,onLockChange,onDenied}
    {current.currentRevision.status==='RESOLVED'&&access.permissions.includes('run:write')&&access.permissions.includes('defect:update')&&<button disabled={locked||conflict||dirty} onClick={()=>void persist('retest')}>开始复测</button>}</div>}
   {current.links.filter(l=>l.kind==='REQUIREMENT').map(l=><p key={l.id}>关联需求 {l.requirementId} · 冻结修订 {l.requirementRevisionId}</p>)}
   <p>PASS verification：{verification?verification.eligible?'可用相关 PASS':'未满足关闭证据':'待刷新确认'}</p>
+  <SignaturePanel projectId={projectId} kind="DEVIATION_CLOSURE" objectId={id} snapshotId={current.currentRevision.id} rowVersion={current.rowVersion} contextKey={`${access.principalId}:${access.permissions.join(',')}`} readOnly={!access.permissions.includes('defect:transition')} disabled={busy||intent!==null||attemptLocked||dirty} onLock={setSignatureLocked} onDenied={onDenied} onChanged={()=>setAuditRefresh(n=>n+1)}/>
   <HistoryPanel key={`${current.rowVersion}:${auditRefresh}`} projectId={projectId} objectType="defect" objectId={id}/>
   <h4>不可变状态/内容历史</h4>{history.map(r=><button disabled={locked} key={r.id} onClick={()=>void run(signal=>defectsApi.revision(projectId,id,r.id,{signal}),setViewed)}>修订 {r.revisionNo} · {r.status}</button>)}
   {historyCursor&&<button disabled={locked} onClick={()=>void run(signal=>defectsApi.history(projectId,id,historyCursor,{signal}),p=>{setHistory(old=>[...old,...p.items]);setHistoryCursor(p.nextCursor)})}>更多缺陷历史</button>}
