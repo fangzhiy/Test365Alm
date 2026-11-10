@@ -5,8 +5,10 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import DefectsPanel from './DefectsPanel'
 import { defectsApi } from './defectsApi'
+import type { Defect } from './defectsApi'
 import { historyApi } from './historyApi'
 vi.mock('./historyApi',()=>({historyApi:{list:vi.fn()}}))
+vi.mock('./DefectAttempt',()=>({default:()=>null}))
 vi.mock('./defectsApi',async()=>({...await vi.importActual<typeof import('./defectsApi')>('./defectsApi'),defectsApi:{list:vi.fn(),create:vi.fn(),get:vi.fn(),history:vi.fn(),verification:vi.fn(),retests:vi.fn(),edit:vi.fn(),transition:vi.fn(),retest:vi.fn()}}))
 const access={tenantId:'t',projectId:'p',principalId:'m',roles:['PROJECT_MEMBER'] as const,permissions:['defect:read','defect:create','defect:update','defect:transition','defect:history:read','run:write']}
 const c={title:'Bug',description:'reproduce',severity:'HIGH',priority:'MEDIUM'}
@@ -22,6 +24,19 @@ it('audit history denial leaves defect detail editable and saving reloads audit 
  await screen.findByText('无权查看或对象不存在');expect(screen.getByRole('button',{name:'保存缺陷修订'})).toBeEnabled()
  await u.clear(screen.getByLabelText('编辑缺陷标题'));await u.type(screen.getByLabelText('编辑缺陷标题'),'Updated');await u.click(screen.getByRole('button',{name:'保存缺陷修订'}))
  expect(await screen.findByText('暂无历史')).toBeInTheDocument();expect(historyApi.list).toHaveBeenCalledTimes(2)
+})
+it('retest and explicit refresh reload audit history even when the defect version stays unchanged',async()=>{
+ defaults()
+ const resolved:Defect={...d,currentRevision:{...d.currentRevision,status:'RESOLVED'},links:[{id:'link',kind:'RUN_STEP',requirementId:null,requirementRevisionId:null,testCaseId:'test',testRevisionId:'revision',runId:'run',attemptId:'old',stepKey:'step',sourceVersion:1,sourceConclusion:'FAIL',actualResult:'bad',expectedResult:'good'}]}
+ vi.mocked(defectsApi.get).mockResolvedValue(resolved)
+ vi.mocked(defectsApi.retest).mockResolvedValue({runId:'run',attemptId:'new'})
+ const u=userEvent.setup();render(<DefectsPanel projectId="p" access={access}/>);await u.click(await screen.findByRole('button',{name:/BUG-1.*Bug/}))
+ await screen.findByText('暂无历史');expect(historyApi.list).toHaveBeenCalledTimes(1)
+ await u.click(screen.getByRole('button',{name:'开始复测'}))
+ await screen.findByText(/复测已确认创建/);await waitFor(()=>expect(historyApi.list).toHaveBeenCalledTimes(2))
+ await u.click(screen.getByRole('button',{name:'刷新缺陷详情'}))
+ await screen.findByText(/从服务器重新读取/);await waitFor(()=>expect(historyApi.list).toHaveBeenCalledTimes(3))
+ expect(defectsApi.retest).toHaveBeenCalledTimes(1)
 })
 it('ordinary member opens persisted detail and viewer has no write controls',async()=>{
  defaults();const u=userEvent.setup();const v=render(<DefectsPanel projectId="p" access={access}/>);await u.click(await screen.findByRole('button',{name:/BUG-1.*Bug/}));expect(await screen.findByRole('region',{name:'缺陷详情'})).toHaveTextContent('OPEN')
