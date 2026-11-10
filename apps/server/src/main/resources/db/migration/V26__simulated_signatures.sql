@@ -139,7 +139,7 @@ BEGIN
   OR material->>'kind' IS DISTINCT FROM c.kind OR material->>'objectId' IS DISTINCT FROM c.object_id::TEXT
   OR material->>'snapshotId' IS DISTINCT FROM c.snapshot_id::TEXT OR (material->>'sourceVersion')::BIGINT IS DISTINCT FROM c.source_version
   OR material->>'contentDigest' IS DISTINCT FROM c.content_digest OR material->'contentSnapshot' IS DISTINCT FROM c.content_snapshot
-  OR material->>'meaning' IS DISTINCT FROM CASE c.kind WHEN 'TEST_APPROVAL' THEN '用例批准确认' WHEN 'RUN_COMPLETION' THEN '运行完成确认' ELSE '偏差关闭确认' END
+  OR material->>'meaning' IS DISTINCT FROM (CASE c.kind WHEN 'TEST_APPROVAL' THEN '用例批准确认' WHEN 'RUN_COMPLETION' THEN '运行完成确认' ELSE '偏差关闭确认' END)
   OR (material->>'signedAt')::TIMESTAMPTZ IS DISTINCT FROM CURRENT_TIMESTAMP
   OR auth_time IS NULL OR auth_time<date_trunc('second',c.created_at) OR auth_time<CURRENT_TIMESTAMP-INTERVAL '2 minutes'
   OR auth_time>CURRENT_TIMESTAMP+INTERVAL '30 seconds'
