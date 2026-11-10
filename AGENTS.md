@@ -6,6 +6,18 @@
 - 流程从轻：保留自动化测试和 CI，改动要有测试；**不再**写 `docs/progress/runs/`、`docs/progress/inputs/` 的每轮证据文档，也不必每次更新 `docs/development-status.md`。改动说明写在 PR 描述里，值得留给后人的结论用 `trail note` 记下。
 - 下文的数据约束、安全边界（不可变修订、审计与 Outbox 同事务、权限、禁止提交秘密等）仍然有效。
 
+## Claude 与 Codex 接力（以 Claude 为主）
+
+- 分工：Claude 负责大纲和主要代码；Claude 额度不够时由 Codex 在**同一个文件夹、同一个分支**上接着写，回来后 Claude 审查并继续。不为接力新开分支。
+- 分支：`dev` 是本地集成分支。每个功能从 `dev` 开 `feat/<功能>` 分支，完成后合并回 `dev`。
+- 交出方（额度快用完、或用户说"交接"时）：
+  1. 提交全部改动，未完成也提交，提交信息以 `wip:` 开头；
+  2. 写或覆盖 `docs/handoff/<分支名>.md`：目标、已完成、下一步（具体到文件/函数）、怎么验证、注意事项；
+  3. 代码看不出来的结论（取舍、踩过的坑）用 `trail note` 记下，一起提交。
+- 接手方开工前：读 `docs/handoff/<当前分支名>.md`、`git log --oneline -15`、`git status`，再继续；完成后同样更新交接文件。
+- 合并回 `dev` 前：跑后端单元/集成测试和前端测试，运行 `trail check`；合并后删除该分支的交接文件，并更新 `docs/alm-replacement-roadmap.md` 第 7 节阶段状态。
+- 共享记忆只认仓库里的东西：本文件、路线图、`docs/handoff/`、`.trail/learnings/`。各智能体自己的私有记忆对方看不到，重要结论不要只放在那里。
+
 ## 本机环境（Windows 开发机）
 
 - Java 21 在 `D:\code\ProOrca\Wetest365ALM\.tools\jdk-21`（不入库）。系统默认是 Java 17，运行 Maven 前先切到 21：
