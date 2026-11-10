@@ -27,3 +27,8 @@
 - Added two distinct-challenge and content-edit/sign serialization database methods; strengthened existing rollback case to inject both audit and Outbox failures and existing runtime test to attempt VIEWER inserts and updates.
 - Java 21 `mvn -B -ntp test`: 102 tests, zero failures/errors/skips (`local-evidence/signature/concurrency-unit.log`); new IT compiled only, PostgreSQL execution remains NOT_RUN pending coordinator resource window.
 - Prepared real IdP popup assertions for all three meanings; wrong-password and other-subject negatives are UI source only until the real owned browser run.
+
+### Browser source checkpoint
+
+- Extended the accepted execution and deviation UI flows to reauthenticate and sign their exact terminal snapshots without removing their original assertions; added a fifth exact UI flow for wrong password, same-subject success, signed history/new unsigned revision, viewer read, and other-subject rejection.
+- Registered D/E callbacks pass 28 offline ownership cases; lint exits 0 with eight existing warnings and TypeScript/Vite build passes. No browser or product service was started; real UI remains NOT_RUN.
