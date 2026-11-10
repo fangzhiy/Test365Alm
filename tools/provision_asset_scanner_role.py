@@ -26,6 +26,7 @@ _CONNECTION = ("PGHOST", "PGPORT", "PGDATABASE", "PGUSER", "PGPASSWORD", "PGPASS
                "PGSSLMODE", "PGSSLROOTCERT", "PGSSLCERT", "PGSSLKEY", "PGCHANNELBINDING")
 _RUNTIME = ("PATH", "SystemRoot", "SYSTEMROOT", "WINDIR", "TMP", "TEMP", "TMPDIR", "LANG", "LC_ALL")
 _DOCKER = ("DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_CONFIG", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH")
+_DOCKER_PROFILE = ("HOME", "USERPROFILE", "HOMEDRIVE", "HOMEPATH")
 _SQLSTATES = frozenset({"08001", "08006", "28P01", "28000", "42501", "42601", "42703", "42P01", "42883", "22023", "23505", "P0001", "57014", "55P03"})
 _STAGES = {"SCANNER_STAGE_CONNECTED": "SESSION_GUARD", "SCANNER_STAGE_SESSION_READY": "ROLE_SQL",
            "SCANNER_STAGE_ROLE_APPLIED": "COMMIT", "SCANNER_STAGE_COMMITTED": "VERIFY"}
@@ -105,6 +106,10 @@ def main(environment=None, run=subprocess.run) -> int:
             if not re.fullmatch(r"[a-f0-9]{64}", container) or env["PGHOST"] != "127.0.0.1" or port != 5432:
                 raise ValueError("Container mode requires an explicit full container ID and its local PostgreSQL endpoint")
             env.update({key: source[key] for key in _DOCKER if key in source})
+            # Docker resolves named contexts through the invoking user's config
+            # directory. Preserve only these lookup variables in container mode;
+            # do not forward them via docker exec into the database process.
+            env.update({key: source[key] for key in _DOCKER_PROFILE if key in source})
             # Docker reads each value from its own environment; credentials never appear in argv.
             # The operator/test harness is responsible for selecting an authorized owned resource.
             forward = [value for key in (*_CONNECTION, "PGCONNECT_TIMEOUT", "PGAPPNAME", "PGREQUIREAUTH") for value in ("--env", key)]
