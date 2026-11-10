@@ -26,13 +26,13 @@ enabled and unprivileged. A separate disposable HTTP peer first checks
 method runs, followed by units and the full integration suite, sequentially. Each phase
 uses the same immutable source snapshot and runner. A failed phase stops progression.
 
-The business-fields/folder/history snapshot expects 89 unit and 174 integration methods, with no failures/errors/
+The business-fields/folder/history snapshot expects 89 unit and 175 integration methods, with no failures/errors/
 skips or duplicate identities. Changing those counts requires reviewing the actual tests.
 Compared with the history-only snapshot, folders add three unit methods, nine
-`FolderDatabaseIT` methods and one real OIDC folder HTTP method. Business fields add four `BusinessFieldsTest` unit methods, six
+`FolderDatabaseIT` methods and one real OIDC folder HTTP method. Business fields add four `BusinessFieldsTest` unit methods, seven
 `BusinessFieldsDatabaseIT` methods and one `BusinessFieldsMigrationUpgradeIT` method.
 The scan preflight expects exactly 89 units and one real scan method; unit expects
-89 units; full integration expects 89 units and 174 integrations. Existing latest
+89 units; full integration expects 89 units and 175 integrations. Existing latest
 migration assertions require formal V23 (23 migrations); the deliberate failure
 probe is V25, with V24 reserved for the execution workline. These remain assertions
 rather than additional methods. The coordinator explicitly authorized this exact
@@ -47,3 +47,5 @@ run/source-labelled container IDs. `docker rm -v` includes their attached anonym
 volumes; no named-volume, network, prefix-based or project-wide deletion is performed.
 If daemon/identity/ownership changes, cleanup reports failure and refuses those mutations.
 This is independent of CI-owned browser acceptance; it sets no CI identity variables.
+
+Reviewer directory adds `BusinessFieldsDatabaseIT.reviewerDirectoryIsReadableByMembersBoundedSearchableAndRejectsForeignOrInactiveScope`, bringing the reviewed inventory to 89/175.

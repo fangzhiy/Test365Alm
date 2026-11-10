@@ -50,7 +50,7 @@ def main() -> int:
               "unit": summarize(target / "surefire-reports")}
     if phase != "unit":
         report["integration"] = summarize(target / "failsafe-reports")
-    expected = {"scan": (89, 1), "unit": (89, None), "integration": (89, 174)}[phase]
+    expected = {"scan": (89, 1), "unit": (89, None), "integration": (89, 175)}[phase]
     valid = report["unit"]["tests"] == expected[0]
     if expected[1] is not None:
         valid = valid and report["integration"]["tests"] == expected[1]
