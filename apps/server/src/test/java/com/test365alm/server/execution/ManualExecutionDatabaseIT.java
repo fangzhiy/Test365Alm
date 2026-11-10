@@ -1,6 +1,8 @@
 package com.test365alm.server.execution;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -999,7 +1001,12 @@ class ManualExecutionDatabaseIT {
     void manifestAssignmentAndOldAttemptStayFrozenAfterReassignmentRenameAndRevision() throws Exception {
         var prepared=preparedRun("grid-snapshot","grid-snapshot-case");var f=prepared.fixture();var id=prepared.instance().id();
         executions.assignInstance(f.member(),f.project(),id,f.member(),1,"grid-snapshot-assign");
-        var run=executions.createRun(f.member(),f.project(),id,"grid-snapshot-run");
+        // The helper already claimed grid-snapshot-run before assignment. Its
+        // response must remain frozen; a new intent needs a distinct key.
+        assertEquals(prepared.run(),executions.createRun(f.member(),f.project(),id,"grid-snapshot-run"));
+        assertNull(prepared.run().manifest().assigneeId());
+        var run=executions.createRun(f.member(),f.project(),id,"grid-snapshot-assigned-run");
+        assertNotEquals(prepared.run().run().id(),run.run().id());
         assertEquals(f.member(),run.manifest().assigneeId());assertEquals("M09 member",run.manifest().assigneeName());
         var a=run.currentAttempt();var step=a.steps().get(0);
         var saved=executions.saveStep(f.member(),f.project(),run.run().id(),a.id(),step.stepKey(),"original","PASS",1,"grid-snapshot-save");
@@ -1010,6 +1017,8 @@ class ManualExecutionDatabaseIT {
         var retry=executions.rerun(f.member(),f.project(),run.run().id(),"grid-snapshot-retry");
         var reread=executions.run(f.member(),f.project(),run.run().id());
         assertEquals(run.manifest(),reread.manifest());
+        assertEquals(run,executions.createRun(f.member(),f.project(),id,"grid-snapshot-assigned-run"),"create replay retains the initial attempt response");
+        assertEquals("FINISHED",executions.attempt(f.member(),f.project(),run.run().id(),a.id()).status(),"create replay cannot rewrite the current persisted attempt");
         assertEquals("original",executions.attempt(f.member(),f.project(),run.run().id(),a.id()).steps().get(0).actualResult());
         assertEquals("",retry.steps().get(0).actualResult());
         assertTrue(!retry.steps().get(0).runStepId().equals(step.runStepId()));

@@ -110,7 +110,8 @@ class AssetMigrationUpgradeIT {
     private static AnnotationConfigApplicationContext context(DataSource ds,DataSource scannerDatabase) {
         var c=new AnnotationConfigApplicationContext();c.registerBean(DataSource.class,()->ds);
         c.register(RuntimeConfig.class,ProjectService.class,CoreCommands.class,
-                ExecutionService.class,HistoricalExecutionService61711294.class,TraceLinkService.class,FieldDefinitionService.class,DefectEvidence.class,ReleaseService.class,ReleaseMetrics.class);
+                ExecutionService.class,HistoricalExecutionService61711294.class,TraceLinkService.class,FieldDefinitionService.class,ReleaseService.class,ReleaseMetrics.class);
+        c.register(scannerDatabase==null?com.test365alm.server.fixture.HistoricalDefectEvidence61711294.class:DefectEvidence.class);
         if(scannerDatabase!=null){AssetTestInfrastructure.start();c.registerBean(BlobStore.class,AssetTestInfrastructure::store);c.registerBean(MalwareScanner.class,AssetTestInfrastructure::scanner);c.registerBean(ScanResultWriter.class,()->new JdbcScanResultWriter(scannerDatabase));c.register(AssetService.class);}
         com.test365alm.server.businessfields.LegacyContentServices.register(c,scannerDatabase==null,true);c.refresh();return c;
     }

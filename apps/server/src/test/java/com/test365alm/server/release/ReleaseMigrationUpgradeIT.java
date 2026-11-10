@@ -79,7 +79,14 @@ class ReleaseMigrationUpgradeIT {
             }
         }
     }
-    private static AnnotationConfigApplicationContext context(DataSource ds,boolean releases){var c=new AnnotationConfigApplicationContext();c.registerBean(DataSource.class,()->ds);c.register(RuntimeConfig.class,ProjectService.class,CoreCommands.class,ExecutionService.class,HistoricalExecutionService61711294.class,TraceLinkService.class,FieldDefinitionService.class,DefectEvidence.class);if(releases)c.register(ReleaseService.class,ReleaseMetrics.class);com.test365alm.server.businessfields.LegacyContentServices.register(c,!releases,true);c.refresh();return c;}
+    private static AnnotationConfigApplicationContext context(DataSource ds,boolean releases){
+        var c=new AnnotationConfigApplicationContext();c.registerBean(DataSource.class,()->ds);
+        c.register(RuntimeConfig.class,ProjectService.class,CoreCommands.class,ExecutionService.class,
+                HistoricalExecutionService61711294.class,TraceLinkService.class,FieldDefinitionService.class);
+        c.register(releases?DefectEvidence.class:com.test365alm.server.fixture.HistoricalDefectEvidence61711294.class);
+        if(releases)c.register(ReleaseService.class,ReleaseMetrics.class);
+        com.test365alm.server.businessfields.LegacyContentServices.register(c,!releases,true);c.refresh();return c;
+    }
     private static Map<String,List<String>> snapshot(JdbcTemplate db,List<String> tables){return com.test365alm.server.fixture.HistoricalExecutionUpgradeSupport.originalColumnsSnapshot(db,tables);}
     private static tools.jackson.databind.JsonNode defectBody(){return CoreCommands.JSON.readTree("{\"title\":\"Old failure\",\"description\":\"V18 source\",\"severity\":\"HIGH\",\"priority\":\"MEDIUM\"}");}
     private static String key(){return UUID.randomUUID().toString();}
