@@ -47,9 +47,9 @@ class BusinessFieldsDatabaseIT {
 
     @Test void reviewerDirectoryIsReadableByMembersBoundedSearchableAndRejectsForeignOrInactiveScope() throws Exception {
         var f=fixture();var other=fixture();
-        try(var c=owner()){sql(c,"UPDATE principal SET display_name='Reviewer Zhang' WHERE id=?",f.viewer);}
+        try(var c=owner()){sql(c,"UPDATE principal SET display_name='Reviewer Zhang' WHERE id=?",f.reviewer);}
         var page=reviewers.list(f.member,f.project,"Reviewer",null,1,null);
-        assertEquals(List.of(new ReviewerService.Candidate(f.viewer,"Reviewer Zhang")),page.items());
+        assertEquals(List.of(new ReviewerService.Candidate(f.reviewer,"Reviewer Zhang")),page.items());
         assertNull(page.nextCursor());
         assertEquals(1,reviewers.list(f.viewer,f.project,null,null,1,null).items().size());
         assertNotNull(reviewers.list(f.member,f.project,null,null,1,null).nextCursor());
@@ -62,12 +62,12 @@ class BusinessFieldsDatabaseIT {
             s.setObject(1,other.tenant);s.setObject(2,other.project);s.setString(3,"00000000-0000-0000-0000-000000000000");s.setObject(4,f.member);
             try(var r=s.executeQuery()){r.next();assertEquals(0,r.getInt(1));}
         }
-        try(var c=owner()){sql(c,"UPDATE principal SET disabled_at=CURRENT_TIMESTAMP WHERE id=?",f.viewer);}
-        assertTrue(reviewers.list(f.member,f.project,null,null,25,f.viewer).items().isEmpty());
-        try(var c=owner()){sql(c,"UPDATE principal SET disabled_at=NULL WHERE id=?",f.viewer);sql(c,"UPDATE project_member SET valid_until=CURRENT_TIMESTAMP-INTERVAL '1 second' WHERE project_id=? AND principal_id=?",f.project,f.viewer);}
-        assertTrue(reviewers.list(f.member,f.project,null,null,25,f.viewer).items().isEmpty());
-        try(var c=owner()){sql(c,"UPDATE project_member SET valid_until=NULL,revoked_at=CURRENT_TIMESTAMP WHERE project_id=? AND principal_id=?",f.project,f.viewer);}
-        assertTrue(reviewers.list(f.member,f.project,null,null,25,f.viewer).items().isEmpty());
+        try(var c=owner()){sql(c,"UPDATE principal SET disabled_at=CURRENT_TIMESTAMP WHERE id=?",f.reviewer);}
+        assertTrue(reviewers.list(f.member,f.project,null,null,25,f.reviewer).items().isEmpty());
+        try(var c=owner()){sql(c,"UPDATE principal SET disabled_at=NULL WHERE id=?",f.reviewer);sql(c,"UPDATE project_member SET valid_until=CURRENT_TIMESTAMP-INTERVAL '1 second' WHERE project_id=? AND principal_id=?",f.project,f.reviewer);}
+        assertTrue(reviewers.list(f.member,f.project,null,null,25,f.reviewer).items().isEmpty());
+        try(var c=owner()){sql(c,"UPDATE project_member SET valid_until=NULL,revoked_at=CURRENT_TIMESTAMP WHERE project_id=? AND principal_id=?",f.project,f.reviewer);}
+        assertTrue(reviewers.list(f.member,f.project,null,null,25,f.reviewer).items().isEmpty());
         projects.revokeMember(f.admin,f.project,f.member,1L);
         assertThrows(ProjectAccessException.class,()->reviewers.list(f.member,f.project,null,null,25,null));
     }
@@ -105,16 +105,18 @@ class BusinessFieldsDatabaseIT {
     @Test void reviewerRejectsForeignDisabledExpiredAndRevokedIdentitiesAndReplayReauthorizes() throws Exception {
         var f=fixture();var other=fixture();
         var saved=tests.create(f.member,f.project,create(f,"purpose"),key());
-        for(UUID bad:List.of(other.member,UUID.randomUUID())) {
+        assertEquals(f.reviewer.toString(),saved.currentRevision().businessFields().path("reviewer").path("value").asText());
+        assertTrue(reviewers.list(f.viewer,f.project,null,null,100,null).items().stream().noneMatch(x->x.principalId().equals(f.viewer)));
+        for(UUID bad:List.of(other.member,f.viewer,UUID.randomUUID())) {
             var input=new TestCaseService.CreateCommand("MANUAL","bad","","",List.of(),json("{\"reviewer\":{\"value\":\""+bad+"\"}}"));
             assertCode("VALIDATION_FAILED",()->tests.create(f.member,f.project,input,key()));
         }
-        try(var c=owner()){sql(c,"UPDATE principal SET disabled_at=CURRENT_TIMESTAMP WHERE id=?",f.viewer);}
-        assertCode("VALIDATION_FAILED",()->tests.create(f.member,f.project,reviewer(f.viewer),key()));
-        try(var c=owner()){sql(c,"UPDATE principal SET disabled_at=NULL WHERE id=?",f.viewer);sql(c,"UPDATE project_member SET valid_until=CURRENT_TIMESTAMP-INTERVAL '1 second' WHERE project_id=? AND principal_id=?",f.project,f.viewer);}
-        assertCode("VALIDATION_FAILED",()->tests.create(f.member,f.project,reviewer(f.viewer),key()));
-        try(var c=owner()){sql(c,"UPDATE project_member SET valid_until=NULL,revoked_at=CURRENT_TIMESTAMP WHERE project_id=? AND principal_id=?",f.project,f.viewer);}
-        assertCode("VALIDATION_FAILED",()->tests.create(f.member,f.project,reviewer(f.viewer),key()));
+        try(var c=owner()){sql(c,"UPDATE principal SET disabled_at=CURRENT_TIMESTAMP WHERE id=?",f.reviewer);}
+        assertCode("VALIDATION_FAILED",()->tests.create(f.member,f.project,reviewer(f.reviewer),key()));
+        try(var c=owner()){sql(c,"UPDATE principal SET disabled_at=NULL WHERE id=?",f.reviewer);sql(c,"UPDATE project_member SET valid_until=CURRENT_TIMESTAMP-INTERVAL '1 second' WHERE project_id=? AND principal_id=?",f.project,f.reviewer);}
+        assertCode("VALIDATION_FAILED",()->tests.create(f.member,f.project,reviewer(f.reviewer),key()));
+        try(var c=owner()){sql(c,"UPDATE project_member SET valid_until=NULL,revoked_at=CURRENT_TIMESTAMP WHERE project_id=? AND principal_id=?",f.project,f.reviewer);}
+        assertCode("VALIDATION_FAILED",()->tests.create(f.member,f.project,reviewer(f.reviewer),key()));
         String replayKey=key();var input=create(f,"replay");tests.create(f.member,f.project,input,replayKey);
         projects.revokeMember(f.admin,f.project,f.member,1L);
         assertThrows(ProjectAccessException.class,()->tests.create(f.member,f.project,input,replayKey));
@@ -127,7 +129,7 @@ class BusinessFieldsDatabaseIT {
         var next=requirements.update(f.member,f.project,req.id(),patch,"\"1\"",key);
         assertEquals(next,requirements.update(f.member,f.project,req.id(),patch,"\"1\"",key));
         assertEquals("QA",requirements.revision(f.member,f.project,req.id(),req.currentRevisionId()).businessFields().path("owning_department").path("value").asText());
-        var body=json("{\"title\":\"deviation\",\"description\":\"details\",\"severity\":\"HIGH\",\"priority\":\"HIGH\",\"businessFields\":{\"occurrence_department\":{\"value\":\"QA\"},\"occurrence_location\":{\"value\":\"Line 1\"},\"reviewer\":{\"value\":\""+f.viewer+"\"}}}");
+        var body=json("{\"title\":\"deviation\",\"description\":\"details\",\"severity\":\"HIGH\",\"priority\":\"HIGH\",\"businessFields\":{\"occurrence_department\":{\"value\":\"QA\"},\"occurrence_location\":{\"value\":\"Line 1\"},\"reviewer\":{\"value\":\""+f.reviewer+"\"}}}");
         var defect=defects.create(f.member,f.project,body,null,key());
         var moved=defects.transition(f.member,f.project,defect.id(),"IN_PROGRESS","investigate","\"1\"",key());
         assertEquals(defect.currentRevision().businessFields(),moved.currentRevision().businessFields());
@@ -141,6 +143,8 @@ class BusinessFieldsDatabaseIT {
             bad.set("reviewer",com.test365alm.server.core.CoreCommands.JSON.createObjectNode().put("kind","SYSTEM").put("revision",1).set("definition",json("{\"key\":\"reviewer\",\"type\":\"TEXT\",\"required\":false,\"maxLength\":36}")));
             ((tools.jackson.databind.node.ObjectNode)bad.get("reviewer")).put("value",foreign.member.toString());
             assertThrows(SQLException.class,()->sql(c,"INSERT INTO test_revision(tenant_id,project_id,test_case_id,id,revision_no,title,description,preconditions,created_by,sealed_at,business_fields) VALUES(?,?,?,?,2,'bad','','',?,NULL,?::jsonb)",f.tenant,f.project,saved.id(),UUID.randomUUID(),f.member,bad.toString()));
+            ((tools.jackson.databind.node.ObjectNode)bad.get("reviewer")).put("value",f.viewer.toString());
+            assertThrows(SQLException.class,()->sql(c,"INSERT INTO test_revision(tenant_id,project_id,test_case_id,id,revision_no,title,description,preconditions,created_by,sealed_at,business_fields) VALUES(?,?,?,?,2,'bad','','',?,NULL,?::jsonb)",f.tenant,f.project,saved.id(),UUID.randomUUID(),f.member,bad.toString()));
         }
         assertThrows(ProjectAccessException.class,()->tests.create(f.viewer,f.project,create(f,"viewer"),key()));
     }
@@ -151,7 +155,7 @@ class BusinessFieldsDatabaseIT {
         finally {try(var c=owner()){sql(c,"DROP TRIGGER reject_business_fields_test ON test_case_outbox_event");sql(c,"DROP FUNCTION reject_business_fields_test()");}}
     }
     private static tools.jackson.databind.JsonNode json(String s){return com.test365alm.server.core.CoreCommands.JSON.readTree(s);}
-    private TestCaseService.CreateCommand create(Fixture f,String purpose){return new TestCaseService.CreateCommand("MANUAL","test","description","",List.of(new TestCaseService.StepCommand(null,1,"Open","Opened")),json("{\"test_purpose\":{\"value\":\""+purpose+"\"},\"reviewer\":{\"value\":\""+f.viewer+"\"}}"));}
+    private TestCaseService.CreateCommand create(Fixture f,String purpose){return new TestCaseService.CreateCommand("MANUAL","test","description","",List.of(new TestCaseService.StepCommand(null,1,"Open","Opened")),json("{\"test_purpose\":{\"value\":\""+purpose+"\"},\"reviewer\":{\"value\":\""+f.reviewer+"\"}}"));}
     private TestCaseService.CreateCommand reviewer(UUID actor){return new TestCaseService.CreateCommand("MANUAL","test","","",List.of(),json("{\"reviewer\":{\"value\":\""+actor+"\"}}"));}
     private TestCaseService.TestCaseView revise(Fixture f,TestCaseService.TestCaseView old,String purpose,String key){var r=old.currentRevision();return tests.appendRevision(f.member,f.project,old.id(),new TestCaseService.RevisionCommand(r.title(),r.description(),r.preconditions(),r.steps().stream().map(s->new TestCaseService.StepCommand(s.stepKey(),s.ordinal(),s.action(),s.expected())).toList(),json("{\"test_purpose\":{\"value\":\""+purpose+"\"}}")),"\""+old.rowVersion()+"\"",key);}
     private static String key() { return "business-fields-"+UUID.randomUUID(); }
@@ -162,17 +166,18 @@ class BusinessFieldsDatabaseIT {
     private static Connection runtime(Fixture f,UUID actor) throws SQLException { Connection c=DriverManager.getConnection(POSTGRES.getJdbcUrl(),"test365alm_runtime","r03_isolated_test_role_only");try(var s=c.prepareStatement("SELECT set_config('test365alm.tenant_id',?,false),set_config('test365alm.project_id',?,false),set_config('test365alm.principal_id',?,false)")){s.setString(1,f.tenant.toString());s.setString(2,f.project.toString());s.setString(3,actor.toString());s.execute();}return c; }
     private static int sql(Connection c,String sql,Object... args) throws SQLException { try(var s=c.prepareStatement(sql)){for(int i=0;i<args.length;i++)s.setObject(i+1,args[i]);return s.executeUpdate();} }
     private Fixture fixture() throws Exception {
-        UUID admin=UUID.randomUUID(),member=UUID.randomUUID(),viewer=UUID.randomUUID(),tenant=UUID.randomUUID(),domain=UUID.randomUUID();
+        UUID admin=UUID.randomUUID(),member=UUID.randomUUID(),reviewer=UUID.randomUUID(),viewer=UUID.randomUUID(),tenant=UUID.randomUUID(),domain=UUID.randomUUID();
         try(Connection c=owner()) {
-            for(UUID p:List.of(admin,member,viewer))sql(c,"INSERT INTO principal (id,issuer,subject,display_name) VALUES (?,'https://business-fields-it.example',?,'Folder test')",p,p.toString());
+            for(UUID p:List.of(admin,member,reviewer,viewer))sql(c,"INSERT INTO principal (id,issuer,subject,display_name) VALUES (?,'https://business-fields-it.example',?,'Folder test')",p,p.toString());
             sql(c,"INSERT INTO tenant (id,code,name,created_by) VALUES (?,?,'Folder tenant',?)",tenant,tenant.toString(),admin);
             sql(c,"INSERT INTO domain (id,tenant_id,name) VALUES (?,?,'Folder domain')",domain,tenant);
-            for(UUID p:List.of(admin,member,viewer))sql(c,"INSERT INTO tenant_member (tenant_id,principal_id,roles) VALUES (?,?,?::text[])",tenant,p,p.equals(admin)?"{TENANT_ADMIN}":"{MEMBER}");
+            for(UUID p:List.of(admin,member,reviewer,viewer))sql(c,"INSERT INTO tenant_member (tenant_id,principal_id,roles) VALUES (?,?,?::text[])",tenant,p,p.equals(admin)?"{TENANT_ADMIN}":"{MEMBER}");
         }
         UUID project=projects.createProject(admin,tenant,domain,"F-"+UUID.randomUUID(),"Folders").id();
         projects.putMember(admin,project,member,List.of("PROJECT_MEMBER"),0L,false);
         projects.putMember(admin,project,viewer,List.of("PROJECT_VIEWER"),0L,false);
-        return new Fixture(admin,member,viewer,tenant,project);
+        projects.putMember(admin,project,reviewer,List.of("PROJECT_MEMBER"),0L,false);
+        return new Fixture(admin,member,reviewer,viewer,tenant,project);
     }
-    private record Fixture(UUID admin,UUID member,UUID viewer,UUID tenant,UUID project) {}
+    private record Fixture(UUID admin,UUID member,UUID reviewer,UUID viewer,UUID tenant,UUID project) {}
 }

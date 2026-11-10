@@ -3,13 +3,13 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, expect, it, vi } from 'vitest'
 import { useState } from 'react'
 import BusinessFieldsForm from './BusinessFieldsForm'
-import type { BusinessFieldValues } from './businessFields'
+import { parseBusinessFields, type BusinessFieldValues } from './businessFields'
 import { coreApi } from './coreApi'
 afterEach(cleanup)
 vi.mock('./coreApi',()=>({coreApi:{fields:vi.fn()}}))
 vi.mock('./reviewerApi',()=>({reviewerApi:{list:vi.fn().mockResolvedValue({items:[{principalId:'abc',displayName:'张三'}],nextCursor:null})}}))
 it('edits purpose and reviewer as a revision payload and displays the frozen values read only',async()=>{
- const onChange=vi.fn();const u=userEvent.setup();const v=render(<BusinessFieldsForm kind="test_case" projectId="p" value={{test_purpose:{value:'Frozen purpose'}}} onChange={onChange}/>);
+ expect(parseBusinessFields(null)).toBeUndefined();const onChange=vi.fn();const u=userEvent.setup();const v=render(<BusinessFieldsForm kind="test_case" projectId="p" value={{test_purpose:{value:'Frozen purpose'}}} onChange={onChange}/>);
  expect(screen.getByLabelText('测试目的')).toHaveValue('Frozen purpose');await u.click(screen.getByRole('button',{name:'查找复核人'}));await u.selectOptions(await screen.findByLabelText('指定复核人'),'abc');expect(onChange).toHaveBeenCalledWith({test_purpose:{value:'Frozen purpose'},reviewer:{value:'abc'}});
  v.rerender(<BusinessFieldsForm kind="test_case" value={{test_purpose:{value:'Historical purpose'}}}/>);expect(screen.getByText('Historical purpose')).toBeInTheDocument();expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
 })

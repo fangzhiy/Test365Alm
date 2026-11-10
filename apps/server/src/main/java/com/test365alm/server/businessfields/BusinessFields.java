@@ -52,7 +52,7 @@ public final class BusinessFields {
             if(key.equals("reviewer")&&!value.isNull()&&!value.asText().isBlank()) {
                 UUID reviewer;
                 try{reviewer=uuid(value.asText());}catch(IllegalArgumentException ex){throw ProjectAccessException.unprocessable("Reviewer must be a local principal UUID");}
-                if(jdbc==null||p==null||!Boolean.TRUE.equals(jdbc.queryForObject("SELECT app_has_active_project_member(?,?,?)",Boolean.class,p.tenantId(),p.id(),reviewer)))throw ProjectAccessException.unprocessable("Reviewer must be an active project member");
+                if(jdbc==null||p==null||!Boolean.TRUE.equals(jdbc.queryForObject("SELECT app_has_active_project_writer(?,?,?)",Boolean.class,p.tenantId(),p.id(),reviewer)))throw ProjectAccessException.unprocessable("Reviewer must be an active project writer");
             }
             var frozen=CoreCommands.JSON.createObjectNode().put("kind",field==null?"SYSTEM":"CUSTOM").put("revision",revision);
             if(field!=null)frozen.put("fieldId",field.toString());

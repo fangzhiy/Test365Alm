@@ -12,7 +12,7 @@ SET search_path=pg_catalog,public AS $$
    JOIN public.tenant te ON te.id=pr.tenant_id WHERE pr.id=p AND pr.tenant_id=t
    AND pr.state='ACTIVE' AND d.status='ACTIVE' AND te.status='ACTIVE')
  AND (selected IS NULL OR m.principal_id=selected)
- AND public.app_has_active_project_member(t,p,m.principal_id)
+ AND public.app_has_active_project_writer(t,p,m.principal_id)
  AND strpos(lower(u.display_name),lower(q))>0
  ORDER BY m.principal_id LIMIT LEAST(GREATEST(n,0),101)
 $$;
@@ -78,8 +78,8 @@ BEGIN
      OR (d ? 'minimum' AND n<(d->>'minimum')::NUMERIC) OR (d ? 'maximum' AND n>(d->>'maximum')::NUMERIC) THEN
      RAISE EXCEPTION 'business field decimal outside bounds' USING ERRCODE='23514'; END IF;
    END IF;
-   IF k='reviewer' AND btrim(v#>>'{}')<>'' AND NOT app_has_active_project_member(NEW.tenant_id,NEW.project_id,(v#>>'{}')::UUID) THEN
-    RAISE EXCEPTION 'reviewer must be an active project member' USING ERRCODE='23514'; END IF;
+   IF k='reviewer' AND btrim(v#>>'{}')<>'' AND NOT app_has_active_project_writer(NEW.tenant_id,NEW.project_id,(v#>>'{}')::UUID) THEN
+    RAISE EXCEPTION 'reviewer must be an active project writer' USING ERRCODE='23514'; END IF;
   END IF;
  END LOOP;
  RETURN NEW;

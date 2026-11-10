@@ -33,3 +33,5 @@
 总管要求正常流程按姓名选择同事。新增 reviewer-candidates 同项目只读有限目录（不复用管理员 member-candidates），排除失效身份，SQL再次核对actor/scope；当前/历史从目录解析当前姓名并标注，失效明确不可用，不显示内部UUID。业务快照仍仅保存稳定ID，不冒充历史姓名。新增DB边界方法 reviewerDirectoryIsReadableByMembersBoundedSearchableAndRejectsForeignOrInactiveScope，BusinessFieldsDatabaseIT现7方法，加原升级1方法：预期89单元/175集成；逐名计数待同步独立设施提交。Windows Java21单元89、前端261、lint及build通过；Docker与真实浏览器仍NOT_RUN。
 
 3307c7f按总管受限授权独立更新原89/174计数；ef2e083已合dev@8bd7408。当前审查确认旧target升级测试在旧schema调用当前内容服务不再成立；修复将保留旧target快照断言，先用明确冻结的旧服务测试夹具构造真实非空旧数据，再在旧目标迁移核验后升级latest，才调用当前服务。不得修改旧迁移、删断言或在生产服务动态探测schema。
+
+总管闭合B/D身份契约：候选、normalize和DB触发器统一调用既有app_has_active_project_writer(t,p,u)，仅有效PROJECT_ADMIN/PROJECT_MEMBER可被新指定；viewer只读。浏览器改选R03 Member。失效身份、过期、撤权、跨项目与runtime SQL指定viewer拒绝覆盖在既有方法内，方法数不增加。
