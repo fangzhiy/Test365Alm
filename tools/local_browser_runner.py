@@ -150,21 +150,13 @@ def main() -> int:
             if member.issym() or member.islnk() or not (root / member.name).resolve().is_relative_to(root.resolve()):
                 raise ValueError("Unsafe archive entry")
         snapshot.extractall(root)
-    values = fresh_config(root, run, args.source)
+    values: dict[str, str] = {}
     env = isolated_environment({}, run, "")
-    context, engine = assert_project_available(project, env)
-    env.update(TEST365ALM_DOCKER_CONTEXT=context, TEST365ALM_DOCKER_ENGINE=engine)
-    env.update(values)
-    npm_config = root / "local-evidence/isolated.npmrc"
-    npm_config.write_text("registry=https://registry.npmjs.org/\n", encoding="utf-8")
-    npm_global = root / "local-evidence/empty-global.npmrc"
-    npm_global.write_text("", encoding="utf-8")
-    env.update(NPM_CONFIG_USERCONFIG=str(npm_config), NPM_CONFIG_GLOBALCONFIG=str(npm_global))
-    if Path("C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe").is_file():
-        env["R03_E2E_BROWSER_CHANNEL"] = "msedge"
-    java_home = Path("D:/code/ProOrca/Wetest365ALM/.tools/jdk-21")
-    env.update(JAVA_HOME=str(java_home), PATH=str(java_home / "bin") + os.pathsep + env["PATH"])
+    context = engine = ""
     compose_file = root / "local-evidence/local-browser-compose.json"
+    secret_paths = (root / ".env.r03", root / "local-evidence/r03/realm.json", compose_file)
+    preexisting_secrets = {path for path in secret_paths if path.exists()}
+    creation_started = False
     resources = None
     identities: dict = {}
     processes, handles = [], []
@@ -182,6 +174,22 @@ def main() -> int:
         return _docker(["compose", "--env-file", str(root / ".env.r03"), "-f", str(compose_file), "-p", project, *arguments], env, timeout=120)
 
     try:
+        if preexisting_secrets:
+            raise ResourceOwnershipError("Refusing pre-existing local secret files")
+        values = fresh_config(root, run, args.source)
+        context, engine = assert_project_available(project, env)
+        env.update(TEST365ALM_DOCKER_CONTEXT=context, TEST365ALM_DOCKER_ENGINE=engine)
+        env.update(values)
+        npm_config = root / "local-evidence/isolated.npmrc"
+        npm_config.write_text("registry=https://registry.npmjs.org/\n", encoding="utf-8")
+        npm_global = root / "local-evidence/empty-global.npmrc"
+        npm_global.write_text("", encoding="utf-8")
+        env.update(NPM_CONFIG_USERCONFIG=str(npm_config), NPM_CONFIG_GLOBALCONFIG=str(npm_global))
+        if Path("C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe").is_file():
+            env["R03_E2E_BROWSER_CHANNEL"] = "msedge"
+        java_home = Path("D:/code/ProOrca/Wetest365ALM/.tools/jdk-21")
+        env.update(JAVA_HOME=str(java_home), PATH=str(java_home / "bin") + os.pathsep + env["PATH"])
+        summary.update(context=context, engine=engine)
         raw = _docker(["compose", "--env-file", str(root / ".env.r03"), "-f", str(root / "compose.r03.yaml"),
                        "-p", project, "config", "--format", "json"], env)
         document = json.loads(raw)
@@ -200,6 +208,7 @@ def main() -> int:
         # Check again immediately before first create, not only before read-only configuration.
         verify_docker_engine(env)
         assert_project_available(project, env)
+        creation_started = True
         compose("create")
         resources = capture(project, run, context, args.source, env)
         services = {}
@@ -258,11 +267,14 @@ def main() -> int:
         for handle in handles:
             handle.close()
         try:
-            if resources is None:
-                resources = capture(project, run, context, args.source, env)
+            if not creation_started:
+                cleanup = True  # No create attempted: never inspect or touch a refused project.
             else:
-                verify(resources, args.source, identities, env)
-            cleanup = cleanup_manifest(resources, env)
+                if resources is None:
+                    resources = capture(project, run, context, args.source, env)
+                else:
+                    verify(resources, args.source, identities, env)
+                cleanup = cleanup_manifest(resources, env)
         except (OSError, RuntimeError, subprocess.SubprocessError):
             cleanup = False
         # Redact every generated credential from retained text diagnostics, then remove secret files.
@@ -273,8 +285,9 @@ def main() -> int:
             data = re.sub(r"(https?://[^\s?]+)\?[^\s]+", r"\1?[REDACTED]", data)
             path.with_suffix(".redacted.log").write_text(data, encoding="utf-8")
             path.unlink()
-        for path in (root / ".env.r03", root / "local-evidence/r03/realm.json", compose_file):
-            path.unlink(missing_ok=True)
+        for path in secret_paths:
+            if path not in preexisting_secrets:
+                path.unlink(missing_ok=True)
         summary.update(exit_code=result, cleanup=cleanup, processes_stopped=all(p.poll() is not None for p in processes))
         (evidence / "run.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
         print(json.dumps(summary), flush=True)

@@ -27,10 +27,17 @@ suite separately covers real S3/ClamAV/EICAR).
 
 Playwright runs one worker, zero retries, without traces/screenshots/video. An
 allowlisted reporter exports only test names, statuses, retry count and durations;
-all three exact tests must pass, with no skips. Existing safe API-path/status and
+all three exact tests must pass, with no skips. The reporter reads actual workers
+and retries from FullConfig and refuses missing or mixed retry configuration.
+Existing safe API-path/status and
 named-step diagnostics stay in the disposable snapshot's ignored evidence folder.
 Raw process logs are credential/header/query redacted; private originals, generated
 environment, realm and secret-bearing Compose JSON are removed. Exact own process
 handles stop first, then verified container/network/volume IDs are removed through
 the manifest guard. Cleanup failure is separate from business failure. No project
 down, prefix cleanup, image/cache pruning or operations on another stack occur.
+
+Configuration and daemon refusals use unified finalization. Generated secrets
+are removed after partial configuration failure; pre-existing environment, realm
+or secret Compose files are refused and preserved. Before any create attempt,
+refusal cleanup does not inspect or mutate project resources.

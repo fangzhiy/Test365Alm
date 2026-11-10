@@ -5,6 +5,9 @@ from tools.local_browser_runner import EXPECTED, capture, fresh_config, validate
 from tools.r02_resource_guard import ResourceOwnershipError, assert_project_available
 from pathlib import Path
 import tempfile
+import tarfile
+import json
+from tools import local_browser_runner as runner
 
 
 class BrowserResourceGuardTests(unittest.TestCase):
@@ -66,6 +69,53 @@ class BrowserResourceGuardTests(unittest.TestCase):
             with self.assertRaises(ResourceOwnershipError):
                 fresh_config(root, "run", "source")
             self.assertEqual("preserve", path.read_text())
+
+    def test_main_early_refusals_remove_only_new_secrets_without_touching_resources(self):
+        for failure in ("daemon", "partial-config", "preexisting-env", "preexisting-realm", "preexisting-compose"):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as directory:
+                base = Path(directory)
+                def archive(source, destination):
+                    fixture = base / "fixture"
+                    (fixture / "local-evidence/r03").mkdir(parents=True)
+                    existing = {"preexisting-env": ".env.r03", "preexisting-realm": "local-evidence/r03/realm.json",
+                                "preexisting-compose": "local-evidence/local-browser-compose.json"}.get(failure)
+                    if existing:
+                        (fixture / existing).write_text("preserve")
+                    with tarfile.open(destination, "w") as tar:
+                        tar.add(fixture, arcname=".")
+                def config(root, run, source):
+                    if failure.startswith("preexisting"):
+                        self.fail("Must reject existing secrets before generating configuration")
+                    (root / ".env.r03").write_text("generated")
+                    (root / "local-evidence/r03/realm.json").write_text("generated")
+                    if failure == "partial-config":
+                        raise ValueError("partial")
+                    return {}
+                with patch.object(runner, "ROOT", base), \
+                        patch.object(runner.sys, "argv", ["runner", "--source", "a" * 40]), \
+                        patch.object(runner, "committed_archive", side_effect=archive), \
+                        patch.object(runner, "fresh_config", side_effect=config), \
+                        patch.object(runner, "assert_project_available", side_effect=ResourceOwnershipError("refused")), \
+                        patch.object(runner, "capture") as capture_mock, \
+                        patch.object(runner, "cleanup_manifest") as cleanup_mock:
+                    self.assertEqual(1, runner.main())
+                capture_mock.assert_not_called()
+                cleanup_mock.assert_not_called()
+                evidence = next((base / "local-evidence/local-browser").iterdir())
+                root = evidence / "repo"
+                for name in (".env.r03", "local-evidence/r03/realm.json", "local-evidence/local-browser-compose.json"):
+                    path = root / name
+                    if path.exists():
+                        self.assertTrue(failure.startswith("preexisting"))
+                        self.assertEqual("preserve", path.read_text())
+                    elif failure == "preexisting-env" and name == ".env.r03":
+                        self.fail("Pre-existing credentials were removed")
+                if failure.startswith("preexisting"):
+                    self.assertEqual(1, sum((root / name).exists() for name in (
+                        ".env.r03", "local-evidence/r03/realm.json", "local-evidence/local-browser-compose.json")))
+                report = json.loads((evidence / "run.json").read_text())
+                self.assertTrue(report["cleanup"])
+                self.assertEqual(1, report["exit_code"])
 
     def test_only_three_exact_passes_without_retries_satisfy_browser_acceptance(self):
         report = {"status": "passed", "workers": 1, "retries": 0,
