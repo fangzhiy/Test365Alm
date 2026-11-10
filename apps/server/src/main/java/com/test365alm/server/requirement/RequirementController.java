@@ -49,7 +49,7 @@ public class RequirementController {
             UUID projectId, CreateRequest request, String idempotencyKey) {
         UUID actor = actors.requirePrincipal(authentication);
         RequirementService.RequirementView result = requirements.create(actor, projectId,
-                new RequirementService.CreateCommand(request.title(), request.body(), request.priority()), idempotencyKey);
+                new RequirementService.CreateCommand(request.title(), request.body(), request.priority(), request.businessFields), idempotencyKey);
         return ResponseEntity.status(HttpStatus.CREATED)
                 .header(HttpHeaders.ETAG, "\"" + result.rowVersion() + "\"").body(result);
     }
@@ -83,7 +83,7 @@ public class RequirementController {
             UUID projectId, UUID requirementId, PatchRequest request, String ifMatch, String idempotencyKey) {
         RequirementService.RequirementView result = requirements.update(actors.requirePrincipal(authentication),
                 projectId, requirementId,
-                new RequirementService.UpdateCommand(request.title(), request.body(), request.priority()),
+                new RequirementService.UpdateCommand(request.title(), request.body(), request.priority(), request.businessFields),
                 ifMatch, idempotencyKey);
         return withEtag(result);
     }
@@ -110,6 +110,8 @@ public class RequirementController {
         private JsonNode title;
         private JsonNode body;
         private JsonNode priority;
+        private JsonNode businessFields;
+        @JsonProperty("businessFields") public void setBusinessFields(JsonNode v){this.businessFields=v;}
 
         public CreateRequest() { }
 
@@ -120,9 +122,10 @@ public class RequirementController {
         }
 
         static CreateRequest from(JsonNode body) {
-            validateObject(body, Set.of("title", "body", "priority"));
-            return new CreateRequest(textValue(body.get("title"), "title"),
+            validateObject(body, Set.of("title", "body", "priority", "businessFields"));
+            var request = new CreateRequest(textValue(body.get("title"), "title"),
                     textValue(body.get("body"), "body"), textValue(body.get("priority"), "priority"));
+            request.businessFields=body.get("businessFields");return request;
         }
 
         @JsonProperty("title")
@@ -149,6 +152,8 @@ public class RequirementController {
         private JsonNode title;
         private JsonNode body;
         private JsonNode priority;
+        private JsonNode businessFields;
+        @JsonProperty("businessFields") public void setBusinessFields(JsonNode v){this.businessFields=v;}
 
         public PatchRequest() { }
 
@@ -159,9 +164,10 @@ public class RequirementController {
         }
 
         static PatchRequest from(JsonNode body) {
-            validateObject(body, Set.of("title", "body", "priority"));
-            return new PatchRequest(textValue(body.get("title"), "title"),
+            validateObject(body, Set.of("title", "body", "priority", "businessFields"));
+            var request = new PatchRequest(textValue(body.get("title"), "title"),
                     textValue(body.get("body"), "body"), textValue(body.get("priority"), "priority"));
+            request.businessFields=body.get("businessFields");return request;
         }
 
         @JsonProperty("title")

@@ -48,18 +48,22 @@ class DefectMigrationUpgradeIT {
    var tables=owner.query("SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename<>'flyway_schema_history' ORDER BY tablename",(r,i)->r.getString(1));var before=snapshot(owner,tables);
    for(String table:List.of("requirement","requirement_revision","test_case","test_revision","test_step","execution_run","run_attempt","run_step","execution_event","execution_idempotency","trace_link","trace_link_revision","core_command_idempotency"))assertFalse(before.get(table).isEmpty(),table+" must be nonempty before upgrade");
    var latest=Flyway.configure().dataSource(pg.getJdbcUrl(),pg.getUsername(),pg.getPassword()).target("18").load();assertEquals(1,latest.migrate().migrationsExecuted);assertEquals(before,snapshot(owner,tables));assertEquals(0,latest.migrate().migrationsExecuted);assertEquals(before,snapshot(owner,tables));
+            assertEquals(5,Flyway.configure().dataSource(pg.getJdbcUrl(),pg.getUsername(),pg.getPassword()).load().migrate().migrationsExecuted);
+            assertEquals(before,snapshot(owner,tables),"latest preserves every original column before current runtime verification");
+
    try(var c=context(ds,true)){
     assertTrue(org.springframework.aop.support.AopUtils.isAopProxy(c.getBean(DefectService.class)));
     try(var connection=ds.getConnection();var stmt=connection.createStatement();var rs=stmt.executeQuery("SELECT current_user")){assertTrue(rs.next());assertEquals("test365alm_runtime",rs.getString(1));}
     assertEquals("old body",c.getBean(RequirementService.class).getAuthorized(actor,project,requirement).body());
     assertEquals(originalLink,c.getBean(TraceLinkService.class).create(actor,project,requirement,test,traceKey));
+                assertEquals("Old test",c.getBean(TestCaseService.class).getAuthorized(actor,project,test).currentRevision().title());
     assertEquals("FAIL",c.getBean(ExecutionService.class).attempt(actor,project,run,attempt).conclusion());
     var defect=c.getBean(DefectService.class).fromStep(actor,project,CoreCommands.JSON.readTree("{\"title\":\"Upgraded failure\",\"description\":\"text\",\"severity\":\"HIGH\",\"priority\":\"MEDIUM\"}"),run,attempt,step,key());
     assertEquals("old FAIL",defect.links().stream().filter(l->l.kind().equals("RUN_STEP")).findFirst().orElseThrow().actualResult());
    }
   }
  }
- private static AnnotationConfigApplicationContext context(DataSource ds,boolean defects){var c=new AnnotationConfigApplicationContext();c.registerBean(DataSource.class,()->ds);c.register(RuntimeConfig.class,ProjectService.class,CoreCommands.class,RequirementService.class,TestCaseService.class,ExecutionService.class,TraceLinkService.class,FieldDefinitionService.class);if(defects)c.register(DefectService.class,DefectEvidence.class);c.refresh();return c;}
- private static Map<String,List<String>> snapshot(JdbcTemplate db,List<String> tables){var map=new TreeMap<String,List<String>>();for(String table:tables)map.put(table,db.query("SELECT to_jsonb(t)::text FROM \""+table+"\" t ORDER BY to_jsonb(t)::text",(r,i)->r.getString(1)));return map;}
+ private static AnnotationConfigApplicationContext context(DataSource ds,boolean defects){var c=new AnnotationConfigApplicationContext();c.registerBean(DataSource.class,()->ds);c.register(RuntimeConfig.class,ProjectService.class,CoreCommands.class,ExecutionService.class,TraceLinkService.class,FieldDefinitionService.class);if(defects)c.register(DefectEvidence.class);com.test365alm.server.businessfields.LegacyContentServices.register(c,!defects,defects);c.refresh();return c;}
+ private static Map<String,List<String>> snapshot(JdbcTemplate db,List<String> tables){var map=new TreeMap<String,List<String>>();for(String table:tables)map.put(table,db.query("SELECT (to_jsonb(t)-'business_fields'-'result_business_fields')::text FROM \""+table+"\" t ORDER BY to_jsonb(t)::text",(r,i)->r.getString(1)));return map;}
  private static String key(){return UUID.randomUUID().toString();}
 }

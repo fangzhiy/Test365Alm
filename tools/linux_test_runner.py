@@ -195,7 +195,11 @@ def execute(guard: Guard, source: str, image: str, archive: Path, evidence: Path
                  + port + "',timeout=10).read()==b'owned-linux-probe'")
     guard.remove(probe)
     (evidence / "connectivity.json").write_text('{"host_docker_internal":true}', encoding="utf-8")
-    for name in ("scan", "unit", "integration"):
+    return run_phases(guard, runner, evidence)
+
+
+def run_phases(guard: Guard, runner: str, evidence: Path) -> int:
+    for name in ("scan", "unit", "focused", "integration"):
         result = phase(guard, runner, name, evidence)
         if result:
             return result

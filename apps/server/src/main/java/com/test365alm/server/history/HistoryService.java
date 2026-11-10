@@ -141,13 +141,14 @@ public class HistoryService {
 
     private Snapshot testRevision(ProjectService.ProjectView p, UUID id, long no) {
         var rows = jdbc.query("""
-                SELECT id, title, description, preconditions FROM test_revision
+                SELECT id, title, description, preconditions, business_fields FROM test_revision
                 WHERE tenant_id=? AND project_id=? AND test_case_id=? AND revision_no=?
                 """, (rs, i) -> {
                     Map<String, String> f = new LinkedHashMap<>();
                     f.put("title", rs.getString("title"));
                     f.put("description", rs.getString("description"));
                     f.put("preconditions", rs.getString("preconditions"));
+                    businessFields(f,rs.getString("business_fields"));
                     return Map.entry(rs.getObject("id", UUID.class), f);
                 }, p.tenantId(), p.id(), id, no);
         if (rows.isEmpty()) return null;
@@ -169,14 +170,24 @@ public class HistoryService {
 
     private Snapshot defectRevision(ProjectService.ProjectView p, UUID id, long no) {
         var rows = jdbc.query("""
-                SELECT title, description, severity, priority, status, reason FROM defect_revision
+                SELECT title, description, severity, priority, status, reason, business_fields FROM defect_revision
                 WHERE tenant_id=? AND project_id=? AND defect_id=? AND revision_no=?
                 """, (rs, i) -> {
                     Map<String, String> f = new LinkedHashMap<>();
                     for (String c : List.of("title", "description", "severity", "priority", "status", "reason")) f.put(c, rs.getString(c));
+                    businessFields(f,rs.getString("business_fields"));
                     return f;
                 }, p.tenantId(), p.id(), id, no);
         return rows.isEmpty() ? null : new Snapshot(rows.get(0), List.of());
+    }
+
+    private static void businessFields(Map<String,String> fields,String json) {
+        var snapshot=CoreCommands.JSON.readTree(json);
+        for(String key:snapshot.propertyNames()) {
+            var entry=snapshot.get(key);
+            fields.put("businessFields."+key,entry.get("value").isNull()?null:entry.get("value").asText());
+            fields.put("businessFields."+key+".definition",CoreCommands.canonical(entry.get("definition")));
+        }
     }
 
     static String encodeCursor(Instant at, UUID id) {

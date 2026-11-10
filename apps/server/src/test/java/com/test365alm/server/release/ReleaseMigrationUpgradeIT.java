@@ -56,10 +56,15 @@ class ReleaseMigrationUpgradeIT {
             for(String table:List.of("tenant","project","project_member","requirement","requirement_revision","test_case","test_revision","test_step","trace_link","trace_link_revision","execution_run","execution_manifest","execution_manifest_step","run_attempt","run_step","execution_event","execution_idempotency","defect","defect_revision","defect_link","defect_outbox_event","audit_event","core_command_idempotency"))assertFalse(before.get(table).isEmpty(),table+" must contain actual V18 business data before upgrade");
             assertEquals(2,owner.queryForObject("SELECT count(*) FROM requirement_revision WHERE project_id=?",Integer.class,project));assertEquals(2,owner.queryForObject("SELECT count(*) FROM test_revision WHERE project_id=?",Integer.class,project));assertEquals(2,owner.queryForObject("SELECT count(*) FROM defect_revision WHERE project_id=?",Integer.class,project));
             var latest=Flyway.configure().dataSource(pg.getJdbcUrl(),pg.getUsername(),pg.getPassword()).target("19").load();assertEquals(1,latest.migrate().migrationsExecuted);assertEquals(before,snapshot(owner,tables),"every old table and column must survive byte-for-byte JSON representation");assertEquals(0,latest.migrate().migrationsExecuted);assertEquals(before,snapshot(owner,tables));
+            assertEquals(4,Flyway.configure().dataSource(pg.getJdbcUrl(),pg.getUsername(),pg.getPassword()).load().migrate().migrationsExecuted);
+            assertEquals(before,snapshot(owner,tables),"latest preserves every original column before current runtime verification");
+
             try(var c=context(ds,true)) {
+                assertTrue(c.getBean(DefectService.class).get(member,project,defect).currentRevision().businessFields().isEmpty());
                 var releases=c.getBean(ReleaseService.class);assertTrue(org.springframework.aop.support.AopUtils.isAopProxy(releases));
                 try(var connection=ds.getConnection();var stmt=connection.createStatement();var rs=stmt.executeQuery("SELECT current_user,rolsuper,rolbypassrls FROM pg_roles WHERE rolname=current_user")){assertTrue(rs.next());assertEquals("test365alm_runtime",rs.getString(1));assertFalse(rs.getBoolean(2));assertFalse(rs.getBoolean(3));}
                 assertEquals("revised body",c.getBean(RequirementService.class).getAuthorized(member,project,requirement).body());assertEquals(originalLink,c.getBean(TraceLinkService.class).create(member,project,requirement,test,traceKey));
+                assertEquals("Revised test",c.getBean(TestCaseService.class).getAuthorized(member,project,test).currentRevision().title());
                 assertEquals("FAIL",c.getBean(ExecutionService.class).attempt(member,project,run,attempt).conclusion());
                 assertEquals(originalDefect,c.getBean(DefectService.class).fromStep(member,project,defectBody(),run,attempt,originalDefect.links().stream().filter(l->l.kind().equals("RUN_STEP")).findFirst().orElseThrow().stepKey(),defectKey),"old key returns frozen result rather than edited defect");
                 var release=releases.create(admin,project,CoreCommands.JSON.readTree("{\"name\":\"Upgraded release\",\"startDate\":\"2026-10-01\",\"endDate\":\"2026-10-31\"}"),key());
@@ -69,8 +74,8 @@ class ReleaseMigrationUpgradeIT {
             }
         }
     }
-    private static AnnotationConfigApplicationContext context(DataSource ds,boolean releases){var c=new AnnotationConfigApplicationContext();c.registerBean(DataSource.class,()->ds);c.register(RuntimeConfig.class,ProjectService.class,CoreCommands.class,RequirementService.class,TestCaseService.class,ExecutionService.class,TraceLinkService.class,FieldDefinitionService.class,DefectService.class,DefectEvidence.class);if(releases)c.register(ReleaseService.class,ReleaseMetrics.class);c.refresh();return c;}
-    private static Map<String,List<String>> snapshot(JdbcTemplate db,List<String> tables){var m=new TreeMap<String,List<String>>();for(String table:tables)m.put(table,db.query("SELECT to_jsonb(t)::text FROM \""+table+"\" t ORDER BY to_jsonb(t)::text",(r,i)->r.getString(1)));return m;}
+    private static AnnotationConfigApplicationContext context(DataSource ds,boolean releases){var c=new AnnotationConfigApplicationContext();c.registerBean(DataSource.class,()->ds);c.register(RuntimeConfig.class,ProjectService.class,CoreCommands.class,ExecutionService.class,TraceLinkService.class,FieldDefinitionService.class,DefectEvidence.class);if(releases)c.register(ReleaseService.class,ReleaseMetrics.class);com.test365alm.server.businessfields.LegacyContentServices.register(c,!releases,true);c.refresh();return c;}
+    private static Map<String,List<String>> snapshot(JdbcTemplate db,List<String> tables){var m=new TreeMap<String,List<String>>();for(String table:tables)m.put(table,db.query("SELECT (to_jsonb(t)-'business_fields'-'result_business_fields')::text FROM \""+table+"\" t ORDER BY to_jsonb(t)::text",(r,i)->r.getString(1)));return m;}
     private static tools.jackson.databind.JsonNode defectBody(){return CoreCommands.JSON.readTree("{\"title\":\"Old failure\",\"description\":\"V18 source\",\"severity\":\"HIGH\",\"priority\":\"MEDIUM\"}");}
     private static String key(){return UUID.randomUUID().toString();}
 }

@@ -23,14 +23,20 @@ creation times and image identities. The test-only Testcontainers SPI preserves 
 labels and adds the same provenance to sibling containers, including Ryuk. Ryuk remains
 enabled and unprivileged. A separate disposable HTTP peer first checks
 `host.docker.internal` published-port connectivity. Then the existing real ClamAV/EICAR
-method runs, followed by units and the full integration suite, sequentially. Each phase
+method runs, followed by units, the fixed business-field database phase, and the full integration suite, sequentially. Each phase
 uses the same immutable source snapshot and runner. A failed phase stops progression.
 
-The combined folder/history snapshot expects 85 unit and 167 integration methods, with no failures/errors/
+The business-fields/folder/history snapshot expects 89 unit and 175 integration methods, with no failures/errors/
 skips or duplicate identities. Changing those counts requires reviewing the actual tests.
 Compared with the history-only snapshot, folders add three unit methods, nine
-`FolderDatabaseIT` methods and one real OIDC folder HTTP method. Existing migration
-assertions now require V22; they remain assertions rather than additional methods.
+`FolderDatabaseIT` methods and one real OIDC folder HTTP method. Business fields add four `BusinessFieldsTest` unit methods, seven
+`BusinessFieldsDatabaseIT` methods and one `BusinessFieldsMigrationUpgradeIT` method.
+The scan preflight expects exactly 89 units and one real scan method; unit expects
+89 units; full integration expects 89 units and 175 integrations. Existing latest
+migration assertions require formal V23 (23 migrations); the deliberate failure
+probe is V25, with V24 reserved for the execution workline. These remain assertions
+rather than additional methods. The coordinator explicitly authorized this exact
+inventory update; commands, zero-failure checks and resource guards stay fixed.
 Raw Maven logs, upload temp files, caches and EICAR bytes stay inside Linux. Only runtime
 versions, package names/versions, method identities and aggregate status JSON are exported
 under ignored `local-evidence/linux-tests/<run>/`. No XML properties/system-out, exception
@@ -41,3 +47,20 @@ run/source-labelled container IDs. `docker rm -v` includes their attached anonym
 volumes; no named-volume, network, prefix-based or project-wide deletion is performed.
 If daemon/identity/ownership changes, cleanup reports failure and refuses those mutations.
 This is independent of CI-owned browser acceptance; it sets no CI identity variables.
+
+Reviewer directory adds `BusinessFieldsDatabaseIT.reviewerDirectoryIsReadableByMembersBoundedSearchableAndRejectsForeignOrInactiveScope`, bringing the reviewed inventory to 89/175.
+
+The explicitly approved fixed focused command is `mvn -B -ntp -Pintegration verify -Dit.test=BusinessFieldsDatabaseIT,BusinessFieldsMigrationUpgradeIT`.
+It requires 89 units and all eight exact methods below; the full 175-method suite must also contain them.
+Any nonzero phase, missing/replaced/duplicate method, failure, error or skip stops before later phases; there is no retry.
+
+- BusinessFieldsDatabaseIT.fieldsPersistOnExactRevisionReplayAndHistory
+- BusinessFieldsDatabaseIT.customDefinitionRevisionsRemainFrozenAndCrossProjectIsRejected
+- BusinessFieldsDatabaseIT.reviewerRejectsForeignDisabledExpiredAndRevokedIdentitiesAndReplayReauthorizes
+- BusinessFieldsDatabaseIT.requirementAndDefectFieldsPersistAndStatusCopiesFrozenValues
+- BusinessFieldsDatabaseIT.runtimeSqlCannotRewriteSealedFieldsOrInsertForeignReviewerAndViewerCannotWrite
+- BusinessFieldsDatabaseIT.outboxFailureRollsBackBusinessFieldsAndIdempotency
+- BusinessFieldsDatabaseIT.reviewerDirectoryIsReadableByMembersBoundedSearchableAndRejectsForeignOrInactiveScope
+- BusinessFieldsMigrationUpgradeIT.nonemptyV22UpgradePreservesAllHistoricalContentAndRuntimeCannotRewriteIt
+
+`test_linux_test_runner` exercises actual phase progression, early stop for each failed phase, exact focused command selection, and reports with missing/replaced/duplicate/failed methods.

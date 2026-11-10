@@ -1,3 +1,5 @@
+import { parseBusinessFields } from './businessFields'
+import type { BusinessFieldValues } from './businessFields'
 import { requestJsonWithResponse } from './projectAccess'
 import { newIdempotencyKey } from './requirements'
 import type { AccessError, AccessRequestOptions } from './projectAccess'
@@ -10,6 +12,7 @@ export type TestStep = {
 }
 
 export type TestRevision = {
+  businessFields?: BusinessFieldValues
   id: string
   revisionNumber: number
   title: string
@@ -21,6 +24,7 @@ export type TestRevision = {
 }
 
 export type TestCase = {
+  businessFields?: BusinessFieldValues
   id: string
   projectId: string
   displayNumber: string
@@ -38,6 +42,7 @@ export type TestCase = {
 }
 
 export type TestCaseInput = {
+  businessFields?: BusinessFieldValues
   title: string
   description: string
   preconditions: string
@@ -83,7 +88,7 @@ const parseRevision = (value: unknown): TestRevision | null => {
   const steps = parseSteps(source.steps)
   const revisionNumber = isPositiveInteger(source.revisionNumber) ? source.revisionNumber : source.revisionNo
   if (!id || !isPositiveInteger(revisionNumber) || !isString(title) || !isString(description) || !isString(preconditions) || !isString(createdBy) || !isString(source.createdAt) || !steps) return null
-  return { id, revisionNumber, title, description, preconditions, createdAt: source.createdAt, createdBy, steps }
+  return { id, revisionNumber, title, description, preconditions, createdAt: source.createdAt, createdBy, steps, ...(source.businessFields===undefined?{}:{businessFields:parseBusinessFields(source.businessFields)}) }
 }
 
 const parseTestCase = (value: unknown, allowSummary = false): TestCase | null => {
@@ -110,6 +115,7 @@ const parseTestCase = (value: unknown, allowSummary = false): TestCase | null =>
     description: revision.description,
     preconditions: revision.preconditions,
     steps: revision.steps,
+    ...('businessFields' in revision?{businessFields:revision.businessFields}:{}),
     createdAt: value.createdAt,
     createdBy: value.createdBy,
   }
@@ -144,6 +150,7 @@ const intentKey = (scope: string, input: unknown) => `${scope}\u0000${JSON.strin
 
 const encodeInput = (input: TestCaseInput, preserveStepKeys = true, includeTestType = false) => ({
   ...(includeTestType ? { testType: 'MANUAL' } : {}),
+  ...(input.businessFields===undefined?{}:{businessFields:input.businessFields}),
   title: input.title,
   description: input.description,
   preconditions: input.preconditions,

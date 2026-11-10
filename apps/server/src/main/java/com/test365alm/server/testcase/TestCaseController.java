@@ -87,7 +87,7 @@ public class TestCaseController {
     private static String etag(long version) { return "\"" + version + "\""; }
 
     static final class CreateRequest {
-        private static final Set<String> FIELDS = Set.of("testType", "title", "description", "preconditions", "steps");
+        private static final Set<String> FIELDS = Set.of("testType", "title", "description", "preconditions", "steps", "businessFields");
         private final TestCaseService.CreateCommand command;
 
         private CreateRequest(TestCaseService.CreateCommand command) { this.command = command; }
@@ -100,14 +100,14 @@ public class TestCaseController {
             return new CreateRequest(new TestCaseService.CreateCommand(
                     requiredText(body.get("testType"), "testType"), text(body.get("title"), "title"),
                     text(body.get("description"), "description"), text(body.get("preconditions"), "preconditions"),
-                    parseSteps(steps, false)));
+                    parseSteps(steps, false), body.get("businessFields")));
         }
 
         TestCaseService.CreateCommand command() { return command; }
     }
 
     static final class RevisionRequest {
-        private static final Set<String> FIELDS = Set.of("title", "description", "preconditions", "steps");
+        private static final Set<String> FIELDS = Set.of("title", "description", "preconditions", "steps", "businessFields");
         private final TestCaseService.RevisionCommand command;
 
         private RevisionRequest(TestCaseService.RevisionCommand command) { this.command = command; }
@@ -118,7 +118,7 @@ public class TestCaseController {
             if (steps == null || steps.isNull()) throw new IllegalArgumentException("steps is required for a revision");
             return new RevisionRequest(new TestCaseService.RevisionCommand(
                     requiredText(body.get("title"), "title"), requiredText(body.get("description"), "description"),
-                    requiredText(body.get("preconditions"), "preconditions"), parseSteps(steps, true)));
+                    requiredText(body.get("preconditions"), "preconditions"), parseSteps(steps, true), body.get("businessFields")));
         }
 
         TestCaseService.RevisionCommand command() { return command; }

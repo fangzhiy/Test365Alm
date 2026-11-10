@@ -7,14 +7,16 @@ import DefectsPanel from './DefectsPanel'
 import { defectsApi } from './defectsApi'
 import type { Defect } from './defectsApi'
 import { historyApi } from './historyApi'
+import { reviewerApi } from './reviewerApi'
 vi.mock('./historyApi',()=>({historyApi:{list:vi.fn()}}))
 vi.mock('./DefectAttempt',()=>({default:()=>null}))
 vi.mock('./defectsApi',async()=>({...await vi.importActual<typeof import('./defectsApi')>('./defectsApi'),defectsApi:{list:vi.fn(),create:vi.fn(),get:vi.fn(),history:vi.fn(),verification:vi.fn(),retests:vi.fn(),edit:vi.fn(),transition:vi.fn(),retest:vi.fn()}}))
+vi.mock('./reviewerApi',()=>({reviewerApi:{list:vi.fn().mockResolvedValue({items:[{principalId:'reviewer-id',displayName:'张三'}],nextCursor:null})}}))
 const access={tenantId:'t',projectId:'p',principalId:'m',roles:['PROJECT_MEMBER'] as const,permissions:['defect:read','defect:create','defect:update','defect:transition','defect:history:read','run:write']}
 const c={title:'Bug',description:'reproduce',severity:'HIGH',priority:'MEDIUM'}
 const d={id:'d',projectId:'p',displayNumber:1,rowVersion:1,createdBy:'m',createdAt:'2026-10-16',currentRevision:{...c,id:'r1',defectId:'d',revisionNo:1,status:'OPEN' as const,reason:'',createdBy:'m',createdAt:'2026-10-16'},links:[]}
 function defaults(){vi.mocked(defectsApi.list).mockResolvedValue({items:[d],nextCursor:null});vi.mocked(defectsApi.get).mockResolvedValue(d);vi.mocked(defectsApi.history).mockResolvedValue({items:[d.currentRevision],nextCursor:null});vi.mocked(defectsApi.verification).mockResolvedValue({eligible:false,runId:null,attemptId:null,reason:'No PASS'});vi.mocked(defectsApi.retests).mockResolvedValue({items:[],nextCursor:null})}
-beforeEach(()=>{vi.mocked(historyApi.list).mockResolvedValue({items:[],nextCursor:null})})
+beforeEach(()=>{vi.mocked(reviewerApi.list).mockResolvedValue({items:[{principalId:'reviewer-id',displayName:'张三'}],nextCursor:null});vi.mocked(historyApi.list).mockResolvedValue({items:[],nextCursor:null})})
 afterEach(()=>{cleanup();vi.resetAllMocks();vi.useRealTimers()})
 it('audit history denial leaves defect detail editable and saving reloads audit history',async()=>{
  defaults();vi.mocked(historyApi.list).mockRejectedValueOnce({status:404}).mockResolvedValue({items:[],nextCursor:null})
@@ -72,4 +74,9 @@ it('StrictMode unmount aborts request and timeout preserves the original unknown
 })
 it('confirmed edit followed by failed GET retries only reads and preserves confirmation',async()=>{
  defaults();const u=userEvent.setup();render(<DefectsPanel projectId="p" access={access}/>);await u.click(await screen.findByRole('button',{name:/BUG-1/}));const detail=await screen.findByRole('region',{name:'缺陷详情'});await u.type(within(detail).getByLabelText('编辑缺陷描述'),' fixed');vi.mocked(defectsApi.edit).mockResolvedValue({...d,rowVersion:2,currentRevision:{...d.currentRevision,id:'r2',revisionNo:2}});await u.click(within(detail).getByRole('button',{name:'保存缺陷修订'}));await screen.findByText(/写入已确认/);expect(vi.mocked(defectsApi.edit).mock.calls[0][2]).toEqual({...c,description:'reproduce fixed'});vi.mocked(defectsApi.get).mockRejectedValueOnce(new Error('read unavailable'));await u.click(within(detail).getByRole('button',{name:'刷新缺陷详情'}));await screen.findByText('read unavailable');expect(detail).toHaveTextContent('v2');await u.click(within(detail).getByRole('button',{name:'刷新缺陷详情'}));await screen.findByText(/从服务器重新读取/);expect(defectsApi.edit).toHaveBeenCalledTimes(1)
+})
+it('unknown defect creation freezes department location and reviewer with the original retry key',async()=>{
+ defaults();vi.mocked(defectsApi.create).mockRejectedValueOnce(new TypeError('offline')).mockResolvedValueOnce(d);const u=userEvent.setup();render(<DefectsPanel projectId="p" access={access}/>);await screen.findByRole('button',{name:/BUG-1/})
+ await u.type(screen.getByLabelText('缺陷标题'),'Deviation');await u.type(screen.getByLabelText('发生部门'),'QA');await u.type(screen.getByLabelText('发生地点或系统'),'Line 1');await u.click(screen.getByRole('button',{name:'查找复核人'}));await u.selectOptions(await screen.findByLabelText('指定复核人'),'reviewer-id');await u.click(screen.getByRole('button',{name:'创建缺陷'}));await screen.findByRole('button',{name:'重试原创建意图'});expect(screen.getByLabelText('发生部门')).toBeDisabled();const first=vi.mocked(defectsApi.create).mock.calls[0];expect(first[1].businessFields).toEqual({occurrence_department:{value:'QA'},occurrence_location:{value:'Line 1'},reviewer:{value:'reviewer-id'}})
+ await u.click(screen.getByRole('button',{name:'重试原创建意图'}));await waitFor(()=>expect(defectsApi.create).toHaveBeenCalledTimes(2));expect(vi.mocked(defectsApi.create).mock.calls[1][1]).toEqual(first[1]);expect(vi.mocked(defectsApi.create).mock.calls[1][3]?.idempotencyKey).toBe(first[3]?.idempotencyKey)
 })

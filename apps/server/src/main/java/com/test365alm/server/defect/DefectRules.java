@@ -12,7 +12,7 @@ public final class DefectRules {
         "RESOLVED:CLOSED","RESOLVED:REOPENED","REOPENED:IN_PROGRESS","REOPENED:RESOLVED");
     public record Content(String title,String description,String severity,String priority) { }
     public static Content content(JsonNode n) {
-        FieldRules.fields(n,Set.of("title","description","severity","priority"));
+        FieldRules.fields(n,Set.of("title","description","severity","priority","businessFields"));
         String title=text(n,"title",500,true),description=text(n,"description",100000,false);
         String severity=text(n,"severity",20,true),priority=text(n,"priority",20,true);
         if(!LEVELS.contains(severity)||!LEVELS.contains(priority))throw ProjectAccessException.invalid("Unsupported severity or priority");
