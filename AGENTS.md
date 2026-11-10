@@ -9,7 +9,7 @@
 ## Claude 与 Codex 接力（以 Claude 为主）
 
 - 分工：Claude 负责大纲和主要代码；Claude 额度不够时由 Codex 在**同一个文件夹、同一个分支**上接着写，回来后 Claude 审查并继续。不为接力新开分支。
-- 分支：`dev` 是本地集成分支。每个功能从 `dev` 开 `feat/<功能>` 分支，完成后合并回 `dev`。
+- 分支与文件夹：`dev` 是本地集成分支，主文件夹 `D:\code\ProOrca\Wetest365ALM\Test365Alm` 固定停在 `dev`，只用来合并，不在里面写功能。每个功能用 Orca 从 `dev` 新建一个 worktree（分支 `feat/<功能>`，文件夹在 `C:\Users\22538\orca\workspaces\Test365Alm\<名字>`），Claude 和 Codex 都开在这个 worktree 里接力；完成后在主文件夹把它合并回 `dev`。
 - 交出方（额度快用完、或用户说"交接"时）：
   1. 提交全部改动，未完成也提交，提交信息以 `wip:` 开头；
   2. 写或覆盖 `docs/handoff/<分支名>.md`：目标、已完成、下一步（具体到文件/函数）、怎么验证、注意事项；
