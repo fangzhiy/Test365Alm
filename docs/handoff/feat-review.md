@@ -1,5 +1,19 @@
 # D 用例复核离线检查点
 
+## 最新父组件复核意图修复（2026-11-11，优先于下文）
+
+总管对 `b8c1bbe` 静态审查及独立42项守卫核对确认旧迁移/夹具与95/202库存保留，但发现父组件导航可卸载ReviewSession并丢失未知结果原意图，暂未放行Docker。本轮按续派仅修复这个前端边界，D1/D2仍待真实验收。
+
+修复只在 `TestCasesPanel.tsx`：同步记录复核锁所属project/完整accessKey/resetSignal，`load`、`selectTest`在同scope锁期间先返回，不能取消原请求或清空selected/detailReady；列表同条/其他条、查询输入和Enter表单、冲突查看最新遵守锁；原刷新/分页/目录禁用保留，迟到目录移动onMoved也经过load守卫。完整accessKey驱动scope读取，覆盖身份变化但权限相同的情形。真实项目/身份/权限/会话切换以及服务端范围失效仍正常清空、abort并隔离旧响应；没有将原命令搬到新持久框架，也不以新key恢复。
+
+可达性核对：刷新用例/Enter查询/分页/目录选择与onMoved汇入load；列表同条/其他条及冲突查看最新汇入selectTest；内容保存后的内部详情刷新原本受contentSaving互斥；历史修订只另开只读article，不替换当前ReviewSession，现有目录/历史刷新和附件权限失效回调保留。App项目/权限props与ReviewPanel确切scope key负责真实teardown。
+
+新增 `TestCasesPanel.reviewIntent.test.tsx` 实际组合父组件、ReviewPanel与FolderTree：9个导航入口×unknown/in-flight，原command/前三scope参数/ETag/key在第二次act保持完全相等且仅两次调用；另含迟到目录移动回调、成功及确定400/403/412/422解锁、401/404范围清空、项目/同权限新身份/viewer/read-loss/reset切换和迟到成功/失败隔离。最初32项为19失败/13通过（同条/其他条、Enter、迟到onMoved与同权限身份切换真实暴露问题，其余失败包含新增控件禁用断言）；修复后原相关66项通过，扩展后41项新回归在全套实际通过。初次TypeScript编译发现新夹具多余字段与TestingLibrary不支持exact参数，已修正，最终build成功。
+
+实际离线：完整Vitest **329通过/32文件**，0失败/跳过，JSON `local-evidence/review/intent-vitest.json`；M05/M06既有名称门禁对同JSON通过。完整Python **198通过**；lint exit0（8项既有warning，原复杂依赖表达式warning消失，无新增），build exit0；失败RED和中间结果在同忽略目录保留。后端与tools/全部4条e2e脚本相对b8c1bbe逐字不变：仍95单元/202full/66focus固定库存及原selector/阶段，故未为纯前端修复重跑后端。
+
+新经验 `l-2c2b1181` 记录父组件卸载为何会丢未知结果、Enter为何绕过disabled按钮，以及scope teardown为何必须继续工作；旧learning未修改。未启动Docker、服务或真实浏览器；未触碰W1、日常.env、Defender、禁止端口；无push/PR/merge dev。下一步总管审查此独立修复SHA并明确既定独占scan95/1→unit95→focused95/66→唯一full95/202，以及同源with-assets四条真实UI窗口；真实验证与精确清理仍NOT_RUN。
+
 ## 最新组合检查点（2026-11-11，优先于下文历史）
 
 已按总管正式续派在原 worktree/分支合流确切已验收 B+C `1b5ee2353f4b36ababb835dce2ababd1b98c0b9c`，合流提交 `7d84d59`；原 D `84eb68b` 与两份自动 dirty 均保留。未启动 Docker、产品服务、真实浏览器；未触碰 W1、日常 .env、Defender 或禁止端口。D1/D2 仍待真实验收，不能 worker_done。
