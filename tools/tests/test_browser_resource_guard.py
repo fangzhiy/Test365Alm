@@ -117,10 +117,19 @@ class BrowserResourceGuardTests(unittest.TestCase):
                 self.assertTrue(report["cleanup"])
                 self.assertEqual(1, report["exit_code"])
 
-    def test_only_three_exact_passes_without_retries_satisfy_browser_acceptance(self):
+    def test_only_four_exact_passes_without_retries_satisfy_browser_acceptance(self):
         report = {"status": "passed", "workers": 1, "retries": 0,
                   "cases": [{"name": name, "status": "passed", "expected": "passed", "retry": 0} for name in EXPECTED]}
         self.assertTrue(validate_results(report))
+        self.assertEqual(4,len(EXPECTED))
+        self.assertIn("real Keycloak UI designated reviewer rejects approves and new revision requires fresh review",EXPECTED)
+        for index in range(4):
+            missing={**report,"cases":report["cases"][:index]+report["cases"][index+1:]}
+            duplicate={**report,"cases":[*report["cases"][:index],report["cases"][(index+1)%4],*report["cases"][index+1:]]}
+            replacement={**report,"cases":[*report["cases"][:index],{**report["cases"][index],"name":"unapproved"},*report["cases"][index+1:]]}
+            replay={**report,"cases":[*report["cases"][:index],{**report["cases"][index],"retry":1},*report["cases"][index+1:]]}
+            for changed in (missing,duplicate,replacement,replay):self.assertFalse(validate_results(changed))
+
         for status in ("skipped", "failed", "timedOut"):
             changed = {**report, "cases": [{**report["cases"][0], "status": status}, *report["cases"][1:]]}
             self.assertFalse(validate_results(changed))

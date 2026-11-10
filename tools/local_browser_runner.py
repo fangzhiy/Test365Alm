@@ -1,6 +1,6 @@
 """Explicit one-use local-owned Keycloak acceptance. Never opts into CI identity.
 
-The three approved flows use a committed snapshot and fresh localhost services.
+The four required flows use a committed snapshot and fresh localhost services.
 Only exact manifest resources and directly created process handles are cleaned.
 """
 from __future__ import annotations
@@ -37,6 +37,7 @@ EXPECTED = {
     "real Keycloak UI manual test case flow creates steps, edits order, and keeps viewer read-only",
     "real Keycloak UI manual execution creates, resumes, finishes and reruns a two-step run",
     "real Keycloak UI member creates defect from FAIL retests PASS closes and preserves history",
+    "real Keycloak UI designated reviewer rejects approves and new revision requires fresh review",
 }
 
 
@@ -130,7 +131,7 @@ def wait_http(url: str, processes: list, seconds: int = 180) -> None:
 def validate_results(report: dict) -> bool:
     cases = report.get("cases", [])
     return (report.get("status") == "passed" and report.get("workers") == 1 and report.get("retries") == 0
-            and len(cases) == 3 and {c["name"] for c in cases} == EXPECTED
+            and len(cases) == 4 and {c["name"] for c in cases} == EXPECTED
             and all(c["status"] == "passed" and c["expected"] == "passed" and c["retry"] == 0 for c in cases))
 
 
@@ -266,7 +267,7 @@ def main() -> int:
             summary["scanner_provision"] = "PASSED"
         verify(resources, args.source, identities, env)
         command(["node", "node_modules/@playwright/test/cli.js", "test", "e2e/project-access.spec.ts", "e2e/manual-execution.spec.ts", "e2e/defects.spec.ts",
-                 "--config", "playwright.local.config.ts", "--grep", "real Keycloak UI (manual test case flow|manual execution creates|member creates defect)",
+                 "--config", "playwright.local.config.ts", "--grep", "real Keycloak UI (manual test case flow|manual execution creates|member creates defect|designated reviewer rejects approves)",
                  "--workers=1", "--retries=0"], root / "apps/web", "browser", timeout=720)
         report = json.loads((evidence / "results.json").read_text())
         result = 0 if validate_results(report) else 1

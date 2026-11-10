@@ -26,21 +26,21 @@ enabled and unprivileged. A separate disposable HTTP peer first checks
 method runs, followed by units, the fixed combined focused phase, and the full integration suite, sequentially. Each phase
 uses the same immutable source snapshot and runner. A failed phase stops progression.
 
-The accepted B source `23d138cda8fd6d34ec598064778b42b121175109` is now
-merged with C. The merged Java source has **93 unit methods in 30 suites** and
-**187 integration methods in 25 suites**, frozen by exact identity in
+The accepted B+C baseline `1b5ee2353f4b36ababb835dce2ababd1b98c0b9c` is now
+merged with D review. The merged Java source has **95 unit methods in 31 suites** and
+**202 integration methods in 27 suites**, frozen by exact identity in
 `combined-methods.json`. The offline inventory regression compares every Java
 `@Test` identity with that file and refuses unsupported test annotations. The
-current JDK21 unit execution also matched all 93 identities with zero F/E/S.
-The 187 inventory entries are not a passing integration result.
+current JDK21 unit execution also matched all 95 identities with zero F/E/S.
+The 202 inventory entries are not a passing integration result.
 
-The fixed scan/unit/focused/full phases require respectively 93/1, 93, 93/51
-and 93/187. Unit identities must match the complete frozen unit inventory in
+The fixed scan/unit/focused/full phases require respectively 95/1, 95, 95/66
+and 95/202. Unit identities must match the complete frozen unit inventory in
 every phase; full identities must match the complete integration inventory.
 Missing/replaced/duplicate methods and F/E/S remain failures. No arbitrary
-counts or selectors are accepted. Formal migrations are B V23 and C V24,
-24 actual files in this combined source; intentional failure remains V25.
-No migration V1-V23 was rewritten. Database/runtime/browser validation of the
+counts or selectors are accepted. Formal migrations include B V23, C V24 and D V25,
+25 actual files in this combined source; intentional failure is V26.
+No migration V1-V24 was rewritten. Database/runtime/browser validation of the
 combined source still needs the coordinator's reviewed exact source/window.
 
 Raw Maven logs, upload temp files, caches and EICAR bytes stay inside Linux. Only runtime
@@ -57,7 +57,7 @@ This is independent of CI-owned browser acceptance; it sets no CI identity varia
 ## Fixed combined focused gate
 
 Reuses B's reviewed phase facility from `55490a957879d5c1b5a476813ca32c3c72d62042`.
-The coordinator approved C43 plus B8, requiring all **51 exact method identities**
+The original C43 plus B8 are preserved alongside D15, requiring all **66 exact method identities**
 in `linux_test_inside.FOCUSED_METHODS` in both focused and full reports. The selector
 is compiled into `PHASES`; no arbitrary selector/count CLI parameters are accepted.
 
@@ -73,6 +73,10 @@ is compiled into `PHASES`; no arbitrary selector/count CLI parameters are accept
 | DefectMigrationUpgradeIT | 1 |
 | ReleaseMigrationUpgradeIT | 1 |
 | AssetProvisioningUpgradeIT#upgradedDatabaseUsesProvisionedRestrictedScannerLogin | 1 |
+| TestReviewDatabaseIT | 12 |
+| TestReviewMigrationUpgradeIT (nonempty V24 to V25) | 1 |
+| OidcCallbackSecurityIT#realOidcReviewHttpDesignatedIdentityCsrfVersionsReplayAndImmutableRevision | 1 |
+| OidcCallbackSecurityIT#realOidcReviewHttpOldSessionsReauthorizeReviewerAndActorAfterRevocation | 1 |
 
 The second AssetProvisioningUpgradeIT method is deliberately outside this approved
 focus; the full phase still runs it. Missing, substituted, duplicate or extra focused
@@ -81,5 +85,13 @@ progression without retry. The scan phase also requires the exact real clean/EIC
 method identity. Offline regressions are in `test_execution_focus` and the existing
 `test_linux_test_runner`; their synthetic reports do not count as real execution.
 Do not start Docker before the coordinator supplies the final combined source and
-serial execution window. B's accepted runtime/test/facility tree is merged here;
-C's combined real execution remains NOT_RUN.
+serial execution window. B+C's accepted runtime/test/facility tree is merged here;
+D's combined real execution remains NOT_RUN.
+
+The local browser invocation must explicitly include real assets:
+`python tools/local_browser_runner.py --source <exact-40-character-commit> --with-assets`.
+Its fixed four flows preserve the test-case, execution and defect lifecycles and add
+`real Keycloak UI designated reviewer rejects approves and new revision requires fresh review`.
+The sanitized reporter records actual identities, workers, retries and statuses;
+the guard requires all four exact unique names, one worker, zero retries and no
+failure, error, skip or unexpected status. Discovery is not browser acceptance.
