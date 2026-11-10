@@ -53,3 +53,7 @@ describe('requirements API transport contracts', () => {
     await expect(requirementsApi.update('project-1', { ...requirement, etag: undefined }, { title: 'Next', body: 'Body' })).rejects.toMatchObject({ code: 'MISSING_ETAG' })
   })
 })
+it('keeps requirement business fields in both the HTTP payload and the frozen response',async()=>{
+ const fields={equipment_system_id:{value:'SYS-01'},owning_department:{value:'QA'}};const writes:unknown[]=[];vi.stubGlobal('fetch',vi.fn(async(path:RequestInfo|URL,init?:RequestInit)=>{if(String(path).endsWith('/csrf'))return new Response(JSON.stringify({headerName:'X-CSRF-TOKEN',token:'synthetic'}));if(init?.body)writes.push(JSON.parse(String(init.body)));return new Response(JSON.stringify({...requirement,businessFields:fields}),{headers:{ETag:'"1"'}})}))
+ const saved=await requirementsApi.create('project-1',{title:'Login',body:'Body',businessFields:fields});expect(saved.businessFields).toEqual(fields);expect(writes[0]).toMatchObject({businessFields:fields})
+})

@@ -1,3 +1,4 @@
+import { businessLabels } from './businessFields'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { historyApi } from './historyApi'
 import type { HistoryEntry, HistoryObjectType } from './historyApi'
@@ -14,6 +15,7 @@ const fields: Record<string, string> = {
   action: '动作', expected: '预期', ordinal: '序号', actualResult: '实际结果',
 }
 function fieldLabel(field: string) {
+  if(field.startsWith('businessFields.')){const key=field.split('.')[1];return (businessLabels[key]??key)+(field.endsWith('.definition')?' 字段定义':'')}
   const step = /^steps\[(\d+)\](?:\.(.+))?$/.exec(field)
   return step ? `步骤 ${step[1]}${step[2] ? ` ${fields[step[2]] ?? step[2]}` : ''}` : fields[field] ?? field
 }

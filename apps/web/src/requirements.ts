@@ -1,3 +1,5 @@
+import { parseBusinessFields } from './businessFields'
+import type { BusinessFieldValues } from './businessFields'
 import { requestJson, requestJsonWithResponse } from './projectAccess'
 import type { AccessError, AccessRequestOptions } from './projectAccess'
 
@@ -6,6 +8,7 @@ import type { AccessError, AccessRequestOptions } from './projectAccess'
 export { requestJson }
 
 export type RequirementRevision = {
+  businessFields?: BusinessFieldValues
   id: string
   revisionNumber: number
   title: string
@@ -16,6 +19,7 @@ export type RequirementRevision = {
 }
 
 export type Requirement = {
+  businessFields?: BusinessFieldValues
   id: string
   projectId: string
   displayNumber: string
@@ -31,7 +35,7 @@ export type Requirement = {
 }
 
 export type RequirementPage = { items: Requirement[]; nextCursor?: string | null }
-export type RequirementInput = { title: string; body: string }
+export type RequirementInput = { businessFields?: BusinessFieldValues; title: string; body: string }
 
 export const newIdempotencyKey = () => typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `web-${Date.now()}-${Math.random().toString(16).slice(2)}`
 
@@ -53,14 +57,14 @@ const parseRequirement = (value: unknown): Requirement | null => {
   if (!displayNumber) return null
   if (!isPriority(value.priority)) return null
   const priority = value.priority
-  return { id: value.id, projectId: value.projectId, displayNumber, title, body, priority, revisionNumber, rowVersion: value.rowVersion, etag: isString(value.etag) ? value.etag : undefined, createdAt: value.createdAt, createdBy: value.createdBy, currentRevisionId: value.currentRevisionId }
+  return { ...(value.businessFields===undefined?{}:{businessFields:parseBusinessFields(value.businessFields)}), id: value.id, projectId: value.projectId, displayNumber, title, body, priority, revisionNumber, rowVersion: value.rowVersion, etag: isString(value.etag) ? value.etag : undefined, createdAt: value.createdAt, createdBy: value.createdBy, currentRevisionId: value.currentRevisionId }
 }
 
 const parseRevision = (value: unknown): RequirementRevision | null => {
   const revisionId = isRecord(value) && (isString(value.id) ? value.id : isString(value.revisionId) ? value.revisionId : null)
   const createdBy = isRecord(value) && (isString(value.createdBy) ? value.createdBy : isString(value.authorPrincipalId) ? value.authorPrincipalId : isString(value.author) ? value.author : null)
   if (!isRecord(value) || !revisionId || !isPositiveInteger(value.revisionNumber) || !isString(value.title) || !isString(value.body) || !isPriority(value.priority) || !isString(value.createdAt) || !createdBy) return null
-  return { id: revisionId, revisionNumber: value.revisionNumber, title: value.title, body: value.body, priority: value.priority, createdAt: value.createdAt, createdBy }
+  return { ...(value.businessFields===undefined?{}:{businessFields:parseBusinessFields(value.businessFields)}), id: revisionId, revisionNumber: value.revisionNumber, title: value.title, body: value.body, priority: value.priority, createdAt: value.createdAt, createdBy }
 }
 
 const parsePage = (body: unknown): RequirementPage => {
@@ -94,7 +98,7 @@ export const requirementsApi = {
     const intent = intentKey(`create:${projectId}`, input)
     const key = options?.idempotencyKey ?? pendingIntentKeys.get(intent) ?? newIdempotencyKey()
     if (!options?.idempotencyKey) pendingIntentKeys.set(intent, key)
-    const result = await requestJsonWithResponse(`/api/v1/projects/${encodeURIComponent(projectId)}/requirements`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify({ title: input.title, body: input.body }) }, options)
+    const result = await requestJsonWithResponse(`/api/v1/projects/${encodeURIComponent(projectId)}/requirements`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key }, body: JSON.stringify({ title: input.title, body: input.body, ...(input.businessFields===undefined?{}:{businessFields:input.businessFields}) }) }, options)
     const parsed = parseOne(result.body, responseEtag(result.response)); pendingIntentKeys.delete(intent); return parsed
   },
   async update(projectId: string, requirement: Requirement, input: RequirementInput, options?: AccessRequestOptions): Promise<Requirement> {
@@ -102,7 +106,7 @@ export const requirementsApi = {
     const intent = intentKey(`update:${projectId}:${requirement.id}:${requirement.etag}`, input)
     const key = options?.idempotencyKey ?? pendingIntentKeys.get(intent) ?? newIdempotencyKey()
     if (!options?.idempotencyKey) pendingIntentKeys.set(intent, key)
-    const result = await requestJsonWithResponse(`/api/v1/projects/${encodeURIComponent(projectId)}/requirements/${encodeURIComponent(requirement.id)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key, 'If-Match': requirement.etag }, body: JSON.stringify({ title: input.title, body: input.body }) }, options)
+    const result = await requestJsonWithResponse(`/api/v1/projects/${encodeURIComponent(projectId)}/requirements/${encodeURIComponent(requirement.id)}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key, 'If-Match': requirement.etag }, body: JSON.stringify({ title: input.title, body: input.body, ...(input.businessFields===undefined?{}:{businessFields:input.businessFields}) }) }, options)
     const parsed = parseOne(result.body, responseEtag(result.response)); pendingIntentKeys.delete(intent); return parsed
   },
   async revisions(projectId: string, requirementId: string, options?: AccessRequestOptions): Promise<RequirementRevision[]> {

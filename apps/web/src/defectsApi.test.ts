@@ -18,3 +18,7 @@ it('shared HTTP serializer excludes readonly revision metadata from create and e
  await defectsApi.create('p',revision,null,{idempotencyKey:'original-key'});await defectsApi.edit('p',d,revision,{idempotencyKey:'edit-key'})
  const calls=fetch.mock.calls as unknown as [RequestInfo,RequestInit][];const writes=calls.filter(([path])=>String(path).includes('/defects'));expect(writes).toHaveLength(2);for(const [,init]of writes)expect(JSON.parse(String(init.body))).toEqual(c);expect(new Headers(writes[1][1].headers).get('If-Match')).toBe('"1"')
 })
+it('preserves business fields while excluding readonly defect metadata from writes',async()=>{
+ const businessFields={occurrence_location:{value:'System 1'}};const content={title:'Bug',description:'d',severity:'HIGH',priority:'MEDIUM',businessFields};const d={id:'bug',projectId:'p',displayNumber:1,rowVersion:1,createdBy:'member',createdAt:'date',currentRevision:{...content,id:'r',defectId:'bug',revisionNo:1,status:'OPEN',reason:'',createdBy:'member',createdAt:'date'},links:[]};const writes:unknown[]=[]
+ vi.stubGlobal('fetch',vi.fn(async(path:RequestInfo|URL,init?:RequestInit)=>{if(String(path).endsWith('/csrf'))return new Response(JSON.stringify({headerName:'X-CSRF-TOKEN',token:'synthetic'}));if(init?.body)writes.push(JSON.parse(String(init.body)));return new Response(JSON.stringify(d),{headers:{ETag:'"1"'}})}));expect((await defectsApi.create('p',content,null,{idempotencyKey:'fields-001'})).currentRevision.businessFields).toEqual(businessFields);expect(writes[0]).toEqual(content)
+})

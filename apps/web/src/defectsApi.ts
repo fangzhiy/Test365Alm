@@ -1,9 +1,11 @@
+import { parseBusinessFields } from './businessFields'
+import type { BusinessFieldValues } from './businessFields'
 import { requestJson, requestJsonWithResponse } from './projectAccess'
 import type { AccessRequestOptions } from './projectAccess'
 export type DefectStatus = 'OPEN'|'IN_PROGRESS'|'RESOLVED'|'CLOSED'|'REOPENED'
-export type DefectContent = { title: string; description: string; severity: string; priority: string }
+export type DefectContent = { businessFields?: BusinessFieldValues; title: string; description: string; severity: string; priority: string }
 export const emptyDefect = ():DefectContent=>({title:'',description:'',severity:'MEDIUM',priority:'MEDIUM'})
-export const defectContent = (v:DefectContent):DefectContent=>({title:v.title,description:v.description,severity:v.severity,priority:v.priority})
+export const defectContent = (v:DefectContent):DefectContent=>({title:v.title,description:v.description,severity:v.severity,priority:v.priority,...(v.businessFields===undefined?{}:{businessFields:v.businessFields})})
 export type DefectRevision = DefectContent & { id: string; defectId: string; revisionNo: number; status: DefectStatus; reason: string; createdBy: string; createdAt: string }
 export type DefectSource = { runId: string; attemptId: string; stepKey: string }
 export type DefectLink = { id: string; kind: 'RUN_STEP'|'REQUIREMENT'; requirementId: string|null; requirementRevisionId: string|null; testCaseId: string|null; testRevisionId: string|null; runId: string|null; attemptId: string|null; stepKey: string|null; actualResult: string|null; expectedResult: string|null; sourceConclusion: string|null; sourceVersion: number|null }
@@ -20,7 +22,7 @@ const levels = ['LOW','MEDIUM','HIGH','CRITICAL']
 const invalid = (): never => { throw {code:'INVALID_RESPONSE',message:'缺陷接口返回了无效数据'} }
 function revision(v: unknown): DefectRevision {
  if(!record(v)||!['id','defectId','createdBy','createdAt'].every(k=>id(v[k]))||!['title','description','reason'].every(k=>str(v[k]))||!integer(v.revisionNo)||!levels.includes(String(v.severity))||!levels.includes(String(v.priority))||!statuses.includes(String(v.status)))return invalid()
- return v as DefectRevision
+ return {...v,...(v.businessFields===undefined?{}:{businessFields:parseBusinessFields(v.businessFields)})} as DefectRevision
 }
 function link(v: unknown): DefectLink {
  if(!record(v)||!id(v.id)||!['RUN_STEP','REQUIREMENT'].includes(String(v.kind)))return invalid()
