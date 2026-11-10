@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.JsonNode;
 import com.test365alm.server.core.CoreCommands;
+import com.test365alm.server.businessfields.BusinessFields;
 import com.test365alm.server.project.*;
 
 /** All commands run on the restricted datasource inside one advised transaction. */
@@ -35,7 +36,7 @@ public class DefectService {
   long number=jdbc.queryForObject("UPDATE defect_number_allocator SET next_number=next_number+1 WHERE tenant_id=? AND project_id=? RETURNING next_number-1",Long.class,p.tenantId(),project);
   UUID id=UUID.randomUUID(),revision=UUID.randomUUID();
   jdbc.update("INSERT INTO defect(tenant_id,project_id,id,display_number,row_version,status,title,severity,priority,current_revision_id,created_by) VALUES(?,?,?,?,1,'OPEN',?,?,?,?,?)",p.tenantId(),project,id,number,c.title(),c.severity(),c.priority(),revision,actor);
-  append(p,actor,id,revision,1,c,"OPEN","");evidence.insert(p,actor,id,sources);
+  append(p,actor,id,revision,1,c,"OPEN","",BusinessFields.normalize("defect",body.get("businessFields"),jdbc,p));evidence.insert(p,actor,id,sources);
   var result=read(p,id);event(p,actor,result,"defect.created");commands.save(p,actor,route,key,hash,result);return result;
  }
  @Transactional public DefectView edit(UUID actor,UUID project,UUID id,JsonNode body,String tag,String key){
@@ -44,7 +45,7 @@ public class DefectService {
   var replay=commands.replay(p,actor,route,key,hash,DefectView.class);if(replay!=null)return replay;
   var old=read(p,id);checkVersion(old,version);
   if(old.currentRevision().status().equals("CLOSED"))throw ProjectAccessException.conflict("DEFECT_CLOSED","Closed defect is immutable");
-  UUID revision=UUID.randomUUID();append(p,actor,id,revision,version+1,c,old.currentRevision().status(),old.currentRevision().reason());
+  UUID revision=UUID.randomUUID();append(p,actor,id,revision,version+1,c,old.currentRevision().status(),old.currentRevision().reason(),BusinessFields.normalize("defect",body.has("businessFields")?body.get("businessFields"):old.currentRevision().businessFields(),jdbc,p));
   update(p,id,revision,version+1,c,old.currentRevision().status(),null,false);
   var result=read(p,id);event(p,actor,result,"defect.revised");commands.save(p,actor,route,key,hash,result);return result;
  }
@@ -56,7 +57,7 @@ public class DefectService {
   if(status.equals("CLOSED") && old.links().stream().anyMatch(l->l.kind().equals("RUN_STEP")) && !evidence.verification(p,id).eligible())
    throw ProjectAccessException.conflict("RETEST_PASS_REQUIRED","A successful related retest in this resolution cycle is required");
   var c=new DefectRules.Content(r.title(),r.description(),r.severity(),r.priority());UUID revision=UUID.randomUUID();
-  append(p,actor,id,revision,version+1,c,status,reason);update(p,id,revision,version+1,c,status,revision,status.equals("RESOLVED"));
+  append(p,actor,id,revision,version+1,c,status,reason,r.businessFields());update(p,id,revision,version+1,c,status,revision,status.equals("RESOLVED"));
   var result=read(p,id);event(p,actor,result,"defect.transitioned");commands.save(p,actor,route,key,hash,result);return result;
  }
  @Transactional public DefectEvidence.RetestStart retest(UUID actor,UUID project,UUID id,String tag,String key){
@@ -92,8 +93,8 @@ public class DefectService {
   var r=jdbc.queryForObject("SELECT * FROM defect_revision WHERE tenant_id=? AND project_id=? AND defect_id=? AND revision_no=?",DefectService::revision,p.tenantId(),p.id(),id,d.rowVersion());
   return new DefectView(id,p.id(),d.displayNumber(),d.rowVersion(),d.createdBy(),d.createdAt(),r,evidence.links(p,id));
  }
- private void append(ProjectService.ProjectView p,UUID actor,UUID id,UUID revision,long version,DefectRules.Content c,String status,String reason){
-  jdbc.update("INSERT INTO defect_revision(tenant_id,project_id,defect_id,id,revision_no,title,description,severity,priority,status,reason,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",p.tenantId(),p.id(),id,revision,version,c.title(),c.description(),c.severity(),c.priority(),status,reason,actor);
+ private void append(ProjectService.ProjectView p,UUID actor,UUID id,UUID revision,long version,DefectRules.Content c,String status,String reason,JsonNode fields){
+  jdbc.update("INSERT INTO defect_revision(tenant_id,project_id,defect_id,id,revision_no,title,description,severity,priority,status,reason,created_by,business_fields) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?::jsonb)",p.tenantId(),p.id(),id,revision,version,c.title(),c.description(),c.severity(),c.priority(),status,reason,actor,fields.toString());
  }
  private void update(ProjectService.ProjectView p,UUID id,UUID revision,long version,DefectRules.Content c,String status,UUID resolution,boolean resolving){
   jdbc.update("UPDATE defect SET row_version=?,current_revision_id=?,title=?,severity=?,priority=?,status=?,resolved_revision_id=CASE WHEN ? THEN ? ELSE resolved_revision_id END WHERE tenant_id=? AND project_id=? AND id=?",version,revision,c.title(),c.severity(),c.priority(),status,resolving,resolution,p.tenantId(),p.id(),id);
@@ -104,7 +105,7 @@ public class DefectService {
   jdbc.update("INSERT INTO defect_outbox_event(tenant_id,project_id,defect_id,object_revision,event_type,payload) VALUES(?,?,?,?,?,?::jsonb)",p.tenantId(),p.id(),d.id(),d.currentRevision().id(),action,json);
  }
  private static void checkVersion(DefectView d,long v){if(d.rowVersion()!=v)throw ProjectAccessException.preconditionFailed("STALE_VERSION","Defect changed; read latest explicitly");}
- private static Revision revision(ResultSet r,int i)throws SQLException{return new Revision(r.getObject("id",UUID.class),r.getObject("defect_id",UUID.class),r.getLong("revision_no"),r.getString("title"),r.getString("description"),r.getString("severity"),r.getString("priority"),r.getString("status"),r.getString("reason"),r.getObject("created_by",UUID.class),r.getObject("created_at",OffsetDateTime.class));}
- public record Revision(UUID id,UUID defectId,long revisionNo,String title,String description,String severity,String priority,String status,String reason,UUID createdBy,OffsetDateTime createdAt){}
+ private static Revision revision(ResultSet r,int i)throws SQLException{return new Revision(r.getObject("id",UUID.class),r.getObject("defect_id",UUID.class),r.getLong("revision_no"),r.getString("title"),r.getString("description"),r.getString("severity"),r.getString("priority"),r.getString("status"),r.getString("reason"),r.getObject("created_by",UUID.class),r.getObject("created_at",OffsetDateTime.class),BusinessFields.read(r.getString("business_fields")));}
+ public record Revision(UUID id,UUID defectId,long revisionNo,String title,String description,String severity,String priority,String status,String reason,UUID createdBy,OffsetDateTime createdAt,JsonNode businessFields){ public Revision(UUID id,UUID defectId,long revisionNo,String title,String description,String severity,String priority,String status,String reason,UUID createdBy,OffsetDateTime createdAt){this(id,defectId,revisionNo,title,description,severity,priority,status,reason,createdBy,createdAt,null);} }
  public record DefectView(UUID id,UUID projectId,long displayNumber,long rowVersion,UUID createdBy,OffsetDateTime createdAt,Revision currentRevision,List<DefectEvidence.Link> links){}
 }

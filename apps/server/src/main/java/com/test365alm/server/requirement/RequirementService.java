@@ -4,6 +4,9 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.sql.ResultSet;
+import tools.jackson.databind.JsonNode;
+import com.test365alm.server.businessfields.BusinessFields;
+import com.test365alm.server.core.CoreCommands;
 import java.sql.SQLException;
 import java.time.OffsetDateTime;
 import java.util.HexFormat;
@@ -46,10 +49,12 @@ public class RequirementService {
         validateIdempotencyKey(idempotencyKey);
         CreateCommand normalized = normalizeCreate(command);
         String hash = requestHash(normalized.title(), normalized.body(), normalized.priority());
+        if(normalized.businessFields()!=null) hash=CoreCommands.hash(hash,BusinessFields.hash(normalized.businessFields()));
         IdempotencyRecord replay = claimOrReplay(project.tenantId(), projectId, actor, CREATE_ROUTE,
                 idempotencyKey, hash);
         if (replay != null) return replayView(actor, projectId, replay);
 
+        JsonNode fields=BusinessFields.normalize("requirement",normalized.businessFields(),jdbc,project);
         UUID requirementId = UUID.randomUUID();
         UUID revisionId = UUID.randomUUID();
         long displayNumber = allocateNumber(project.tenantId(), projectId);
@@ -60,15 +65,15 @@ public class RequirementService {
                     """, project.tenantId(), projectId, requirementId, displayNumber, actor);
             jdbc.update("""
                     INSERT INTO requirement_revision
-                        (tenant_id, project_id, id, requirement_id, revision_no, title, body, priority, created_by)
-                    VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?)
+                        (tenant_id, project_id, id, requirement_id, revision_no, title, body, priority, created_by, business_fields)
+                    VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?::jsonb)
                     """, project.tenantId(), projectId, revisionId, requirementId,
-                    normalized.title(), normalized.body(), normalized.priority(), actor);
+                    normalized.title(), normalized.body(), normalized.priority(), actor, fields.toString());
             jdbc.update("""
                     UPDATE requirement SET current_revision_id = ?, updated_at = CURRENT_TIMESTAMP
                     WHERE tenant_id = ? AND project_id = ? AND id = ?
                     """, revisionId, project.tenantId(), projectId, requirementId);
-            String hashValue = contentHash(normalized.title(), normalized.body(), normalized.priority());
+            String hashValue = CoreCommands.hash(contentHash(normalized.title(), normalized.body(), normalized.priority()),BusinessFields.hash(fields));
             appendAudit(project.tenantId(), projectId, actor, "requirement.created", requirementId, 1,
                     null, hashValue);
             appendOutbox(project.tenantId(), projectId, requirementId, revisionId, "requirement.created");
@@ -106,7 +111,7 @@ public class RequirementService {
         List<RequirementView> fetched = jdbc.query("""
                 SELECT r.id, r.tenant_id, r.project_id, r.display_number, r.row_version,
                        r.created_at, r.created_by, rr.id AS revision_id, rr.revision_no,
-                       rr.title, rr.body, rr.priority
+                       rr.title, rr.body, rr.priority, rr.business_fields
                 FROM requirement r JOIN requirement_revision rr
                   ON rr.tenant_id = r.tenant_id AND rr.project_id = r.project_id
                  AND rr.id = r.current_revision_id
@@ -131,7 +136,7 @@ public class RequirementService {
         List<RequirementView> values = jdbc.query("""
                 SELECT r.id, r.tenant_id, r.project_id, r.display_number, r.row_version,
                        r.created_at, r.created_by, rr.id AS revision_id, rr.revision_no,
-                       rr.title, rr.body, rr.priority
+                       rr.title, rr.body, rr.priority, rr.business_fields
                 FROM requirement r JOIN requirement_revision rr
                   ON rr.tenant_id = r.tenant_id AND rr.project_id = r.project_id
                  AND rr.id = r.current_revision_id
@@ -155,6 +160,7 @@ public class RequirementService {
         // replay an update that was authorized against another revision.
         String hash = requestHash(requirementId.toString(), Long.toString(expected),
                 patch.title(), patch.body(), patch.priority());
+        if(patch.businessFields()!=null) hash=CoreCommands.hash(hash,BusinessFields.hash(patch.businessFields()));
         IdempotencyRecord replay = claimOrReplay(project.tenantId(), projectId, actor, UPDATE_ROUTE + ":" + requirementId,
                 idempotencyKey, hash);
         if (replay != null) return replayView(actor, projectId, replay);
@@ -167,7 +173,8 @@ public class RequirementService {
         String title = patch.title() == null ? current.title() : requiredTitle(patch.title());
         String body = patch.body() == null ? current.body() : requiredBody(patch.body());
         String priority = patch.priority() == null ? current.priority() : normalizePriority(patch.priority());
-        if (title.equals(current.title()) && body.equals(current.body()) && priority.equals(current.priority())) {
+        JsonNode fields=BusinessFields.normalize("requirement",patch.businessFields()==null?current.businessFields():patch.businessFields(),jdbc,project);
+        if (fields.equals(current.businessFields()) && title.equals(current.title()) && body.equals(current.body()) && priority.equals(current.priority())) {
             RequirementView result = getAuthorized(actor, projectId, requirementId);
             saveIdempotency(project.tenantId(), projectId, actor,
                     UPDATE_ROUTE + ":" + requirementId, idempotencyKey, result);
@@ -182,9 +189,9 @@ public class RequirementService {
         // if the pointer CAS or audit/outbox write fails.
         jdbc.update("""
                 INSERT INTO requirement_revision
-                    (tenant_id, project_id, id, requirement_id, revision_no, title, body, priority, created_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, project.tenantId(), projectId, revisionId, requirementId, nextRevision, title, body, priority, actor);
+                    (tenant_id, project_id, id, requirement_id, revision_no, title, body, priority, created_by, business_fields)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb)
+                """, project.tenantId(), projectId, revisionId, requirementId, nextRevision, title, body, priority, actor, fields.toString());
         int updated = jdbc.update("""
                 UPDATE requirement SET row_version = row_version + 1,
                     current_revision_id = ?, updated_at = CURRENT_TIMESTAMP
@@ -193,8 +200,8 @@ public class RequirementService {
         if (updated != 1) {
             throw ProjectAccessException.preconditionFailed("STALE_VERSION", "Requirement was changed by another request");
         }
-        String beforeHash = contentHash(current.title(), current.body(), current.priority());
-        String afterHash = contentHash(title, body, priority);
+        String beforeHash = CoreCommands.hash(contentHash(current.title(), current.body(), current.priority()),BusinessFields.hash(current.businessFields()));
+        String afterHash = CoreCommands.hash(contentHash(title, body, priority),BusinessFields.hash(fields));
         appendAudit(project.tenantId(), projectId, actor, "requirement.updated", requirementId, nextRevision,
                 beforeHash, afterHash);
         appendOutbox(project.tenantId(), projectId, requirementId, revisionId, "requirement.updated");
@@ -210,7 +217,7 @@ public class RequirementService {
         ProjectService.ProjectView project = projects.getProject(actor, projectId);
         setContext(project.tenantId(), actor, projectId);
         return jdbc.query("""
-                SELECT rr.id, rr.requirement_id, rr.revision_no, rr.title, rr.body, rr.priority,
+                SELECT rr.id, rr.requirement_id, rr.revision_no, rr.title, rr.body, rr.priority, rr.business_fields,
                        rr.created_at, rr.created_by
                 FROM requirement_revision rr
                 WHERE rr.tenant_id = ? AND rr.project_id = ? AND rr.requirement_id = ?
@@ -224,7 +231,7 @@ public class RequirementService {
         ProjectService.ProjectView project = projects.getProject(actor, projectId);
         setContext(project.tenantId(), actor, projectId);
         List<RevisionView> values = jdbc.query("""
-                SELECT rr.id, rr.requirement_id, rr.revision_no, rr.title, rr.body, rr.priority,
+                SELECT rr.id, rr.requirement_id, rr.revision_no, rr.title, rr.body, rr.priority, rr.business_fields,
                        rr.created_at, rr.created_by
                 FROM requirement_revision rr
                 WHERE rr.tenant_id = ? AND rr.project_id = ? AND rr.requirement_id = ? AND rr.id = ?
@@ -244,7 +251,7 @@ public class RequirementService {
     private RequirementRow lockCurrent(UUID tenantId, UUID projectId, UUID requirementId) {
         List<RequirementRow> values = jdbc.query("""
                 SELECT r.id, r.row_version, r.current_revision_id, rr.revision_no,
-                       rr.title, rr.body, rr.priority
+                       rr.title, rr.body, rr.priority, rr.business_fields
                 FROM requirement r JOIN requirement_revision rr
                   ON rr.tenant_id = r.tenant_id AND rr.project_id = r.project_id
                  AND rr.id = r.current_revision_id
@@ -253,7 +260,7 @@ public class RequirementService {
                 """, (rs, row) -> new RequirementRow(rs.getObject("id", UUID.class),
                         rs.getLong("row_version"), rs.getObject("current_revision_id", UUID.class),
                         rs.getLong("revision_no"), rs.getString("title"), rs.getString("body"),
-                        rs.getString("priority")), tenantId, projectId, requirementId);
+                        rs.getString("priority"),BusinessFields.read(rs.getString("business_fields"))), tenantId, projectId, requirementId);
         return values.isEmpty() ? null : values.get(0);
     }
 
@@ -297,7 +304,7 @@ public class RequirementService {
                 SELECT request_hash, requirement_id, revision_id, replay_compatible,
                        result_display_number,
                        result_row_version, result_revision_no, result_title, result_body,
-                       result_priority, result_created_at, result_created_by
+                       result_priority, result_created_at, result_created_by, result_business_fields
                 FROM requirement_idempotency
                 WHERE tenant_id = ? AND project_id = ? AND principal_id = ?
                   AND route = ? AND idempotency_key = ? AND expires_at > CURRENT_TIMESTAMP
@@ -328,11 +335,11 @@ public class RequirementService {
                     replay_compatible = TRUE,
                     result_display_number = ?, result_row_version = ?, result_revision_no = ?,
                     result_title = ?, result_body = ?, result_priority = ?,
-                    result_created_at = ?, result_created_by = ?
+                    result_created_at = ?, result_created_by = ?, result_business_fields = ?::jsonb
                 WHERE tenant_id = ? AND project_id = ? AND principal_id = ? AND route = ? AND idempotency_key = ?
                 """, result.id(), result.currentRevisionId(), result.displayNumber(), result.rowVersion(),
                 result.revisionNumber(), result.title(), result.body(), result.priority(), result.createdAt(),
-                result.createdBy(), tenantId, projectId, principalId, route, key);
+                result.createdBy(), result.businessFields().toString(), tenantId, projectId, principalId, route, key);
     }
 
     private RequirementView replayView(UUID actor, UUID projectId, IdempotencyRecord replay) {
@@ -356,7 +363,7 @@ public class RequirementService {
         return new RequirementView(id, projectId, number, version,
                 rs.getObject("result_created_at", OffsetDateTime.class),
                 rs.getObject("result_created_by", UUID.class), revisionId, revisionNo,
-                rs.getString("result_title"), rs.getString("result_body"), rs.getString("result_priority"));
+                rs.getString("result_title"), rs.getString("result_body"), rs.getString("result_priority"), BusinessFields.read(rs.getString("result_business_fields")));
     }
 
     private void appendAudit(UUID tenantId, UUID projectId, UUID actor, String action, UUID requirementId,
@@ -389,11 +396,11 @@ public class RequirementService {
 
     private static CreateCommand normalizeCreate(CreateCommand command) {
         if (command == null) throw ProjectAccessException.invalid("request body is required");
-        return new CreateCommand(requiredTitle(command.title()), requiredBody(command.body()), normalizePriority(command.priority()));
+        return new CreateCommand(requiredTitle(command.title()), requiredBody(command.body()), normalizePriority(command.priority()),command.businessFields());
     }
 
     private static UpdateCommand normalizePatch(UpdateCommand command) {
-        if (command == null || (command.title() == null && command.body() == null && command.priority() == null)) {
+        if (command == null || (command.title() == null && command.body() == null && command.priority() == null && command.businessFields() == null)) {
             throw ProjectAccessException.invalid("at least one supported field is required");
         }
         if (command.title() != null) requiredTitle(command.title());
@@ -474,25 +481,28 @@ public class RequirementService {
         return new RequirementView(rs.getObject("id", UUID.class), rs.getObject("project_id", UUID.class),
                 rs.getLong("display_number"), rs.getLong("row_version"), rs.getObject("created_at", OffsetDateTime.class),
                 rs.getObject("created_by", UUID.class), rs.getObject("revision_id", UUID.class),
-                rs.getLong("revision_no"), rs.getString("title"), rs.getString("body"), rs.getString("priority"));
+                rs.getLong("revision_no"), rs.getString("title"), rs.getString("body"), rs.getString("priority"),BusinessFields.read(rs.getString("business_fields")));
     }
 
     private static RevisionView mapRevision(ResultSet rs, int row) throws SQLException {
         return new RevisionView(rs.getObject("id", UUID.class), rs.getObject("requirement_id", UUID.class),
                 rs.getLong("revision_no"), rs.getString("title"), rs.getString("body"), rs.getString("priority"),
-                rs.getObject("created_at", OffsetDateTime.class), rs.getObject("created_by", UUID.class));
+                rs.getObject("created_at", OffsetDateTime.class), rs.getObject("created_by", UUID.class),BusinessFields.read(rs.getString("business_fields")));
     }
 
-    public record CreateCommand(String title, String body, String priority) { }
-    public record UpdateCommand(String title, String body, String priority) { }
+    public record CreateCommand(String title, String body, String priority, JsonNode businessFields) { public CreateCommand(String title, String body, String priority){this(title,body,priority,null);} }
+    public record UpdateCommand(String title, String body, String priority, JsonNode businessFields) { public UpdateCommand(String title, String body, String priority){this(title,body,priority,null);} }
     public record RequirementPage(List<RequirementView> items, String nextCursor) { }
     public record RequirementView(UUID id, UUID projectId, long displayNumber, long rowVersion,
             OffsetDateTime createdAt, UUID createdBy, UUID currentRevisionId, long revisionNumber,
-            String title, String body, String priority) { }
+            String title, String body, String priority, JsonNode businessFields) { public RequirementView(UUID id, UUID projectId, long displayNumber, long rowVersion,
+            OffsetDateTime createdAt, UUID createdBy, UUID currentRevisionId, long revisionNumber,
+            String title, String body, String priority){this(id,projectId,displayNumber,rowVersion,createdAt,createdBy,currentRevisionId,revisionNumber,title,body,priority,null);} }
     public record RevisionView(UUID id, UUID requirementId, long revisionNumber, String title, String body,
-            String priority, OffsetDateTime createdAt, UUID createdBy) { }
+            String priority, OffsetDateTime createdAt, UUID createdBy, JsonNode businessFields) { public RevisionView(UUID id, UUID requirementId, long revisionNumber, String title, String body,
+            String priority, OffsetDateTime createdAt, UUID createdBy){this(id,requirementId,revisionNumber,title,body,priority,createdAt,createdBy,null);} }
     private record RequirementRow(UUID id, long rowVersion, UUID revisionId, long revisionNo,
-            String title, String body, String priority) { }
+            String title, String body, String priority, JsonNode businessFields) { }
     private record IdempotencyRecord(String requestHash, UUID requirementId, UUID revisionId,
             boolean replayCompatible, RequirementView snapshot) { }
 }
