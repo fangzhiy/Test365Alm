@@ -404,3 +404,16 @@ describe('TestCasesPanel', () => {
     expect(screen.queryByText('测试用例已保存为新修订')).not.toBeInTheDocument()
   })
 })
+it('business fields travel in create and revision commands and retain frozen historical values',async()=>{
+ const fields={test_purpose:{value:'Verify pressure'},reviewer:{value:'reviewer-principal'}}
+ const saved={...testCase,businessFields:fields};const historical={...revision,businessFields:{test_purpose:{value:'Historical purpose'}}}
+ vi.mocked(testsApi.list).mockResolvedValue({items:[saved],nextCursor:null});vi.mocked(testsApi.get).mockResolvedValue(saved);vi.mocked(testsApi.revisions).mockResolvedValue([historical]);vi.mocked(testsApi.appendRevision).mockResolvedValue(saved)
+ render(<TestCasesPanel projectId="project-1" access={access}/>);fireEvent.click(await screen.findByRole('button',{name:/TC-1/}));await waitFor(()=>expect(screen.getByLabelText('编辑测试目的')).toHaveValue('Verify pressure'))
+ fireEvent.change(screen.getByLabelText('编辑测试目的'),{target:{value:'New purpose'}});fireEvent.click(screen.getByRole('button',{name:'保存为新修订'}));await waitFor(()=>expect(testsApi.appendRevision).toHaveBeenCalledWith('project-1',saved,expect.objectContaining({businessFields:{...fields,test_purpose:{value:'New purpose'}}}),expect.anything()))
+ fireEvent.click(screen.getByRole('button',{name:/修订 1.*principal-1/}));expect(await screen.findByText('Historical purpose')).toBeVisible()
+})
+it('a stale revision preserves business field drafts while loading a new base version',async()=>{
+ const saved={...testCase,businessFields:{test_purpose:{value:'Before'}}};vi.mocked(testsApi.list).mockResolvedValue({items:[saved],nextCursor:null});vi.mocked(testsApi.get).mockResolvedValue(saved);vi.mocked(testsApi.revisions).mockResolvedValue([revision]);vi.mocked(testsApi.appendRevision).mockRejectedValue({code:'STALE_VERSION',message:'stale'})
+ render(<TestCasesPanel projectId="project-1" access={access}/>);fireEvent.click(await screen.findByRole('button',{name:/TC-1/}));await waitFor(()=>expect(screen.getByLabelText('编辑测试目的')).toHaveValue('Before'));fireEvent.change(screen.getByLabelText('编辑测试目的'),{target:{value:'Draft purpose'}});fireEvent.click(screen.getByRole('button',{name:'保存为新修订'}));await screen.findByRole('button',{name:'查看最新版本'})
+ vi.mocked(testsApi.get).mockResolvedValue({...saved,rowVersion:2,etag:'"2"',businessFields:{test_purpose:{value:'Server purpose'}}});fireEvent.click(screen.getByRole('button',{name:'查看最新版本'}));await screen.findByText('已加载最新版本，草稿仍保留，请确认后再保存。');expect(screen.getByLabelText('编辑测试目的')).toHaveValue('Draft purpose')
+})

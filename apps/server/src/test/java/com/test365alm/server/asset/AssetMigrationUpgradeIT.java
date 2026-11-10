@@ -71,15 +71,19 @@ class AssetMigrationUpgradeIT {
             for(String table:List.of("tenant","project","project_member","requirement","requirement_revision","test_case","test_revision","test_step","trace_link","trace_link_revision","execution_run","execution_manifest","execution_manifest_step","run_attempt","run_step","execution_event","execution_idempotency","defect","defect_revision","defect_link","defect_outbox_event","audit_event","core_command_idempotency","release_plan","release_cycle","release_scope","quality_snapshot","release_outbox_event","release_number_allocator"))assertFalse(before.get(table).isEmpty(),table+" must contain actual V19 business data before upgrade");
             assertEquals(2,owner.queryForObject("SELECT count(*) FROM requirement_revision WHERE project_id=?",Integer.class,project));assertEquals(2,owner.queryForObject("SELECT count(*) FROM test_revision WHERE project_id=?",Integer.class,project));assertEquals(2,owner.queryForObject("SELECT count(*) FROM defect_revision WHERE project_id=?",Integer.class,project));
             var latest=Flyway.configure().dataSource(pg.getJdbcUrl(),pg.getUsername(),pg.getPassword()).target("20").load();assertEquals(1,latest.migrate().migrationsExecuted);assertEquals(before,snapshot(owner,tables),"every old table and column must survive byte-for-byte JSON representation");assertEquals(0,latest.migrate().migrationsExecuted);assertEquals(before,snapshot(owner,tables));
+            assertEquals(4,Flyway.configure().dataSource(pg.getJdbcUrl(),pg.getUsername(),pg.getPassword()).load().migrate().migrationsExecuted);
+            assertEquals(before,snapshot(owner,tables),"latest preserves every original column before current runtime verification");
+
             for(String table:List.of("upload_session","asset","asset_revision","scan_result","attachment_link","asset_outbox_event"))
                 assertEquals(0,owner.queryForObject("SELECT count(*) FROM "+table,Integer.class),table+" must start empty after V20 before new asset operations");
-            Flyway.configure().dataSource(pg.getJdbcUrl(),pg.getUsername(),pg.getPassword()).load().migrate();
             var afterCurrentUpgrade=snapshot(owner,tables);
             HistoricalExecutionUpgradeSupport.assertLegacyColumns(owner,before);
             try(var c=context(ds,AssetTestInfrastructure.provisionScannerDatabase(pg))) {
+                assertTrue(c.getBean(DefectService.class).get(member,project,defect).currentRevision().businessFields().isEmpty());
                 var releases=c.getBean(ReleaseService.class);assertTrue(org.springframework.aop.support.AopUtils.isAopProxy(releases));
                 try(var connection=ds.getConnection();var stmt=connection.createStatement();var rs=stmt.executeQuery("SELECT current_user,rolsuper,rolbypassrls FROM pg_roles WHERE rolname=current_user")){assertTrue(rs.next());assertEquals("test365alm_runtime",rs.getString(1));assertFalse(rs.getBoolean(2));assertFalse(rs.getBoolean(3));}
                 assertEquals("revised body",c.getBean(RequirementService.class).getAuthorized(member,project,requirement).body());assertEquals(originalLink,c.getBean(TraceLinkService.class).create(member,project,requirement,test,traceKey));
+                assertEquals("Revised test",c.getBean(TestCaseService.class).getAuthorized(member,project,test).currentRevision().title());
                 assertEquals("FAIL",c.getBean(ExecutionService.class).attempt(member,project,run,attempt).conclusion());
                 HistoricalExecutionUpgradeSupport.assertCurrentReadAndFrozenReplay(c.getBean(ExecutionService.class),member,project,run,attempt,legacyManifestHash,legacyRunKey);
                 assertEquals(originalDefect,c.getBean(DefectService.class).fromStep(member,project,defectBody(),run,attempt,originalDefect.links().stream().filter(l->l.kind().equals("RUN_STEP")).findFirst().orElseThrow().stepKey(),defectKey),"old key returns frozen result rather than edited defect");
@@ -105,12 +109,12 @@ class AssetMigrationUpgradeIT {
     private static AnnotationConfigApplicationContext context(DataSource ds,boolean assets) {return context(ds,(DataSource)null);}
     private static AnnotationConfigApplicationContext context(DataSource ds,DataSource scannerDatabase) {
         var c=new AnnotationConfigApplicationContext();c.registerBean(DataSource.class,()->ds);
-        c.register(RuntimeConfig.class,ProjectService.class,CoreCommands.class,RequirementService.class,TestCaseService.class,
-                ExecutionService.class,HistoricalExecutionService61711294.class,TraceLinkService.class,FieldDefinitionService.class,DefectService.class,DefectEvidence.class,ReleaseService.class,ReleaseMetrics.class);
+        c.register(RuntimeConfig.class,ProjectService.class,CoreCommands.class,
+                ExecutionService.class,HistoricalExecutionService61711294.class,TraceLinkService.class,FieldDefinitionService.class,DefectEvidence.class,ReleaseService.class,ReleaseMetrics.class);
         if(scannerDatabase!=null){AssetTestInfrastructure.start();c.registerBean(BlobStore.class,AssetTestInfrastructure::store);c.registerBean(MalwareScanner.class,AssetTestInfrastructure::scanner);c.registerBean(ScanResultWriter.class,()->new JdbcScanResultWriter(scannerDatabase));c.register(AssetService.class);}
-        c.refresh();return c;
+        com.test365alm.server.businessfields.LegacyContentServices.register(c,scannerDatabase==null,true);c.refresh();return c;
     }
-    private static Map<String,List<String>> snapshot(JdbcTemplate db,List<String> tables){var m=new TreeMap<String,List<String>>();for(String table:tables)m.put(table,db.query("SELECT to_jsonb(t)::text FROM \""+table+"\" t ORDER BY to_jsonb(t)::text",(r,i)->r.getString(1)));return m;}
+    private static Map<String,List<String>> snapshot(JdbcTemplate db,List<String> tables){return com.test365alm.server.fixture.HistoricalExecutionUpgradeSupport.originalColumnsSnapshot(db,tables);}
     private static tools.jackson.databind.JsonNode defectBody(){return CoreCommands.JSON.readTree("{\"title\":\"Old failure\",\"description\":\"V19 source\",\"severity\":\"HIGH\",\"priority\":\"MEDIUM\"}");}
     private static String key(){return UUID.randomUUID().toString();}
 }

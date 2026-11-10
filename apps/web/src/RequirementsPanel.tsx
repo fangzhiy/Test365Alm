@@ -1,3 +1,5 @@
+import BusinessFieldsForm from './BusinessFieldsForm'
+import type { BusinessFieldValues } from './businessFields'
 import { useEffect, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import { requirementsApi, newIdempotencyKey } from './requirements'
@@ -35,6 +37,8 @@ export default function RequirementsPanel({ projectId, access, resetSignal = 0 }
   const [selected, setSelected] = useState<Requirement | null>(null)
   const [revisions, setRevisions] = useState<RequirementRevision[]>([])
   const [selectedRevision, setSelectedRevision] = useState<RequirementRevision | null>(null)
+  const [businessFields,setBusinessFields]=useState<BusinessFieldValues>()
+  const [createBusinessFields,setCreateBusinessFields]=useState<BusinessFieldValues>()
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
   const [createTitle, setCreateTitle] = useState('')
@@ -73,9 +77,9 @@ export default function RequirementsPanel({ projectId, access, resetSignal = 0 }
   const isCurrentContext = (context: Context) => contextRef.current.projectId === context.projectId && contextRef.current.resetSignal === context.resetSignal
   const clearInvalidData = (message: string) => {
     readRoundRef.current += 1; writeRoundRef.current += 1; cancelAll()
-    setItems([]); setSelected(null); setRevisions([]); setSelectedRevision(null); setTitle(''); setBody(''); setCreateTitle(''); setCreateBody(''); setDraft(null); setConflict(false); setSaving(false); setDetailLoading(false); setDetailReady(false); setScopeInvalid(true); createIntentRef.current = null; saveIntentRef.current = null; setState('error'); setNotice(message)
+    setItems([]); setSelected(null); setRevisions([]); setSelectedRevision(null); setBusinessFields(undefined);setTitle(''); setBody(''); setCreateBusinessFields(undefined);setCreateTitle(''); setCreateBody(''); setDraft(null); setConflict(false); setSaving(false); setDetailLoading(false); setDetailReady(false); setScopeInvalid(true); createIntentRef.current = null; saveIntentRef.current = null; setState('error'); setNotice(message)
   }
-  const resetData = () => { setState('idle'); setItems([]); setSelected(null); setRevisions([]); setSelectedRevision(null); setTitle(''); setBody(''); setCreateTitle(''); setCreateBody(''); setDraft(null); setNotice(''); setConflict(false); setSaving(false); setDetailLoading(false); setDetailReady(false); setScopeInvalid(false); createIntentRef.current = null; saveIntentRef.current = null }
+  const resetData = () => { setState('idle'); setItems([]); setSelected(null); setRevisions([]); setSelectedRevision(null); setBusinessFields(undefined);setTitle(''); setBody(''); setCreateBusinessFields(undefined);setCreateTitle(''); setCreateBody(''); setDraft(null); setNotice(''); setConflict(false); setSaving(false); setDetailLoading(false); setDetailReady(false); setScopeInvalid(false); createIntentRef.current = null; saveIntentRef.current = null }
 
   useEffect(() => () => { readRoundRef.current += 1; writeRoundRef.current += 1; cancelAll() }, [])
   useEffect(() => {
@@ -94,8 +98,8 @@ export default function RequirementsPanel({ projectId, access, resetSignal = 0 }
     const controller = new AbortController()
     readControllerRef.current = controller
     readTimeoutRef.current = window.setTimeout(() => controller.abort(), 5000)
-    setState('loading'); setScopeInvalid(false); setNotice(''); setConflict(false); setSaving(false); setDetailLoading(false); setDetailReady(false); setItems([]); setSelected(null); setRevisions([]); setSelectedRevision(null); setTitle(''); setBody(''); setDraft(null); saveIntentRef.current = null
-    if (!preserveCreate) { setCreateTitle(''); setCreateBody(''); createIntentRef.current = null }
+    setState('loading'); setScopeInvalid(false); setNotice(''); setConflict(false); setSaving(false); setDetailLoading(false); setDetailReady(false); setItems([]); setSelected(null); setRevisions([]); setSelectedRevision(null); setBusinessFields(undefined);setTitle(''); setBody(''); setDraft(null); saveIntentRef.current = null
+    if (!preserveCreate) { setCreateBusinessFields(undefined);setCreateTitle(''); setCreateBody(''); createIntentRef.current = null }
     try {
       const page = await requirementsApi.list(nextProjectId, { signal: controller.signal })
       if (readRoundRef.current !== round || !isCurrentContext(context)) return
@@ -121,15 +125,15 @@ export default function RequirementsPanel({ projectId, access, resetSignal = 0 }
     if (!options.keepWrite) { writeRoundRef.current += 1; cancelWrite(); setSaving(false) }
     cancelRead()
     const preserveDraft = options.preserveDraft === true
-    const preserved = preserveDraft ? (draft ?? { title, body }) : null
+    const preserved = preserveDraft ? (draft ?? { title, body, businessFields }) : null
     const controller = new AbortController(); readControllerRef.current = controller; readTimeoutRef.current = window.setTimeout(() => controller.abort(), 5000)
     setDetailLoading(true); setDetailReady(false); setNotice(''); if (!preserveDraft) { setConflict(false); setDraft(null) }
-    setSelected(requirement); setRevisions([]); setSelectedRevision(null); if (!preserveDraft) { setTitle(requirement.title); setBody(requirement.body) }
+    setSelected(requirement); setRevisions([]); setSelectedRevision(null); if (!preserveDraft) { setTitle(requirement.title); setBody(requirement.body);setBusinessFields(requirement.businessFields) }
     try {
       const [detail, history] = await Promise.all([requirementsApi.get(context.projectId, requirement.id, { signal: controller.signal }), requirementsApi.revisions(context.projectId, requirement.id, { signal: controller.signal })])
       if (readRoundRef.current !== round || !isCurrentContext(context)) return false
       setSelected(detail); setItems((current) => current.map((item) => item.id === detail.id ? detail : item)); setRevisions(history); setDetailReady(true)
-      if (preserveDraft && preserved) { setTitle(preserved.title); setBody(preserved.body) } else { setTitle(detail.title); setBody(detail.body) }
+      if (preserveDraft && preserved) { setTitle(preserved.title); setBody(preserved.body);setBusinessFields(preserved.businessFields) } else { setTitle(detail.title); setBody(detail.body);setBusinessFields(detail.businessFields) }
       if (preserveDraft) setNotice('已加载最新版本，草稿仍保留，请确认后再保存。')
       return true
     } catch (error) {
@@ -151,12 +155,12 @@ export default function RequirementsPanel({ projectId, access, resetSignal = 0 }
     // abort cannot restore stale list state or replace the write notice.
     readRoundRef.current += 1
     cancelRead(); cancelWrite()
-    const input = { title: createTitle.trim(), body: createBody }; const key = createIntentRef.current ?? (createIntentRef.current = newIdempotencyKey()); const controller = new AbortController()
+    const input = { title: createTitle.trim(), body: createBody, ...(createBusinessFields===undefined?{}:{businessFields:createBusinessFields}) }; const key = createIntentRef.current ?? (createIntentRef.current = newIdempotencyKey()); const controller = new AbortController()
     writeControllerRef.current = controller; writeTimeoutRef.current = window.setTimeout(() => controller.abort(), 5000); setSaving(true); setNotice('')
     try {
       const created = await requirementsApi.create(context.projectId, input, { signal: controller.signal, idempotencyKey: key })
       if (writeRoundRef.current !== operation || !isCurrentContext(context)) return
-      setState('ready'); createIntentRef.current = null; setCreateTitle(''); setCreateBody(''); setItems((current) => current.some((item) => item.id === created.id) ? current.map((item) => item.id === created.id ? created : item) : [...current, created]); setSelected(created); setDraft(null); setTitle(created.title); setBody(created.body); const detailLoaded = await selectRequirement(created, { keepWrite: true }); if (detailLoaded && writeRoundRef.current === operation && isCurrentContext(context)) setNotice('需求已创建')
+      setState('ready'); createIntentRef.current = null; setCreateBusinessFields(undefined);setCreateTitle(''); setCreateBody(''); setItems((current) => current.some((item) => item.id === created.id) ? current.map((item) => item.id === created.id ? created : item) : [...current, created]); setSelected(created); setDraft(null); setTitle(created.title); setBody(created.body); const detailLoaded = await selectRequirement(created, { keepWrite: true }); if (detailLoaded && writeRoundRef.current === operation && isCurrentContext(context)) setNotice('需求已创建')
     } catch (error) {
       if (writeRoundRef.current !== operation || !isCurrentContext(context)) return
       if (isInvalidAccess(error, 'write')) { clearInvalidData('当前项目不可访问，请重新选择项目'); return }
@@ -169,9 +173,9 @@ export default function RequirementsPanel({ projectId, access, resetSignal = 0 }
   const save = async (event: FormEvent) => {
     event.preventDefault()
     if (!selected || !detailReady || !can(access, 'requirement:update') || saving) return
-    const context = contextRef.current; const requirementAtStart = selected; const input = { title: title.trim(), body }; const operation = ++writeRoundRef.current
+    const context = contextRef.current; const requirementAtStart = selected; const input = { title: title.trim(), body, ...(businessFields===undefined?{}:{businessFields}) }; const operation = ++writeRoundRef.current
     const prior = saveIntentRef.current
-    const key = prior && prior.requirementId === requirementAtStart.id && prior.etag === (requirementAtStart.etag ?? '') && prior.input.title === input.title && prior.input.body === input.body ? prior.key : newIdempotencyKey()
+    const key = prior && prior.requirementId === requirementAtStart.id && prior.etag === (requirementAtStart.etag ?? '') && JSON.stringify(prior.input)===JSON.stringify(input) ? prior.key : newIdempotencyKey()
     saveIntentRef.current = { key, requirementId: requirementAtStart.id, etag: requirementAtStart.etag ?? '', input }
     // Saving replaces any pending read (for example, a refresh started while
     // the detail view was open).  Invalidate its round before cancellation so
@@ -198,7 +202,7 @@ export default function RequirementsPanel({ projectId, access, resetSignal = 0 }
     <div className="access-panel-header"><div><span className="panel-label">M07 · 需求第一条闭环</span><h2 id="requirements-heading">需求</h2><p>当前项目的需求、修订和历史正文。</p></div><button type="button" className="secondary-button" onClick={() => void load()} disabled={state === 'loading' || saving}>{state === 'loading' ? '加载中…' : '刷新需求'}</button></div>
     {state === 'error' && <p className="access-error" role="alert">{notice}</p>}
     {notice && state !== 'error' && <p className={conflict ? 'requirements-conflict' : 'access-notice'} role={conflict ? 'alert' : 'status'}>{notice}{conflict && selected && <button type="button" className="secondary-button" onClick={() => void selectRequirement(selected, { preserveDraft: true })}>查看最新版本</button>}</p>}
-    {creator && !scopeInvalid && <form className="requirement-create-form" onSubmit={(event) => void create(event)}><strong>新建需求</strong><label>标题<input aria-label="需求标题" value={createTitle} onChange={(event) => { createIntentRef.current = null; setCreateTitle(event.target.value) }} maxLength={500} required disabled={saving} /></label><label>正文<textarea aria-label="需求正文" value={createBody} onChange={(event) => { createIntentRef.current = null; setCreateBody(event.target.value) }} rows={3} disabled={saving} /></label><button type="submit" className="primary-button" disabled={saving}>{saving ? '保存中…' : '创建需求'}</button></form>}
+    {creator && !scopeInvalid && <form className="requirement-create-form" onSubmit={(event) => void create(event)}><strong>新建需求</strong><BusinessFieldsForm kind="requirement" projectId={projectId} value={createBusinessFields} onChange={v=>{createIntentRef.current=null;setCreateBusinessFields(v)}} disabled={saving}/><label>标题<input aria-label="需求标题" value={createTitle} onChange={(event) => { createIntentRef.current = null; setCreateTitle(event.target.value) }} maxLength={500} required disabled={saving} /></label><label>正文<textarea aria-label="需求正文" value={createBody} onChange={(event) => { createIntentRef.current = null; setCreateBody(event.target.value) }} rows={3} disabled={saving} /></label><button type="submit" className="primary-button" disabled={saving}>{saving ? '保存中…' : '创建需求'}</button></form>}
     {state !== 'loading' && state !== 'error' && items.length === 0 && <p className="access-empty" role="status">当前项目还没有需求。</p>}
     {items.length > 0 && <div className="requirements-layout">
       <div className="requirement-list" aria-label="需求列表">
@@ -207,7 +211,7 @@ export default function RequirementsPanel({ projectId, access, resetSignal = 0 }
       </div>
       {selected && <div className="requirement-detail" aria-label="需求详情">
         <div className="requirement-detail-heading"><div><span className="panel-label">需求详情 · {selected.displayNumber}</span><h3>{selected.title}</h3><p>修订 {selected.revisionNumber} · 版本 {selected.rowVersion} · 固定优先级 {selected.priority}</p></div>{draft && <span className="requirements-draft-badge">草稿已保留</span>}</div>
-        <form onSubmit={(event) => void save(event)}>
+        <form onSubmit={(event) => void save(event)}><BusinessFieldsForm kind="requirement" prefix="编辑" projectId={projectId} value={businessFields} onChange={writable?v=>{saveIntentRef.current=null;setBusinessFields(v)}:undefined} disabled={detailLoading||!detailReady||saving}/>
           {writable ? <>
             <label>标题<input aria-label="编辑需求标题" value={title} onChange={(event) => { saveIntentRef.current = null; setTitle(event.target.value) }} maxLength={500} required disabled={detailLoading || !detailReady || saving} /></label>
             <label>正文<textarea aria-label="编辑需求正文" value={body} onChange={(event) => { saveIntentRef.current = null; setBody(event.target.value) }} rows={6} disabled={detailLoading || !detailReady || saving} /></label>
@@ -219,7 +223,7 @@ export default function RequirementsPanel({ projectId, access, resetSignal = 0 }
           {detailReady && <TraceLinksPanel projectId={projectId} requirementId={selected.id} access={access} />}
           <div className="member-list-heading"><strong>不可变修订历史</strong><span>{revisions.length} 个修订</span></div>
           {revisions.length === 0 ? <p className="access-empty">暂无修订历史。</p> : <div className="revision-list">{revisions.map((revision) => <button type="button" className="revision-row" key={revision.id} onClick={() => setSelectedRevision(revision)}><span>修订 {revision.revisionNumber}</span><small>{revision.createdBy} · {revision.createdAt}</small></button>)}</div>}
-          {selectedRevision && <article className="revision-readonly"><strong>修订 {selectedRevision.revisionNumber}（只读）</strong><h4>{selectedRevision.title}</h4><p>{selectedRevision.body || '（无正文）'}</p><small>{selectedRevision.createdBy} · {selectedRevision.createdAt}</small></article>}
+          {selectedRevision && <article className="revision-readonly"><strong>修订 {selectedRevision.revisionNumber}（只读）</strong><h4>{selectedRevision.title}</h4><BusinessFieldsForm kind="requirement" value={selectedRevision.businessFields}/><p>{selectedRevision.body || '（无正文）'}</p><small>{selectedRevision.createdBy} · {selectedRevision.createdAt}</small></article>}
         </section>
       </div>}
     </div>}

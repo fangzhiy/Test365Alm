@@ -1,0 +1,37 @@
+# 业务字段总管复核
+
+2026-11-11；业务源 `da9906c6967edd53bfde5808eb405a47b7106571`，已验收前置基线 `8bd7408e3c7dc1f65ed19721d40c98136b0fa5b7`。当前后端证据已核对，首轮真实浏览器2通过/1失败；本文不代表已批准业务合入dev。
+
+## 已核对的后端证据
+
+工作区 `feat-business-fields` 的忽略证据 `local-evidence/linux-tests/16077b4faf6c450287f50b31103f07d2/`。总管独立读取scan/unit/focused/integration/run脱敏JSON并检查逐方法身份无重复、每项状态及汇总一致：
+
+| 阶段 | 单元 | 集成 | 结果 |
+|---|---:|---:|---|
+| 真实扫描预检 | 89 | 1 | 零failure/error/skip，exit0 |
+| 单元 | 89 | — | 零failure/error/skip，exit0 |
+| 新DB/非空升级专项 | 89 | 8 | 零failure/error/skip，exit0 |
+| 唯一完整集成 | 89 | 175 | 零failure/error/skip，exit0 |
+
+run.json固定上述源SHA，exit0、cleanup=true。此前52e7735专项夹具错误及7433ef2两处旧冻结DTO相等失败报告保留，不能改写为通过；当前绿色来自修复后的新提交完整执行。
+
+## 首轮真实浏览器结果
+
+同一da9906c源，证据 `local-evidence/local-browser/bb35d43bc533419a9fc4ee1f9c07db1e/`。总管独立读取run/results：缺陷FAIL→复测PASS→关闭及历史流程passed；手工执行/恢复/完成/重跑流程passed；用例创建/步骤编辑/历史/viewer只读流程failed。workers=1、retries=0，每条retry=0，无skip；exit1、cleanup=true、processes_stopped=true。B正在定位失败，不将两条通过视为整组验收。
+
+保留本轮失败证据，修复固定新SHA后再执行真实浏览器验收；如仅修改测试选择器/断言且运行源码一致，无需无关重跑后端；如修改业务源码，必须重新确定验证范围及旧结果适用边界。
+
+## 已复核的关键边界
+
+- 三类业务字段存于确切内容修订，冻结SYSTEM或同项目CUSTOM定义与值；旧定义变更不重新解释历史。省略时创建为空、编辑继承，显式空对象清空；输入类型与未知属性检查保持。
+- 原授权、强版本、持久幂等、审计/Outbox与内容写入继续同事务；省略业务字段保持旧请求hash。重放在现有授权入口之后，不用可变最新内容代替冻结结果。
+- 复核人值为稳定本地主体UUID；候选、规范化和DB触发器统一检查有效项目writer。候选函数固定search_path并核对actor/scope，只暴露同项目候选身份/姓名。viewer可以读取但不能成为新指定可批准人。后续D必须在动作时重新授权。
+- 新正式迁移仅V23；旧V1—V22保持。历史内容夹具与固定61711294源机械比对，SQL和行为保留，只有测试类名/组件移除/父构造/兼容DTO复用等适配；只在旧目标上下文显式注册。升级原非空快照/幂等断言保留，latest后验证正式服务。
+- e08140f仅在四类响应DTO规范化NullNode为Java null；输入显式null仍拒绝。7749951把新字段快照按实际JSON往返规范化数字节点，JSON值不变、不回写历史；单元往返及真实DB同修订no-op断言覆盖该根因。
+- 复核人界面使用授权目录姓名，历史明确标注“当前成员姓名”，不可用身份不回显UUID；da9906c仅替换审计复核人值单元，保留原父面板刷新生命周期。
+
+## 尚需完成
+
+- 同一业务源三条真实Keycloak浏览器流程：字段和姓名选择、保存/刷新/重载、不可变历史及原执行/缺陷流程；单worker、0retry/0skip，精确清理与进程退出。
+- 核对最终交接SHA及其与验收源的运行源码一致性，再由总管本地集成、归档功能交接并更新清单。
+- C合流时保留B所有旧表原列快照和C执行新增列投影/hash重放检查；AssetProvisioning同时保留legacy requirement与legacy attachment注册，latest后用正式服务。组合计数逐名复核，B单线175不能充当B+C全绿结果。

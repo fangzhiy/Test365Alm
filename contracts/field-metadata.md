@@ -18,3 +18,5 @@ NUMBER 值使用无指数精确十进制字符串，不接受 JSON 浮点数，�
 所有写请求同源会话+CSRF、8..128 字符 Idempotency-Key；PATCH 必须单个强正整数 If-Match。缺失/通配 428、格式错误400、陈旧412 STALE_VERSION，同键异请求409 IDEMPOTENCY_KEY_REUSED。
 幂等按租户/项目/主体/路由/key，24小时；重放冻结快照并重新授权。业务/不可变修订/审计/Outbox/幂等同事务。
 通用错误体沿用 `{code,message,requestId}`，401/403/404 保持已有语义；任何权限检查先于资源/版本信息返回。
+
+1c 业务字段扩展：实体值持久化、SYSTEM 默认定义及同名 CUSTOM 修订采用见 `business-fields.md`；上述“本轮不存储业务实体扩展值”只描述 R08 历史边界。

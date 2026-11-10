@@ -3,6 +3,7 @@ package com.test365alm.server.fixture;
 import static org.junit.jupiter.api.Assertions.*;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.UUID;
 import org.springframework.jdbc.core.JdbcTemplate;
 import com.test365alm.server.execution.ExecutionService;
@@ -10,6 +11,26 @@ import com.test365alm.server.execution.ExecutionService;
 /** Assertions after the original target/snapshot checks, never a historical business implementation. */
 public final class HistoricalExecutionUpgradeSupport {
     private HistoricalExecutionUpgradeSupport() { }
+
+    /** Every original row/column, across all supplied tables, in stable projected order.
+     * Only the explicitly added B23/C24 columns are excluded; old ID/JSON/clock fields stay.
+     */
+    public static Map<String,List<String>> originalColumnsSnapshot(JdbcTemplate owner,List<String> tables) {
+        var snapshot=new TreeMap<String,List<String>>();
+        for(String table:tables) {
+            String added=switch(table) {
+                case "requirement_revision","test_revision","defect_revision" -> "-'business_fields'";
+                case "requirement_idempotency" -> "-'result_business_fields'";
+                case "test_instance" -> "-'assignee_id'-'assignee_name'-'assignment_version'";
+                case "execution_manifest" -> "-'assignee_id'-'assignee_name'";
+                case "run_step" -> "-'id'-'executed_at'";
+                case "attachment_link" -> "-'run_step_id'";
+                default -> "";
+            };
+            snapshot.put(table,owner.query("SELECT (to_jsonb(t)"+added+")::text AS original FROM \""+table+"\" t ORDER BY original",(row,n)->row.getString(1)));
+        }
+        return snapshot;
+    }
 
     public static void assertLegacyColumns(JdbcTemplate owner,Map<String,List<String>> before) {
         for(String table:List.of("test_instance","execution_manifest","run_step")) {

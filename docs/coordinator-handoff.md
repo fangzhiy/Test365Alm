@@ -11,6 +11,23 @@
 - D复核依赖B，E模拟签署/锁定依赖C/D，F报告依赖E，G最终A03验收依赖全部合流。任务已经入队；收到worker完成事件后按真实验收及依赖启动，不把代码检查点视为整功能通过。
 - 审计浏览器资源已精确清理；B/C重型Docker验证需串行安排。W1演示与其他项目资源继续保持，不复用未知资源、日常.env或5173/8080。
 
+### B/C 真实验证前检查点（2026-11-11）
+
+- 已验收基线为 `8bd7408e3c7dc1f65ed19721d40c98136b0fa5b7`；包含审计后续设施补丁 `bdb9991` 和复核说明。B/C 代码尚未合入。以下数字只属于各自分支，不能作为组合通过结果。
+- B 固定 `52e77354205a08050cc64d02b62da6fe2cafe3f3` 执行真实验证：scan 89单元/1真实扫描、unit 89均通过；focused 8项为7通过/1error，全量175被门禁阻止，未启动。run `8d25f317e41b4df08e440eca8e6cb715`，总管已独立读取scan/unit/focused/run脱敏JSON，核对退出0/0/1、失败方法及 `cleanup=true`，完整集成报告不存在。worker定位为夹具撤权后正向重放仍指定同一已撤权复核人；B仅修正正向测试人员，保留全部失效拒绝及重放重新授权断言，提交后重新执行全部阶段，保留旧失败证据。
+- B仍持有重型Docker独占时段；C只离线推进，不启动Docker或服务。总管已答复，无待用户批准事项。B固定设施顺序为 scan(89/1) → unit(89) → focused(89/8) → 唯一full(89/175)，任一非零、缺名、重复、失败、错误或跳过均停止。
+- B已提交修正 `7433ef2c4beaa33d4746c0b2df70c472be9b1dd2`：正向重放指定有效 `f.admin`，撤权发起人 `f.member` 后先断言admin仍在候选中，再断言发起人重放被拒绝，分别覆盖两种撤权边界。总管已核对该diff。
+- 7433ef2真实run `c50d90143f4f46b39f8e68ba4f1817e7`：scan89/1、unit89、focused89/8全过，full89/175为173通过/2failure/0error/0skip，`cleanup=true`。总管已独立核对四阶段及run脱敏JSON。失败仅 `AssetMigrationUpgradeIT.v19NonEmptyDatabaseUpgradesToV20WithoutLosingExistingBusinessHistory`、`ReleaseMigrationUpgradeIT.nonemptyV18RequirementsTestsExecutionDefectsAndTraceSurviveV19AndRemainUsable`。worker报告原目标/latest旧列快照均过，旧key冻结DTO相等断言失败；已单元RED定位Jackson3将旧JSON null读为NullNode。修复只在四类响应DTO构造时规范化为Java null，保留非空/空对象响应、输入校验及原DB相等断言；独立提交和新确切SHA完整验证尚待回报。
+- B已保存响应null修复/经验 `e08140f`、数字节点规范化 `7749951`、历史复核人姓名展示 `da9906c6967edd53bfde5808eb405a47b7106571`；当前固定da9906c执行既定全部阶段，尚无该SHA完整结果。总管已读修复和回归：新快照按实际JSON往返消除LongNode/IntNode表示差异，保留JSON值、不回写历史，并增加真实DB同修订no-op断言；四类响应覆盖null/空/非空往返，输入显式null仍拒绝。姓名通过授权目录解析并标注“当前成员姓名”，不伪造历史冻结姓名；父审计刷新逻辑未改。worker报告Java单元89、前端262/lint/build通过。B继续独占时段，全部后端通过/清理后可直接进行同业务源码的三条真实浏览器验收，无需再请求既定范围许可。
+- da9906c后端已完成：run `16077b4faf6c450287f50b31103f07d2` 的scan89/1、unit89、focused89/8、完整89/175全部零F/E/S、exit0、cleanup=true；总管已独立核对报告及逐方法唯一身份。三条同SHA真实Keycloak浏览器正在运行，B继续独占，最终验收/合并待浏览器与精确清理。复核证据汇总见 `docs/reviews/business-fields-coordinator-review.md`。
+- da9906c首轮浏览器run `bb35d43bc533419a9fc4ee1f9c07db1e` 已结束：缺陷和执行流程passed，用例创建/编辑/历史/viewer流程failed，exit1；单worker、0retry/0skip、cleanup/processes_stopped=true，总管已独立核对run/results。B继续定位，C保持等待，未批准合并。只改测试选择器且运行源码一致时不要求无关重跑后端；改业务源码则按实际影响重新验证，保留全部旧失败事实。
+- B历史内容夹具 `197ac06114e0648b25301b698e855ea6c233f9d4` 冻结于 `61711294ff10e16b8df29418badaa8b455bc80ea`。总管逐行对比四个实现，SQL/行为差异仅为批准的测试类名、组件移除、父构造及兼容DTO复用；升级测试保留旧target非空快照/幂等断言，latest后改用正式服务。该静态核查不替代真实升级通过。
+- C最新检查点 `70d7cfae502bc83bc90e430edf5ff8b3b6c09ef0`，包含历史执行/资产兼容 `f9df894b68cc24c95d1393e58baf1bb1a3d08c0f`。worker报告89单元、263前端及29项相关Python离线检查通过；179集成库存，DB/OIDC/浏览器均NOT_RUN。历史内容服务由B负责，执行/资产兼容由C负责；两边独立分支修改共享升级测试，总管合流保留两边，不整文件选一方。
+- 总管已答复C先待B验收后合流B+C，再跑确切组合，避免先做C单线完整179。固定C专项43项：ManualExecutionDatabaseIT31、ManualExecutionMigrationUpgradeIT4、AssetDatabaseIT步骤证据3、真实OIDC手工执行1、Asset/Defect/Release三个升级各1、AssetProvisioningUpgradeIT的upgradedDatabaseUsesProvisionedRestrictedScannerLogin1；加B专项8，组合专项暂定51。93单元/187完整集成仅预估，合流必须逐名复核。批准复用B设施55490a9并独立提交固定selector/计数适配，暂不启动资源。
+- C组合设施检查点 `b708b7f55a91305adb654f01c81eb4c94a943386` 已固定51个专项方法身份及扫描预检确切方法，拒绝缺失/替换/重复与F/E/S；完整集成必须包含这51项。总unit/full暂留85/167使未合流版本失败关闭，不冒称组合库存；合流后另提实际计数供审。worker报告相关离线共46项通过。C按明确安排结束当前轮等待B，不是任务完成；Dispatch仍开，收到B最终验收SHA/清理后以send续派，不因停止通知擅自重试或启动资源。
+- 70d7cfa新增显式 `--with-assets` 真实固定digest S3/ClamAV、归属/daemon/端口守卫、正式独立scanner LOGIN及SCRAM核验。总管已静态审查并独立运行7项新增Python设施回归通过；真实执行仍NOT_RUN，窗口尚未放行。assets disabled不能验收C步骤附件。B通过后仍需真实姓名选择、字段保存重载与历史流程；B验收合入后才启动D并指定确切基线和迁移号。
+- 复核资格跨模块决定：新指定复核人必须是有效project writer（现有admin/member）；viewer可读目录，不能被指定为可批准人。D动作时重新核验，不从租户角色或历史指定推断当前批准权限。
+
 ## 当前负责人和交接状态
 
 - 用户最新原话：“现在你是总管，你们两个总管交接好文档”。当前外层 Wetest365ALM 的 Codex 接任总管，负责方向、拆任务、答疑、验收及最终合并决定。

@@ -4,6 +4,9 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.sql.ResultSet;
+import tools.jackson.databind.JsonNode;
+import com.test365alm.server.businessfields.BusinessFields;
+import com.test365alm.server.core.CoreCommands;
 import java.sql.SQLException;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -51,9 +54,11 @@ public class TestCaseService {
         CreateCommand normalized = normalizeCreate(command);
         String hash = requestHash(normalized.testType(), normalized.title(), normalized.description(),
                 normalized.preconditions(), normalized.steps());
+        if(normalized.businessFields()!=null) hash=CoreCommands.hash(hash,BusinessFields.hash(normalized.businessFields()));
         IdempotencyRecord replay = claimOrReplay(project.tenantId(), projectId, actor, CREATE_ROUTE, idempotencyKey, hash);
         if (replay != null) return replayView(actor, projectId, replay);
 
+        JsonNode fields=BusinessFields.normalize("test_case",normalized.businessFields(),jdbc,project);
         UUID testCaseId = UUID.randomUUID();
         UUID revisionId = UUID.randomUUID();
         long displayNumber = allocateNumber(project.tenantId(), projectId);
@@ -66,10 +71,10 @@ public class TestCaseService {
                     normalized.testType(), actor);
             jdbc.update("""
                     INSERT INTO test_revision
-                        (tenant_id, project_id, test_case_id, id, revision_no, title, description, preconditions, created_by, sealed_at)
-                    VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, NULL)
+                        (tenant_id, project_id, test_case_id, id, revision_no, title, description, preconditions, created_by, sealed_at, business_fields)
+                    VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, NULL, ?::jsonb)
                     """, project.tenantId(), projectId, testCaseId, revisionId, normalized.title(),
-                    normalized.description(), normalized.preconditions(), actor);
+                    normalized.description(), normalized.preconditions(), actor, fields.toString());
             insertSteps(project.tenantId(), projectId, testCaseId, revisionId, normalized.steps(), Set.of(), false);
             sealRevision(project.tenantId(), projectId, testCaseId, revisionId);
             jdbc.update("""
@@ -140,7 +145,7 @@ public class TestCaseService {
                 SELECT t.id, t.project_id, t.display_number, t.test_type, t.row_version,
                        t.created_at, t.created_by, r.id AS revision_id, r.revision_no,
                        r.title, r.description, r.preconditions, r.created_at AS revision_created_at,
-                       r.created_by AS revision_created_by
+                       r.created_by AS revision_created_by, r.business_fields
                 FROM test_case t JOIN test_revision r
                   ON r.tenant_id = t.tenant_id AND r.project_id = t.project_id
                  AND r.test_case_id = t.id AND r.id = t.current_revision_id
@@ -157,7 +162,7 @@ public class TestCaseService {
         ensureCase(project.tenantId(), projectId, testCaseId);
         List<RevisionRecord> records = jdbc.query("""
                 SELECT id, test_case_id, revision_no, title, description, preconditions,
-                       created_at, created_by
+                       created_at, created_by, business_fields
                 FROM test_revision
                 WHERE tenant_id = ? AND project_id = ? AND test_case_id = ?
                 ORDER BY revision_no DESC
@@ -173,7 +178,7 @@ public class TestCaseService {
         ensureCase(project.tenantId(), projectId, testCaseId);
         List<RevisionRecord> values = jdbc.query("""
                 SELECT id, test_case_id, revision_no, title, description, preconditions,
-                       created_at, created_by
+                       created_at, created_by, business_fields
                 FROM test_revision
                 WHERE tenant_id = ? AND project_id = ? AND test_case_id = ? AND id = ?
                 """, TestCaseService::mapRevisionRecord,
@@ -193,6 +198,7 @@ public class TestCaseService {
         RevisionCommand normalized = requireRevision(command);
         String hash = revisionRequestHash(testCaseId.toString(), Long.toString(expected), normalized.title(),
                 normalized.description(), normalized.preconditions(), normalized.steps());
+        if(normalized.businessFields()!=null) hash=CoreCommands.hash(hash,BusinessFields.hash(normalized.businessFields()));
         String route = REVISION_ROUTE + testCaseId;
         IdempotencyRecord replay = claimOrReplay(project.tenantId(), projectId, actor, route, idempotencyKey, hash);
         if (replay != null) return replayView(actor, projectId, replay);
@@ -204,7 +210,8 @@ public class TestCaseService {
         }
         List<StepView> priorSteps = steps(project.tenantId(), projectId, testCaseId, current.revisionId());
         List<StepCommand> resolved = resolveSteps(normalized.steps(), priorSteps);
-        if (sameRevision(current, normalized, resolved, priorSteps)) {
+        JsonNode fields=BusinessFields.normalize("test_case",normalized.businessFields()==null?current.businessFields():normalized.businessFields(),jdbc,project);
+        if (fields.equals(current.businessFields()) && sameRevision(current, normalized, resolved, priorSteps)) {
             TestCaseView result = toView(current, priorSteps);
             saveIdempotency(project.tenantId(), projectId, actor, route, idempotencyKey, result);
             return result;
@@ -213,10 +220,10 @@ public class TestCaseService {
         long nextRevision = current.revisionNo() + 1;
         jdbc.update("""
                 INSERT INTO test_revision
-                    (tenant_id, project_id, test_case_id, id, revision_no, title, description, preconditions, created_by, sealed_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+                    (tenant_id, project_id, test_case_id, id, revision_no, title, description, preconditions, created_by, sealed_at, business_fields)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?::jsonb)
                 """, project.tenantId(), projectId, testCaseId, revisionId, nextRevision,
-                normalized.title(), normalized.description(), normalized.preconditions(), actor);
+                normalized.title(), normalized.description(), normalized.preconditions(), actor, fields.toString());
         insertSteps(project.tenantId(), projectId, testCaseId, revisionId, resolved, keys(priorSteps), true);
         sealRevision(project.tenantId(), projectId, testCaseId, revisionId);
         int updated = jdbc.update("""
@@ -309,7 +316,7 @@ public class TestCaseService {
                 SELECT t.id, t.project_id, t.display_number, t.test_type, t.row_version,
                        t.created_at, t.created_by, r.id AS revision_id, r.revision_no,
                        r.title, r.description, r.preconditions, r.created_at AS revision_created_at,
-                       r.created_by AS revision_created_by
+                       r.created_by AS revision_created_by, r.business_fields
                 FROM test_case t JOIN test_revision r
                   ON r.tenant_id = t.tenant_id AND r.project_id = t.project_id
                  AND r.test_case_id = t.id AND r.id = t.current_revision_id
@@ -390,7 +397,7 @@ public class TestCaseService {
                 SELECT t.id, t.project_id, t.display_number, t.test_type, t.row_version,
                        t.created_at, t.created_by, r.id AS revision_id, r.revision_no,
                        r.title, r.description, r.preconditions, r.created_at AS revision_created_at,
-                       r.created_by AS revision_created_by
+                       r.created_by AS revision_created_by, r.business_fields
                 FROM test_case t JOIN test_revision r
                   ON r.tenant_id = t.tenant_id AND r.project_id = t.project_id
                  AND r.test_case_id = t.id AND r.id = ?
@@ -414,14 +421,14 @@ public class TestCaseService {
         if (!SUPPORTED_TYPES.contains(type)) throw ProjectAccessException.invalid("Only MANUAL test cases are supported");
         return new CreateCommand(type, requiredText(command.title(), "title", 500),
                 optionalText(command.description(), "description", 100_000),
-                optionalText(command.preconditions(), "preconditions", 100_000), normalizeSteps(command.steps()));
+                optionalText(command.preconditions(), "preconditions", 100_000), normalizeSteps(command.steps()), command.businessFields());
     }
 
     private static RevisionCommand requireRevision(RevisionCommand command) {
         if (command == null) throw ProjectAccessException.invalid("request body is required");
         RevisionCommand normalized = new RevisionCommand(requiredText(command.title(), "title", 500),
                 optionalText(command.description(), "description", 100_000),
-                optionalText(command.preconditions(), "preconditions", 100_000), normalizeSteps(command.steps()));
+                optionalText(command.preconditions(), "preconditions", 100_000), normalizeSteps(command.steps()), command.businessFields());
         return normalized;
     }
 
@@ -571,20 +578,20 @@ public class TestCaseService {
                 rs.getObject("created_at", OffsetDateTime.class), rs.getObject("created_by", UUID.class),
                 rs.getObject("revision_id", UUID.class), rs.getLong("revision_no"), rs.getString("title"),
                 rs.getString("description"), rs.getString("preconditions"),
-                rs.getObject("revision_created_at", OffsetDateTime.class), rs.getObject("revision_created_by", UUID.class));
+                rs.getObject("revision_created_at", OffsetDateTime.class), rs.getObject("revision_created_by", UUID.class), BusinessFields.read(rs.getString("business_fields")));
     }
 
     private static RevisionRecord mapRevisionRecord(ResultSet rs, int row) throws SQLException {
         return new RevisionRecord(rs.getObject("id", UUID.class), rs.getObject("test_case_id", UUID.class),
                 rs.getLong("revision_no"), rs.getString("title"),
                 rs.getString("description"), rs.getString("preconditions"), rs.getObject("created_at", OffsetDateTime.class),
-                rs.getObject("created_by", UUID.class));
+                rs.getObject("created_by", UUID.class), BusinessFields.read(rs.getString("business_fields")));
     }
 
     private RevisionView withSteps(RevisionRecord record, UUID tenantId, UUID projectId) {
         return new RevisionView(record.id(), record.testCaseId(), record.revisionNo(), record.title(),
                 record.description(), record.preconditions(), record.createdAt(), record.createdBy(),
-                steps(tenantId, projectId, record.testCaseId(), record.id()));
+                steps(tenantId, projectId, record.testCaseId(), record.id()), record.businessFields());
     }
 
     private static TestCaseView toView(TestCaseRow row, List<StepView> steps) {
@@ -594,12 +601,13 @@ public class TestCaseService {
 
     private static RevisionView toRevision(TestCaseRow row, List<StepView> steps) {
         return new RevisionView(row.revisionId(), row.id(), row.revisionNo(), row.title(), row.description(),
-                row.preconditions(), row.revisionCreatedAt(), row.revisionCreatedBy(), steps);
+                row.preconditions(), row.revisionCreatedAt(), row.revisionCreatedBy(), steps, row.businessFields());
     }
 
     public record CreateCommand(String testType, String title, String description, String preconditions,
-            List<StepCommand> steps) { }
-    public record RevisionCommand(String title, String description, String preconditions, List<StepCommand> steps) { }
+            List<StepCommand> steps, JsonNode businessFields) { public CreateCommand(String testType, String title, String description, String preconditions,
+            List<StepCommand> steps){this(testType,title,description,preconditions,steps,null);} }
+    public record RevisionCommand(String title, String description, String preconditions, List<StepCommand> steps, JsonNode businessFields) { public RevisionCommand(String title, String description, String preconditions, List<StepCommand> steps){this(title,description,preconditions,steps,null);} }
     public record StepCommand(UUID stepKey, Integer ordinal, String action, String expected) { }
     public record TestCasePage(List<TestCaseSummary> items, String nextCursor) { }
     public record TestCaseSummary(UUID id, UUID projectId, long displayNumber, String testType, long rowVersion,
@@ -608,13 +616,14 @@ public class TestCaseService {
     public record TestCaseView(UUID id, UUID projectId, long displayNumber, String testType, long rowVersion,
             OffsetDateTime createdAt, UUID createdBy, RevisionView currentRevision) { }
     public record RevisionView(UUID id, UUID testCaseId, long revisionNo, String title, String description,
-            String preconditions, OffsetDateTime createdAt, UUID createdBy, List<StepView> steps) { }
+            String preconditions, OffsetDateTime createdAt, UUID createdBy, List<StepView> steps, JsonNode businessFields) { public RevisionView { if(businessFields!=null&&businessFields.isNull())businessFields=null; } public RevisionView(UUID id, UUID testCaseId, long revisionNo, String title, String description,
+            String preconditions, OffsetDateTime createdAt, UUID createdBy, List<StepView> steps){this(id,testCaseId,revisionNo,title,description,preconditions,createdAt,createdBy,steps,null);} }
     public record StepView(UUID stepKey, int ordinal, String action, String expected) { }
     private record TestCaseRow(UUID id, UUID projectId, long displayNumber, String testType, long rowVersion,
             OffsetDateTime createdAt, UUID createdBy, UUID revisionId, long revisionNo, String title,
-            String description, String preconditions, OffsetDateTime revisionCreatedAt, UUID revisionCreatedBy) { }
+            String description, String preconditions, OffsetDateTime revisionCreatedAt, UUID revisionCreatedBy, JsonNode businessFields) { }
     private record IdempotencyRecord(String requestHash, UUID testCaseId, UUID revisionId,
             Long resultDisplayNumber, Long resultRowVersion, Long resultRevisionNo) { }
     private record RevisionRecord(UUID id, UUID testCaseId, long revisionNo, String title, String description,
-            String preconditions, OffsetDateTime createdAt, UUID createdBy) { }
+            String preconditions, OffsetDateTime createdAt, UUID createdBy, JsonNode businessFields) { }
 }

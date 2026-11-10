@@ -50,3 +50,7 @@ describe('manual test case API request shapes', () => {
   })
 })
 
+it('transmits business fields and parses them from the exact test revision snapshot',async()=>{
+ const fields={test_purpose:{value:'OQ purpose'}};const writes:unknown[]=[];vi.stubGlobal('fetch',vi.fn(async(path:RequestInfo|URL,init?:RequestInit)=>{if(String(path).endsWith('/csrf'))return new Response(JSON.stringify({headerName:'X-CSRF-TOKEN',token:'synthetic'}));if(init?.body)writes.push(JSON.parse(String(init.body)));return new Response(JSON.stringify({...responseBody,currentRevision:{...responseBody.currentRevision,businessFields:fields}}),{headers:{ETag:'"1"'}})}))
+ const saved=await testsApi.create(projectId,{title:'Login',description:'',preconditions:'',steps:[],businessFields:fields});expect(saved.businessFields).toEqual(fields);expect(writes[0]).toMatchObject({businessFields:fields})
+})

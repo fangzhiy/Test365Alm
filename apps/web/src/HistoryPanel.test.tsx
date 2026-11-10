@@ -4,13 +4,21 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { StrictMode } from 'react'
 import HistoryPanel from './HistoryPanel'
 import { historyApi } from './historyApi'
+import { reviewerApi } from './reviewerApi'
 import type { HistoryEntry, HistoryPage } from './historyApi'
 
 vi.mock('./historyApi', () => ({ historyApi: { list: vi.fn() } }))
+vi.mock('./reviewerApi',()=>({reviewerApi:{list:vi.fn()}}))
 const entry: HistoryEntry = { id: 'event', at: '2026-11-10T08:00:00Z', actor: { id: 'member', displayName: '张三' }, action: 'defect.revised', revision: 2, changes: [{ field: 'title', before: '旧标题', after: '新标题' }] }
 beforeEach(() => { vi.mocked(historyApi.list).mockResolvedValue({ items: [], nextCursor: null }) })
 afterEach(() => { cleanup(); vi.resetAllMocks() })
 const panel = (id = 'd') => <HistoryPanel projectId="p" objectType="defect" objectId={id}/>
+
+it('resolves reviewer audit identities through the project directory and never displays raw IDs',async()=>{
+  vi.mocked(historyApi.list).mockResolvedValue({items:[{...entry,changes:[{field:'businessFields.reviewer',before:'revoked-id',after:'writer-id'}]}],nextCursor:null})
+  vi.mocked(reviewerApi.list).mockImplementation(async(_p,_q,_cursor,id)=>({items:id==='writer-id'?[{principalId:id,displayName:'李四'}]:[],nextCursor:null}))
+  render(panel());expect(await screen.findByText('李四（当前成员姓名）')).toBeInTheDocument();expect(screen.getByText('已指定的复核人不可用')).toBeInTheDocument();expect(screen.queryByText('writer-id')).not.toBeInTheDocument();expect(screen.queryByText('revoked-id')).not.toBeInTheDocument()
+})
 
 it('renders actor action time and before/after values, including entries without changes', async () => {
   vi.mocked(historyApi.list).mockResolvedValue({ items: [entry, { ...entry, id: 'second', actor: { id: 'fallback', displayName: null }, action: 'defect.retest-started', changes: [] }], nextCursor: null })

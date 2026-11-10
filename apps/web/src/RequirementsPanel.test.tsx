@@ -421,3 +421,9 @@ describe('RequirementsPanel', () => {
   })
 
 })
+it('requirement department and equipment fields persist in create and survive stale drafts and history',async()=>{
+ const saved={...requirement,etag:'"1"',businessFields:{equipment_system_id:{value:'EQ-01'},owning_department:{value:'QA'}}};vi.mocked(requirementsApi.list).mockResolvedValue({items:[saved],nextCursor:null});vi.mocked(requirementsApi.get).mockResolvedValue(saved);vi.mocked(requirementsApi.revisions).mockResolvedValue([{...revision,businessFields:{equipment_system_id:{value:'Old equipment'}}}]);vi.mocked(requirementsApi.update).mockRejectedValue({code:'STALE_VERSION',message:'stale'})
+ render(<RequirementsPanel projectId="project-1" access={access}/>);fireEvent.click(await screen.findByRole('button',{name:/REQ-1/}));await waitFor(()=>expect(screen.getByLabelText('编辑所属部门')).toHaveValue('QA'));fireEvent.change(screen.getByLabelText('编辑所属部门'),{target:{value:'Draft department'}});fireEvent.click(screen.getByRole('button',{name:'保存需求'}));await screen.findByRole('button',{name:'查看最新版本'});expect(requirementsApi.update).toHaveBeenCalledWith('project-1',saved,expect.objectContaining({businessFields:{equipment_system_id:{value:'EQ-01'},owning_department:{value:'Draft department'}}}),expect.anything())
+ vi.mocked(requirementsApi.get).mockResolvedValue({...saved,rowVersion:2,etag:'"2"',businessFields:{owning_department:{value:'Server department'}}});fireEvent.click(screen.getByRole('button',{name:'查看最新版本'}));await screen.findByText('已加载最新版本，草稿仍保留，请确认后再保存。');expect(screen.getByLabelText('编辑所属部门')).toHaveValue('Draft department')
+ fireEvent.click(document.querySelector('.revision-row') as HTMLElement);expect(await screen.findByText('Old equipment')).toBeVisible()
+})

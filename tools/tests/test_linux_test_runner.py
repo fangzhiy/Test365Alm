@@ -4,8 +4,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from tools.linux_test_runner import Guard, Identity, RUN, SOURCE, committed_archive, main, validate
-from tools.linux_test_inside import summarize
+from tools.linux_test_runner import Guard, Identity, RUN, SOURCE, committed_archive, main, validate, run_phases
+from tools.linux_test_inside import summarize, valid_report, BUSINESS_METHODS, PHASES
 from tools.r02_resource_guard import ResourceOwnershipError
 
 RUN_ID = "a" * 32
@@ -18,6 +18,34 @@ def container():
 
 
 class LinuxRunnerGuardTests(unittest.TestCase):
+    def test_focused_command_and_successful_phase_order(self):
+        with patch("tools.linux_test_runner.phase", return_value=0) as phase:
+            self.assertEqual(0, run_phases(Mock(), "runner", Path("evidence")))
+            self.assertEqual(["scan", "unit", "focused", "integration"], [call.args[2] for call in phase.call_args_list])
+        self.assertEqual(["-Pintegration", "verify", "-Dit.test=BusinessFieldsDatabaseIT,BusinessFieldsMigrationUpgradeIT"], PHASES["focused"])
+
+    def test_every_failed_phase_stops_before_later_phases(self):
+        for failure_index in range(4):
+            with self.subTest(failure_index=failure_index), patch("tools.linux_test_runner.phase", side_effect=[0]*failure_index+[7]) as phase:
+                self.assertEqual(7, run_phases(Mock(), "runner", Path("evidence")))
+                self.assertEqual(failure_index+1, phase.call_count)
+                if failure_index<3:
+                    self.assertNotIn("integration", [call.args[2] for call in phase.call_args_list])
+
+    def test_focused_report_rejects_replaced_duplicate_missing_and_failed_methods(self):
+        def summary(cases):
+            return {"tests":len(cases),"cases":cases,"failures":0,"errors":0,"skipped":0}
+        report={"unit":summary([{"class":"Unit","method":str(i)} for i in range(89)]),
+                "integration":summary([{"class":c,"method":m} for c,m in sorted(BUSINESS_METHODS)])}
+        self.assertTrue(valid_report("focused",report))
+        for alteration in ("replace","duplicate","missing","failures","errors","skipped"):
+            bad=copy.deepcopy(report)
+            if alteration=="replace":bad["integration"]["cases"][0]["method"]="other"
+            elif alteration=="duplicate":bad["integration"]["cases"][0]=bad["integration"]["cases"][1]
+            elif alteration=="missing":bad["integration"]["cases"].pop()
+            else:bad["integration"][alteration]=1
+            with self.subTest(alteration=alteration):self.assertFalse(valid_report("focused",bad))
+
     def guard(self):
         with patch("tools.linux_test_runner.docker_context", return_value="desktop-linux"), \
                 patch("tools.linux_test_runner.docker_engine", return_value="engine"):

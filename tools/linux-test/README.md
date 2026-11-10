@@ -34,8 +34,14 @@ not ready for a real combined run until those totals are reviewed and committed.
 All phases require zero failures/errors/skips and duplicate identities.
 Changing the total gates requires reviewing the actual merged tests.
 Compared with the history-only snapshot, folders add three unit methods, nine
-`FolderDatabaseIT` methods and one real OIDC folder HTTP method. Existing migration
-assertions now require V22; they remain assertions rather than additional methods.
+`FolderDatabaseIT` methods and one real OIDC folder HTTP method. Business fields add four `BusinessFieldsTest` unit methods, seven
+`BusinessFieldsDatabaseIT` methods and one `BusinessFieldsMigrationUpgradeIT` method.
+The scan preflight expects exactly 89 units and one real scan method; unit expects
+89 units; full integration expects 89 units and 175 integrations. Existing latest
+migration assertions require formal V23 (23 migrations); the deliberate failure
+probe is V25, with V24 reserved for the execution workline. These remain assertions
+rather than additional methods. The coordinator explicitly authorized this exact
+inventory update; commands, zero-failure checks and resource guards stay fixed.
 Raw Maven logs, upload temp files, caches and EICAR bytes stay inside Linux. Only runtime
 versions, package names/versions, method identities and aggregate status JSON are exported
 under ignored `local-evidence/linux-tests/<run>/`. No XML properties/system-out, exception

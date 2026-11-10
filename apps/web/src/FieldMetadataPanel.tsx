@@ -25,7 +25,7 @@ function Fields({ projectId, admin }: { projectId: string; admin: boolean }) {
   }
   const locked = busy || intent !== null
   if (denied) return <section aria-label="字段元数据"><p role="alert">该字段范围不可访问；请重新加载项目权限。{message}</p></section>
-  return <section aria-label="字段元数据" className="version-panel"><h2>项目字段元数据</h2><p>系统字段（只读保留名）：{system.map(s => <span key={s}>{s} </span>)}</p><p>仅定义与验证字段；尚未将自定义值写入业务对象。</p>
+  return <section aria-label="字段元数据" className="version-panel"><h2>项目字段元数据</h2><p>系统字段（只读保留名）：{system.map(s => <span key={s}>{s} </span>)}</p><p>同名项目字段可用于业务表单：test_purpose、reviewer、occurrence_department、occurrence_location、equipment_system_id、owning_department。表单采用确切定义修订，字段值随实体内容修订保存。</p>
     <button disabled={locked} onClick={() => void run(signal => coreApi.fields(projectId, null, { signal }), page => { setItems(page.items); setCursor(page.nextCursor) })}>刷新字段</button>
     <ul>{items.map(f => <li key={f.id}><button disabled={locked} onClick={() => choose(f)}>{f.definition.key} · {f.definition.type} · v{f.rowVersion}</button></li>)}</ul>
     {cursor && <button disabled={locked} onClick={() => void run(signal => coreApi.fields(projectId, cursor, { signal }), page => { setItems(old => [...old, ...page.items]); setCursor(page.nextCursor) })}>更多字段</button>}

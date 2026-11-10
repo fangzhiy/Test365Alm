@@ -1,5 +1,7 @@
+import { businessLabels } from './businessFields'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { historyApi } from './historyApi'
+import ReviewerPicker from './ReviewerPicker'
 import type { HistoryEntry, HistoryObjectType } from './historyApi'
 import './HistoryPanel.css'
 
@@ -14,6 +16,7 @@ const fields: Record<string, string> = {
   action: '动作', expected: '预期', ordinal: '序号', actualResult: '实际结果',
 }
 function fieldLabel(field: string) {
+  if(field.startsWith('businessFields.')){const key=field.split('.')[1];return (businessLabels[key]??key)+(field.endsWith('.definition')?' 字段定义':'')}
   const step = /^steps\[(\d+)\](?:\.(.+))?$/.exec(field)
   return step ? `步骤 ${step[1]}${step[2] ? ` ${fields[step[2]] ?? step[2]}` : ''}` : fields[field] ?? field
 }
@@ -67,7 +70,7 @@ function HistorySession({ projectId, objectType, objectId }: Props) {
           <td>{item.actor.displayName || item.actor.id}</td>
           <td>{actions[item.action] ?? item.action}</td>
           <td>{change ? fieldLabel(change.field) : '—'}</td>
-          <td>{change ? <><span>{change.before ?? '—'}</span><span aria-hidden="true"> → </span><span className="history-sr-only">变为</span><span>{change.after ?? '—'}</span></> : '—'}</td>
+          <td>{change ? <><span>{change.field==='businessFields.reviewer'?<ReviewerPicker projectId={projectId} value={change.before}/>:change.before ?? '—'}</span><span aria-hidden="true"> → </span><span className="history-sr-only">变为</span><span>{change.field==='businessFields.reviewer'?<ReviewerPicker projectId={projectId} value={change.after}/>:change.after ?? '—'}</span></> : '—'}</td>
         </tr>))}</tbody>
       </table>
     </div>}
