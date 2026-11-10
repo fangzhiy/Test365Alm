@@ -8,6 +8,7 @@ import './HistoryPanel.css'
 type Props = { projectId: string; objectType: HistoryObjectType; objectId: string }
 const actions: Record<string, string> = {
   'test_case.created': '创建用例', 'test_case.revised': '修改用例',
+  'test_case.review.submitted': '提交用例复核', 'test_case.review.approved': '批准用例修订', 'test_case.review.rejected': '拒绝用例修订',
   'defect.created': '创建缺陷', 'defect.revised': '修改缺陷', 'defect.transitioned': '缺陷状态流转', 'defect.retest-started': '开始复测',
   'run.started': '开始运行', 'step.recorded': '记录步骤结果', paused: '暂停运行', resumed: '继续运行', 'run.finished': '完成运行', 'run.retried': '重新运行',
 }

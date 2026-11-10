@@ -143,6 +143,10 @@
       "ifMatchAcceptsOnlyOneStrongQuotedPositiveTag",
       "ifMatchRejectsBareWeakWildcardAndMalformedValues"
     ],
+    "com.test365alm.server.review.ReviewRulesTest": [
+      "onlySubmittedContentCanBeDecidedAndApprovedContentCannotBeResubmitted",
+      "strictCommandRejectsForgedIdentityUnknownActionsAndInvalidReasons"
+    ],
     "com.test365alm.server.Test365AlmServerApplicationTests": [
       "applicationIsMarkedAsSpringBootApplication"
     ],
@@ -302,6 +306,8 @@
       "realOidcReleaseHttpAdminDatesEtagsCsrfAndRoleBoundary",
       "realOidcReleaseHttpTypedScopeSnapshotsAndOldSessionRevocation",
       "realOidcRequirementHttpEnforcesStrongEtagsCsrfAndMembershipScope",
+      "realOidcReviewHttpDesignatedIdentityCsrfVersionsReplayAndImmutableRevision",
+      "realOidcReviewHttpOldSessionsReauthorizeReviewerAndActorAfterRevocation",
       "realOidcSessionCanUseProjectHttpEndpointsThroughRuntimeDatasource",
       "realOidcTestCaseHttpEnforcesStrongEtagsCsrfAndInputBoundary",
       "realOidcTestCaseHttpScopesReferencesAndRefreshesOldSessionPermissions",
@@ -373,6 +379,23 @@
     ],
     "com.test365alm.server.requirement.RequirementMigrationUpgradeIT": [
       "v7RowsUpgradeRejectsUnsafeLegacyReplayThroughRuntimeService"
+    ],
+    "com.test365alm.server.review.TestReviewDatabaseIT": [
+      "auditAndOutboxFailureRollbackEventVersionAndIdempotencyAndSameIntentCanRecover",
+      "boundedHistoryUsesStableVersionCursorAndReadAuthorizationBeforeRecords",
+      "concurrentDecisionsAndContentEditsUseOneSharedStrongVersion",
+      "disabledRevokedExpiredOrViewerReviewerCannotActOrReplay",
+      "frozenReplayRetainsOriginalVersionAndStateAndReauthorizesItsActor",
+      "missingReviewerInvalidTransitionsAndForeignRevisionNeverWrite",
+      "newContentRevisionStartsDraftWhileHistoricalApprovalAndDigestRemainFrozen",
+      "onlyDesignatedWriterCanDecideAndViewerForeignScopesOrForgedIdentityHaveNoEffects",
+      "reviewerIdentityUsesUuidValueWhileDigestPreservesOriginalFrozenText",
+      "runtimeRlsRejectsForgedBindingViewerWritesAndHistoricalMutationOrIncompleteCommit",
+      "sameIntentConcurrentSubmissionsReturnOneFrozenEventAndNoDuplicateAudit",
+      "submitRejectResubmitApproveBindsExactContentAndPreservesEveryDecision"
+    ],
+    "com.test365alm.server.review.TestReviewMigrationUpgradeIT": [
+      "nonemptyPreReviewUpgradePreservesFrozenContentAndRuntimeReviewsExactRevision"
     ],
     "com.test365alm.server.testcase.TestCaseDatabaseIT": [
       "auditAndOutboxFailuresRollBack",

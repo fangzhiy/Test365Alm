@@ -8,6 +8,8 @@ from pathlib import Path
 
 
 REQUIRED_TESTS = {
+    "realOidcReviewHttpDesignatedIdentityCsrfVersionsReplayAndImmutableRevision",
+    "realOidcReviewHttpOldSessionsReauthorizeReviewerAndActorAfterRevocation",
     "realOidcFolderHttpCsrfVersionsPlacementsAndViewerBoundary",
     "realHttpApplicationUsesRestrictedRuntimeRole",
     "realOidcProjectHttpScopesTenantsAndRejectsViewerWrites",

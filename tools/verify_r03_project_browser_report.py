@@ -19,6 +19,7 @@ REQUIRED_CORE_UI_TEST = "real Keycloak UI field metadata validates and member tr
 REQUIRED_DEFECT_UI_TEST = "real Keycloak UI member creates defect from FAIL retests PASS closes and preserves history"
 REQUIRED_RELEASE_UI_TEST = "real Keycloak UI admin plans release cycle scope and freezes quality snapshots"
 REQUIRED_ASSET_UI_TEST = "real Keycloak UI member uploads scans attaches and preserves old asset revision"
+REQUIRED_REVIEW_UI_TEST = "real Keycloak UI designated reviewer rejects approves and new revision requires fresh review"
 REQUIRED_BROWSER_TESTS = (
     REQUIRED_TEST,
     REQUIRED_UI_TEST,
@@ -29,6 +30,7 @@ REQUIRED_BROWSER_TESTS = (
     REQUIRED_DEFECT_UI_TEST,
     REQUIRED_RELEASE_UI_TEST,
     REQUIRED_ASSET_UI_TEST,
+    REQUIRED_REVIEW_UI_TEST,
 )
 
 

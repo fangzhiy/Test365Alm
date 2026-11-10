@@ -16,10 +16,13 @@ class ExecutionFocusTests(unittest.TestCase):
         return {"unit": summary([{"class": c, "method": m} for c, names in inventory["unit"].items() for m in names]),
                 "integration": summary([{"class": c, "method": m} for c, m in sorted(inside.FOCUSED_METHODS)])}
 
-    def test_fixed_fifty_one_names_and_no_extra_asset_provision_method(self):
+    def test_fixed_sixty_six_names_and_no_extra_asset_provision_method(self):
         self.assertEqual(43, len(inside.EXECUTION_METHODS))
         self.assertEqual(8, len(inside.BUSINESS_METHODS))
-        self.assertEqual(51, len(inside.FOCUSED_METHODS))
+        self.assertEqual(66, len(inside.FOCUSED_METHODS))
+        self.assertEqual(15, len(inside.REVIEW_METHODS))
+        from tools.verify_test_review_report import REQUIRED
+        self.assertEqual({(c,n) for c,names in REQUIRED.items() for n in names},inside.REVIEW_METHODS)
         self.assertTrue(inside.valid_report("focused", self.report()))
         selected = inside.PHASES["focused"]
         self.assertEqual(["-Pintegration", "verify"], selected[:2])
@@ -28,7 +31,7 @@ class ExecutionFocusTests(unittest.TestCase):
         self.assertEqual(1, selected[2].count("-Dit.test="))
 
     def test_each_missing_or_replaced_method_is_rejected_even_with_same_total(self):
-        for index in range(51):
+        for index in range(66):
             bad = self.report()
             bad["integration"]["cases"][index]["method"] = "unapprovedReplacement"
             self.assertFalse(inside.valid_report("focused", bad))
@@ -55,7 +58,7 @@ class ExecutionFocusTests(unittest.TestCase):
             self.assertFalse(inside.valid_report("focused", bad))
 
     def test_unit_method_substitution_cannot_hide_behind_the_exact_total(self):
-        for index in range(93):
+        for index in range(95):
             bad=self.report()
             bad["unit"]["cases"][index]["method"]="unapprovedReplacement"
             self.assertFalse(inside.valid_report("focused",bad))
@@ -65,9 +68,9 @@ class ExecutionFocusTests(unittest.TestCase):
         inventory=json.loads((Path(__file__).parents[1]/"linux-test/combined-methods.json").read_text(encoding="utf-8"))
         cases = [{"class": c, "method": m} for c, names in inventory["integration"].items() for m in names]
         good["integration"]["cases"] = cases
-        good["integration"]["tests"] = 187
+        good["integration"]["tests"] = 202
         self.assertTrue(inside.valid_report("integration", good))
-        for index in range(187):
+        for index in range(202):
             bad = copy.deepcopy(good)
             bad["integration"]["cases"][index]["method"] = "unapprovedReplacement"
             self.assertFalse(inside.valid_report("integration", bad))
@@ -84,8 +87,8 @@ class ExecutionFocusTests(unittest.TestCase):
             package=re.search(r"package\s+([\w.]+);",text)[1]
             actual["integration" if path.stem.endswith("IT") else "unit"][package+"."+path.stem]=sorted(names)
         self.assertEqual(frozen,actual)
-        self.assertEqual(93,sum(map(len,frozen["unit"].values())))
-        self.assertEqual(187,sum(map(len,frozen["integration"].values())))
+        self.assertEqual(95,sum(map(len,frozen["unit"].values())))
+        self.assertEqual(202,sum(map(len,frozen["integration"].values())))
 
     def test_stage_order_and_each_failure_short_circuits_without_retry(self):
         for failure_index in range(5):

@@ -1369,6 +1369,74 @@ class OidcCallbackSecurityIT {
         assertEquals(200,defectHttp(f.member(),path,"DELETE","\"2\"","{}",UUID.randomUUID().toString(),f.member().csrfToken()).statusCode());
     }
 
+    @Test void realOidcReviewHttpDesignatedIdentityCsrfVersionsReplayAndImmutableRevision() throws Exception {
+        var f=testCaseHttpFixture();var member=f.member();var reviewer=f.admin();
+        String body=testCaseBody("Review HTTP case",null,true);
+        body=body.substring(0,body.length()-1)+",\"businessFields\":{\"reviewer\":{\"value\":\""+reviewer.principalId()+"\"}}}";
+        var created=testCasePost(member,testCasePath(f.project()),null,body);
+        assertEquals(201,created.statusCode(),created.body());
+        var content=JSON.readTree(created.body());String test=content.get("id").asText();
+        String revision=content.get("currentRevision").get("id").asText();
+        String path=testCasePath(f.project())+"/"+test+"/revisions/"+revision+"/review";
+        assertEquals("DRAFT",jsonField(get(f.viewer().flow().client(),path).body(),"state"));
+        var before=reviewRows(f.project());
+        assertTestCaseRejected(()->defectHttp(member,path,"POST","\"1\"","{\"action\":\"SUBMIT\"}","review-missing-csrf",null),403,"CSRF_REJECTED");
+        assertTestCaseRejected(()->defectHttp(member,path,"POST","W/\"1\"","{\"action\":\"SUBMIT\"}","review-weak-version",member.csrfToken()),400,"INVALID_REQUEST");
+        assertTestCaseRejected(()->defectHttp(f.viewer(),path,"POST","\"1\"","{\"action\":\"SUBMIT\"}","review-viewer-write",f.viewer().csrfToken()),403,"FORBIDDEN");
+        assertTestCaseRejected(()->defectHttp(member,path,"POST","\"1\"","{\"action\":\"SUBMIT\",\"actorId\":\"forged\"}","review-forged-actor",member.csrfToken()),400,"INVALID_REQUEST");
+        assertEquals(before,reviewRows(f.project()));
+        String key="review-http-"+UUID.randomUUID();
+        var submitted=defectHttp(member,path,"POST","\"1\"","{\"action\":\"SUBMIT\"}",key,member.csrfToken());
+        assertEquals(200,submitted.statusCode(),submitted.body());assertEquals("\"2\"",submitted.headers().firstValue("etag").orElseThrow());
+        assertTestCaseRejected(()->defectHttp(member,path,"POST","\"2\"","{\"action\":\"APPROVE\"}","review-wrong-reviewer",member.csrfToken()),403,"FORBIDDEN");
+        var approved=defectHttp(reviewer,path,"POST","\"2\"","{\"action\":\"APPROVE\"}","review-approved-key",reviewer.csrfToken());
+        assertEquals(200,approved.statusCode(),approved.body());assertEquals("APPROVED",jsonField(approved.body(),"state"));
+        assertEquals(submitted.body(),defectHttp(member,path,"POST","\"1\"","{\"action\":\"SUBMIT\"}",key,member.csrfToken()).body());
+        var revised=testCasePost(member,testCasePath(f.project())+"/"+test+"/revisions","\"3\"",testCaseBody("After approval",firstStepKey(created.body()),false));
+        assertEquals(200,revised.statusCode(),revised.body());
+        String next=JSON.readTree(revised.body()).get("currentRevision").get("id").asText();
+        var current=get(member.flow().client(),testCasePath(f.project())+"/"+test+"/revisions/"+next+"/review");
+        assertEquals(200,current.statusCode());assertEquals("DRAFT",jsonField(current.body(),"state"));
+        var history=get(f.viewer().flow().client(),path);assertEquals("APPROVED",jsonField(history.body(),"state"));
+        assertEquals(jsonField(approved.body(),"contentDigest"),jsonField(history.body(),"contentDigest"));
+        assertNotEquals(jsonField(approved.body(),"contentDigest"),jsonField(current.body(),"contentDigest"));
+        assertEquals(404,get(f.outsider().flow().client(),path).statusCode());
+    }
+
+    @Test void realOidcReviewHttpOldSessionsReauthorizeReviewerAndActorAfterRevocation() throws Exception {
+        var f=testCaseHttpFixture();var member=f.member();var reviewer=f.admin();
+        String body=testCaseBody("Review reauthorization",null,true);
+        body=body.substring(0,body.length()-1)+",\"businessFields\":{\"reviewer\":{\"value\":\""+reviewer.principalId()+"\"}}}";
+        var created=testCasePost(member,testCasePath(f.project()),null,body);assertEquals(201,created.statusCode(),created.body());
+        var content=JSON.readTree(created.body());String path=testCasePath(f.project())+"/"+content.get("id").asText()+"/revisions/"+content.get("currentRevision").get("id").asText()+"/review";
+        String key="review-revoke-"+UUID.randomUUID();
+        assertEquals(200,defectHttp(member,path,"POST","\"1\"","{\"action\":\"SUBMIT\"}",key,member.csrfToken()).statusCode());
+        try(var c=ownerConnection();var s=c.prepareStatement("UPDATE project_member SET revoked_at=CURRENT_TIMESTAMP WHERE project_id=? AND principal_id=?")) {
+            s.setObject(1,f.project());s.setObject(2,reviewer.principalId());s.executeUpdate();
+        }
+        var before=reviewRows(f.project());
+        assertTestCaseRejected(()->defectHttp(member,path,"POST","\"1\"","{\"action\":\"SUBMIT\"}",key,member.csrfToken()),422,"VALIDATION_FAILED");
+        assertEquals(404,get(reviewer.flow().client(),path).statusCode());
+        assertTestCaseRejected(()->defectHttp(reviewer,path,"POST","\"2\"","{\"action\":\"APPROVE\"}","review-revoked-admin",reviewer.csrfToken()),404,"NOT_FOUND");
+        assertEquals(before,reviewRows(f.project()));
+        try(var c=ownerConnection();var s=c.prepareStatement("UPDATE project_member SET revoked_at=NULL WHERE project_id=? AND principal_id=?")) {
+            s.setObject(1,f.project());s.setObject(2,reviewer.principalId());s.executeUpdate();
+        }
+        try(var c=ownerConnection();var s=c.prepareStatement("UPDATE project_member SET revoked_at=CURRENT_TIMESTAMP WHERE project_id=? AND principal_id=?")) {
+            s.setObject(1,f.project());s.setObject(2,member.principalId());s.executeUpdate();
+        }
+        assertTestCaseRejected(()->defectHttp(member,path,"POST","\"1\"","{\"action\":\"SUBMIT\"}",key,member.csrfToken()),404,"NOT_FOUND");
+    }
+
+    private Map<String,List<String>> reviewRows(UUID project)throws Exception {
+        var result=new java.util.TreeMap<String,List<String>>();try(var c=ownerConnection()) {
+            for(String table:List.of("test_case","test_revision","test_review_event","test_review_outbox_event","audit_event","core_command_idempotency"))
+                try(var s=c.prepareStatement("SELECT to_jsonb(t)::text FROM "+table+" t WHERE project_id=? ORDER BY to_jsonb(t)::text")) {
+                    s.setObject(1,project);try(var r=s.executeQuery()){var rows=new ArrayList<String>();while(r.next())rows.add(r.getString(1));result.put(table,rows);}
+                }
+        }return result;
+    }
+
     private HttpResponse<String> defectHttp(HttpActor actor,String path,String method,String tag,String body,String key,String csrf)throws Exception{
         var b=HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+appPort+path)).timeout(REQUEST_TIMEOUT).header("Content-Type","application/json").header("Idempotency-Key",key);if(tag!=null)b.header("If-Match",tag);if(csrf!=null)b.header(actor.csrfHeader(),csrf);
         return actor.flow().client().send(b.method(method,HttpRequest.BodyPublishers.ofString(body)).build(),HttpResponse.BodyHandlers.ofString());

@@ -179,6 +179,98 @@ async function write(page: Page, method: string, path: string, data?: unknown, d
   return response
 }
 
+test('real Keycloak UI designated reviewer rejects approves and new revision requires fresh review', async ({page,browser})=>{
+  test.skip(!isOwnedRun(),'review flow requires an explicitly owned isolated R03 stack')
+  test.setTimeout(180_000)
+  const diagnostics=new UiDiagnostics()
+  let memberContext:import('@playwright/test').BrowserContext|undefined,viewerContext:import('@playwright/test').BrowserContext|undefined
+  let businessError:unknown,cleanupError:unknown
+  try {
+    const required=['R03_TEST_USER','R03_TEST_USER_PASSWORD','R03_MEMBER_USER','R03_MEMBER_PASSWORD','R03_VIEWER_USER','R03_VIEWER_PASSWORD'] as const
+    for(const name of required)if(!process.env[name])throw new Error('All isolated review test identities are required')
+    const adminId=await diagnostics.step(page,'review login designated reviewer',()=>login(page,process.env.R03_TEST_USER!,process.env.R03_TEST_USER_PASSWORD!,'R03 Tester',diagnostics))
+    memberContext=await browser.newContext();viewerContext=await browser.newContext()
+    const member=await memberContext.newPage(),viewer=await viewerContext.newPage()
+    const memberId=await diagnostics.step(member,'review login author',()=>login(member,process.env.R03_MEMBER_USER!,process.env.R03_MEMBER_PASSWORD!,'R03 Member',diagnostics))
+    const viewerId=await diagnostics.step(viewer,'review login viewer',()=>login(viewer,process.env.R03_VIEWER_USER!,process.env.R03_VIEWER_PASSWORD!,'R03 Viewer',diagnostics))
+    const {tenantId,domainId}=seedProjectAccessScope(adminId,viewerId,memberId)
+    const created=await write(page,'POST','/api/v1/projects',{tenantId,domainId,code:`REVIEW-${Date.now()}`,name:'Review isolated project'},diagnostics)
+    expect(created.status()).toBe(201);const project=await created.json() as {id:string}
+    for(const [id,role] of [[memberId,'PROJECT_MEMBER'],[viewerId,'PROJECT_VIEWER']]) {
+      expect((await write(page,'PUT',`/api/v1/projects/${project.id}/members/${id}`,{roles:[role],authorizationVersion:0},diagnostics)).status()).toBe(200)
+    }
+    const title=`Revision review ${Date.now()}`
+    const load=async(target:Page,open=false)=>{
+      await target.getByRole('button',{name:'加载访问范围'}).click()
+      const access=target.getByRole('region',{name:'租户、项目与成员'})
+      await access.getByRole('combobox').first().selectOption(tenantId)
+      await access.locator('.access-selects select').nth(1).selectOption(project.id)
+      const panel=target.locator('section.test-cases-panel')
+      if(open)await panel.locator('.test-case-list .requirement-row').filter({hasText:title}).click()
+      return panel
+    }
+    const panel=await load(member)
+    await diagnostics.step(member,'review assign stable reviewer and create content',async()=>{
+      await panel.getByLabel('测试用例标题').fill(title)
+      await panel.getByLabel('测试目的',{exact:true}).fill('Review content purpose')
+      await panel.getByLabel('复核人姓名',{exact:true}).fill('R03 Tester')
+      await panel.getByRole('button',{name:'查找复核人',exact:true}).click()
+      await panel.getByRole('combobox',{name:'指定复核人',exact:true}).selectOption({label:'R03 Tester'})
+      await panel.getByRole('button',{name:'新增步骤',exact:true}).click()
+      await panel.getByLabel('步骤 1 操作').fill('Review immutable step')
+      await panel.getByLabel('步骤 1 预期结果').fill('Original expected result')
+      await panel.getByRole('button',{name:'创建用例',exact:true}).click()
+      await expect(panel).toContainText('测试用例已创建')
+      await panel.getByRole('button',{name:'提交复核',exact:true}).click()
+      await expect(panel.getByRole('region',{name:'用例复核',exact:true})).toContainText('待复核')
+      await expect(panel.getByRole('button',{name:'批准本修订'})).not.toBeVisible()
+    })
+    const adminPanel=await load(page,true)
+    await diagnostics.step(page,'designated reviewer rejects exact revision',async()=>{
+      await adminPanel.getByLabel('复核说明或拒绝理由').fill('Please clarify the purpose')
+      await adminPanel.getByRole('button',{name:'拒绝本修订'}).click()
+      await expect(adminPanel.getByRole('region',{name:'用例复核',exact:true})).toContainText('已拒绝')
+    })
+    await diagnostics.step(member,'author resubmits rejected revision',async()=>{
+      await panel.getByRole('button',{name:'刷新复核状态'}).click()
+      await expect(panel.getByRole('region',{name:'用例复核',exact:true})).toContainText('已拒绝')
+      await panel.getByRole('button',{name:'提交复核',exact:true}).click()
+      await expect(panel.getByRole('region',{name:'用例复核',exact:true})).toContainText('待复核')
+    })
+    await diagnostics.step(page,'designated reviewer approves exact revision',async()=>{
+      await adminPanel.getByRole('button',{name:'刷新复核状态'}).click()
+      await adminPanel.getByRole('button',{name:'批准本修订'}).click()
+      await expect(adminPanel.getByRole('region',{name:'用例复核',exact:true})).toContainText('已批准')
+      await expect(adminPanel.getByRole('region',{name:'审计历史',exact:true})).toContainText('批准用例修订')
+    })
+    const viewerPanel=await load(viewer,true)
+    await diagnostics.step(viewer,'viewer reads approval and cannot decide',async()=>{
+      await expect(viewerPanel.getByRole('region',{name:'用例复核',exact:true})).toContainText('已批准')
+      await expect(viewerPanel.getByRole('button',{name:'批准本修订'})).not.toBeVisible()
+      await expect(viewerPanel.getByRole('button',{name:'提交复核',exact:true})).not.toBeVisible()
+      await expect(viewerPanel.getByRole('button',{name:'保存为新修订'})).not.toBeVisible()
+    })
+    await diagnostics.step(member,'new immutable revision invalidates current approval and retains history',async()=>{
+      await member.reload();const current=await load(member,true)
+      await expect(current.getByRole('region',{name:'用例复核',exact:true})).toContainText('已批准')
+      await current.getByLabel('编辑测试目的').fill('Revised purpose needs fresh review')
+      await current.getByRole('button',{name:'保存为新修订'}).click()
+      await expect(current).toContainText('2 个修订')
+      await expect(current.getByRole('region',{name:'用例复核',exact:true})).toContainText('未提交')
+      await expect(current.getByRole('button',{name:'提交复核',exact:true})).toBeEnabled()
+      await current.getByRole('region',{name:'测试用例修订历史'}).getByRole('button',{name:/修订 1/}).click()
+      await expect(current.locator('.revision-readonly')).toContainText('Review content purpose')
+      await expect(current.locator('.revision-readonly').getByRole('region',{name:'历史修订复核',exact:true})).toContainText('已批准')
+      await expect(current.locator('.revision-readonly')).toContainText('Please clarify the purpose')
+    })
+  }catch(error){businessError=error;throw error}
+  finally {
+    try{await memberContext?.close();await viewerContext?.close()}catch(error){cleanupError=error}
+    await diagnostics.write(test.info().title,businessError,cleanupError,'test-review-context')
+  }
+  if(!businessError&&cleanupError)throw cleanupError
+})
+
 test('real Keycloak dual-user project access grants viewer read, rejects write, and revokes the live session', async ({ page, browser }) => {
   test.skip(!isOwnedCiRun(), 'destructive project access flow requires the current CI-owned R03 stack')
   test.setTimeout(90_000)

@@ -1,6 +1,6 @@
 """Explicit one-use local-owned Keycloak acceptance. Never opts into CI identity.
 
-The three approved flows use a committed snapshot and fresh localhost services.
+The four required flows use a committed snapshot and fresh localhost services.
 Only exact manifest resources and directly created process handles are cleaned.
 """
 from __future__ import annotations
@@ -37,6 +37,7 @@ EXPECTED = {
     "real Keycloak UI manual test case flow creates steps, edits order, and keeps viewer read-only",
     "real Keycloak UI manual execution creates, resumes, finishes and reruns a two-step run",
     "real Keycloak UI member creates defect from FAIL retests PASS closes and preserves history",
+    "real Keycloak UI designated reviewer rejects approves and new revision requires fresh review",
 }
 
 
@@ -98,6 +99,50 @@ def capture(project: str, run: str, context: str, source: str, env: dict) -> Res
                             docker_engine(env), RUN_LABEL)
 
 
+def ownership_start(resources: ResourceManifest, source: str, env: dict) -> dict:
+    """Retain complete, whitelisted identities before services or business start."""
+    verify_docker_engine(env)
+    if not verify_manifest(resources, env):
+        raise ResourceOwnershipError("Ownership changed before initial capture")
+    result = {"source": source, "run": resources.run_id, "project": resources.project,
+              "context": resources.docker_context, "engine": resources.docker_engine}
+    expected_labels = {RUN_LABEL: resources.run_id, SOURCE_LABEL: source,
+                       "com.docker.compose.project": resources.project}
+    for kind, plural in (("container", "containers"), ("network", "networks"), ("volume", "volumes")):
+        captured = []
+        for identity in getattr(resources, plural):
+            actual = _inspect(kind, identity, env)
+            labels = _labels(kind, actual)
+            if any(labels.get(key) != value for key, value in expected_labels.items()):
+                raise ResourceOwnershipError("Foreign initial ownership")
+            item = {"labels": {key: labels[key] for key in expected_labels}}
+            if kind == "volume":
+                if actual.get("Name") != identity or not actual.get("Driver"):
+                    raise ResourceOwnershipError("Initial volume identity changed")
+                item.update(name=actual["Name"], driver=actual["Driver"], created=actual.get("CreatedAt"))
+            else:
+                full_id = actual.get("Id", "")
+                if (not isinstance(full_id, str) or not re.fullmatch(r"[a-f0-9]{64}", full_id) or not full_id.startswith(identity)
+                        or not actual.get("Created")):
+                    raise ResourceOwnershipError("Complete initial resource identity missing")
+                item.update(id=full_id, created=actual["Created"])
+                if kind == "container":
+                    if not actual.get("Image"):
+                        raise ResourceOwnershipError("Initial container image identity missing")
+                    item["image"] = actual["Image"]
+                else:
+                    item.update(name=actual.get("Name"), driver=actual.get("Driver"))
+            captured.append(item)
+        identities = [item["name" if kind == "volume" else "id"] for item in captured]
+        if len(identities) != len(set(identities)):
+            raise ResourceOwnershipError("Duplicate initial resource identity")
+        result[plural] = captured
+    verify_docker_engine(env)
+    if not verify_manifest(resources, env):
+        raise ResourceOwnershipError("Ownership changed during initial capture")
+    return result
+
+
 def verify(resources: ResourceManifest, source: str, identities: dict, env: dict) -> None:
     if not verify_manifest(resources, env):
         raise ResourceOwnershipError("Local browser manifest changed")
@@ -130,7 +175,7 @@ def wait_http(url: str, processes: list, seconds: int = 180) -> None:
 def validate_results(report: dict) -> bool:
     cases = report.get("cases", [])
     return (report.get("status") == "passed" and report.get("workers") == 1 and report.get("retries") == 0
-            and len(cases) == 3 and {c["name"] for c in cases} == EXPECTED
+            and len(cases) == 4 and {c["name"] for c in cases} == EXPECTED
             and all(c["status"] == "passed" and c["expected"] == "passed" and c["retry"] == 0 for c in cases))
 
 
@@ -230,6 +275,8 @@ def main() -> int:
         manifest_path = evidence / "manifest.json"
         manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
         verify(resources, args.source, identities, env)
+        (evidence / "ownership-start.json").write_text(
+            json.dumps(ownership_start(resources, args.source, env), indent=2), encoding="utf-8")
         compose("start")
         def asset_guard():
             local_browser_assets.assert_owned(values, services, env, lambda: verify(resources, args.source, identities, env))
@@ -266,7 +313,7 @@ def main() -> int:
             summary["scanner_provision"] = "PASSED"
         verify(resources, args.source, identities, env)
         command(["node", "node_modules/@playwright/test/cli.js", "test", "e2e/project-access.spec.ts", "e2e/manual-execution.spec.ts", "e2e/defects.spec.ts",
-                 "--config", "playwright.local.config.ts", "--grep", "real Keycloak UI (manual test case flow|manual execution creates|member creates defect)",
+                 "--config", "playwright.local.config.ts", "--grep", "real Keycloak UI (manual test case flow|manual execution creates|member creates defect|designated reviewer rejects approves)",
                  "--workers=1", "--retries=0"], root / "apps/web", "browser", timeout=720)
         report = json.loads((evidence / "results.json").read_text())
         result = 0 if validate_results(report) else 1

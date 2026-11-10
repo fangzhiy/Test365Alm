@@ -124,7 +124,7 @@ M13 可配置工作流脚本、M14 版本控制与基线、M15 跨项目报表�
 |---|---|
 | 0 环境与流程 | W1一键演示与A03演示数据已集成；Linux固定快照85单元/167完整集成含真实S3/ClamAV/EICAR通过，三条真实Keycloak业务UI通过；仍不等于所有现有功能实测完成 |
 | 1 主链路 | 1a 通用目录树已集成，完整目录浏览器回归仍待验收；1c三实体业务字段已验收，见docs/reviews/business-fields-coordinator-review.md；1b/1d网格/运行器已通过组合93单元/187真实集成和含真实步骤附件的三条Keycloak流程，总管批准本地集成，见docs/reviews/execution-grid-coordinator-review.md；A03十四用例全集仍未完成，不将整个阶段标完成 |
-| 2 复核/签署/审计 | 2c审计三入口已完成总管审查、组合完整集成及真实Keycloak用例/执行/缺陷流程，批准本地集成，证据见docs/reviews/audit-history-coordinator-review.md；2a复核已有离线检查点，待同步已验收C后组合实测；2a/2b/2d仍未验收，电子签名先模拟 |
+| 2 复核/签署/审计 | 2c审计已验收，见docs/reviews/audit-history-coordinator-review.md；2a指定身份复核已通过95单元/202完整集成及含复核的四条真实Keycloak UI，总管独立核对逐名报告与精确清理，批准本地集成，见docs/reviews/test-case-review-coordinator-review.md；2b/2d模拟签署与锁定仍待实现验收，阶段2未整体完成 |
 | 3 报告 | 未开始 |
 | 4 迁移 | 演示之后（等问题 6） |
 | 5 试运行与切换 | 未开始 |

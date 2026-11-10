@@ -181,6 +181,7 @@ class LocalBrowserAssetTests(unittest.TestCase):
                         patch.object(runner, "committed_archive", side_effect=archive), patch.object(runner, "fresh_config", side_effect=config), \
                         patch.object(runner, "assert_project_available", return_value=("local", "engine")), \
                         patch.object(runner, "verify_docker_engine"), patch.object(runner, "verify") as verify, \
+                        patch.object(runner, "ownership_start", return_value={"fixture": "pre-business ownership"}) as ownership, \
                         patch.object(runner, "_docker", side_effect=lambda argv, *a, **k: json.dumps(document) if "config" in argv else ""), \
                         patch.object(runner, "capture", return_value=resource), patch.object(runner, "_inspect", side_effect=lambda kind, identity, env: by_id[identity]), \
                         patch.object(runner, "cleanup_manifest", return_value=True) as cleanup, patch.object(runner, "wait_http"), \
@@ -192,6 +193,9 @@ class LocalBrowserAssetTests(unittest.TestCase):
                 self.assertIs(resource, cleanup.call_args.args[0])
                 self.assertGreater(verify.call_count, 0)
                 evidence = next((base / "local-evidence/local-browser").iterdir())
+                ownership.assert_called_once()
+                self.assertIs(resource, ownership.call_args.args[0])
+                self.assertEqual({"fixture": "pre-business ownership"}, json.loads((evidence / "ownership-start.json").read_text()))
                 report = json.loads((evidence / "run.json").read_text())
                 self.assertTrue(report["cleanup"])
                 self.assertTrue(report["processes_stopped"])

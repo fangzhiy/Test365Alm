@@ -9,6 +9,7 @@ import type { ProjectAccess } from './projectAccess'
 import AttachmentsPanel from './AttachmentsPanel'
 import FolderTree from './FolderTree'
 import HistoryPanel from './HistoryPanel'
+import ReviewPanel from './ReviewPanel'
 
 type PanelState = 'idle' | 'loading' | 'ready' | 'error'
 type Context = { projectId: string; resetSignal: number; accessKey: string }
@@ -30,6 +31,7 @@ const newStep = (): TestStep => ({ stepKey: `draft-${newIdempotencyKey()}`, ordi
 const normalizeSteps = (steps: TestStep[]) => steps.map((step, index) => ({ ...step, ordinal: index + 1 }))
 
 export default function TestCasesPanel({ projectId, access, resetSignal = 0 }: TestCasesPanelProps) {
+  const accessKey = accessKeyFor(access)
   const [folderId, setFolderId] = useState('root')
   const folderRef = useRef('root')
   const [state, setState] = useState<PanelState>('idle')
@@ -52,7 +54,10 @@ export default function TestCasesPanel({ projectId, access, resetSignal = 0 }: T
   const [searchInput, setSearchInput] = useState('')
   const [notice, setNotice] = useState('')
   const [conflict, setConflict] = useState(false)
-  const [saving, setSaving] = useState(false)
+  const [contentSaving, setSaving] = useState(false)
+  const [reviewLocked, setReviewLocked] = useState(false)
+  const reviewLockContextRef = useRef<Context | null>(null)
+  const saving = contentSaving || reviewLocked
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailReady, setDetailReady] = useState(false)
   const [scopeInvalid, setScopeInvalid] = useState(false)
@@ -83,8 +88,14 @@ export default function TestCasesPanel({ projectId, access, resetSignal = 0 }: T
   const cancelAll = () => { cancelRead(); cancelWrite() }
   const invalidateOperations = () => { readRoundRef.current += 1; writeRoundRef.current += 1; cancelAll() }
   const isCurrentContext = (context: Context) => contextRef.current.projectId === context.projectId && contextRef.current.resetSignal === context.resetSignal && contextRef.current.accessKey === context.accessKey
+  const reviewPendingInScope = () => reviewLockContextRef.current !== null && isCurrentContext(reviewLockContextRef.current)
+  const lockReview = (locked: boolean) => {
+    reviewLockContextRef.current = locked ? { ...contextRef.current } : null
+    setReviewLocked(locked)
+  }
   const clearInvalidData = (message: string) => {
     invalidateOperations()
+    lockReview(false)
     setItems([]); setNextCursor(null); setSelected(null); setRevisions([]); setSelectedRevision(null)
     setBusinessFields(undefined);setTitle(''); setDescription(''); setPreconditions(''); setSteps([])
     setCreateBusinessFields(undefined);setCreateTitle(''); setCreateDescription(''); setCreatePreconditions(''); setCreateSteps([])
@@ -92,6 +103,7 @@ export default function TestCasesPanel({ projectId, access, resetSignal = 0 }: T
     setState('error'); setNotice(message)
   }
   const resetData = () => {
+    lockReview(false)
     setState('idle'); setItems([]); setNextCursor(null); setSelected(null); setRevisions([]); setSelectedRevision(null)
     setBusinessFields(undefined);setTitle(''); setDescription(''); setPreconditions(''); setSteps([])
     setCreateBusinessFields(undefined);setCreateTitle(''); setCreateDescription(''); setCreatePreconditions(''); setCreateSteps([])
@@ -106,6 +118,7 @@ export default function TestCasesPanel({ projectId, access, resetSignal = 0 }: T
   }, [resetSignal])
 
   const load = async (cursor: string | null = null, query = search) => {
+    if (reviewPendingInScope()) return
     const context = contextRef.current
     const round = ++readRoundRef.current
     writeRoundRef.current += 1
@@ -140,9 +153,10 @@ export default function TestCasesPanel({ projectId, access, resetSignal = 0 }: T
     }
     if (!projectId || !access || !can(access, 'test:read')) { invalidateOperations(); resetData(); return }
     void load(null, changed ? '' : search)
-  }, [projectId, access?.permissions.join('|')])
+  }, [projectId, accessKey])
 
   const selectTest = async (testCase: TestCase, options: SelectOptions = {}): Promise<boolean> => {
+    if (reviewPendingInScope()) return false
     const context = contextRef.current
     const round = ++readRoundRef.current
     if (!options.keepWrite) { writeRoundRef.current += 1; cancelWrite(); setSaving(false) }
@@ -240,17 +254,18 @@ export default function TestCasesPanel({ projectId, access, resetSignal = 0 }: T
   const creator = can(access, 'test:create') && !writeDenied; const writable = can(access, 'test:update') && !writeDenied; const historyReadable = can(access, 'test:history:read') || can(access, 'test:read')
   return <section className="test-cases-panel" aria-labelledby="test-cases-heading">
     <div className="access-panel-header"><div><span className="panel-label">M08 · 手工测试用例</span><h2 id="test-cases-heading">测试用例</h2><p>项目内手工用例、步骤和不可变修订。</p></div><button type="button" className="secondary-button" onClick={() => void load()} disabled={state === 'loading' || saving}>{state === 'loading' ? '加载中…' : '刷新用例'}</button></div>
-    <div className="folder-workspace"><FolderTree key={`${projectId}:${accessKeyFor(access)}:${resetSignal}`} projectId={projectId} kind="TEST_PLAN" writable={creator && !scopeInvalid && !writeDenied} selected={folderId} objectId={selected?.id} disabled={saving} onSelect={id => { folderRef.current = id; setFolderId(id); void load() }} onMoved={() => void load()} /><div className="folder-content">
-    <form className="test-search-form" onSubmit={(event) => { event.preventDefault(); setSearch(searchInput); void load(null, searchInput) }}><label>查询<input aria-label="查询测试用例" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="标题或编号" maxLength={200} /></label><button type="submit" className="secondary-button" disabled={state === 'loading' || saving}>查询</button></form>
+    <div className="folder-workspace"><FolderTree key={`${projectId}:${accessKeyFor(access)}:${resetSignal}`} projectId={projectId} kind="TEST_PLAN" writable={creator && !scopeInvalid && !writeDenied} selected={folderId} objectId={selected?.id} disabled={saving} onSelect={id => { if (saving) return; folderRef.current = id; setFolderId(id); void load() }} onMoved={() => void load()} /><div className="folder-content">
+    <form className="test-search-form" onSubmit={(event) => { event.preventDefault(); if (saving) return; setSearch(searchInput); void load(null, searchInput) }}><label>查询<input aria-label="查询测试用例" disabled={saving} value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="标题或编号" maxLength={200} /></label><button type="submit" className="secondary-button" disabled={state === 'loading' || saving}>查询</button></form>
     {state === 'error' && <p className="access-error" role="alert">{notice}</p>}
-    {notice && state !== 'error' && <p className={conflict ? 'requirements-conflict' : 'access-notice'} role={conflict ? 'alert' : 'status'}>{notice}{conflict && selected && <button type="button" className="secondary-button" onClick={() => void selectTest(selected, { preserveDraft: true })}>查看最新版本</button>}</p>}
+    {notice && state !== 'error' && <p className={conflict ? 'requirements-conflict' : 'access-notice'} role={conflict ? 'alert' : 'status'}>{notice}{conflict && selected && <button type="button" className="secondary-button" disabled={saving} onClick={() => void selectTest(selected, { preserveDraft: true })}>查看最新版本</button>}</p>}
     {creator && !scopeInvalid && <form className="test-create-form" onSubmit={(event) => void create(event)}><strong>新建手工用例</strong><BusinessFieldsForm kind="test_case" projectId={projectId} value={createBusinessFields} onChange={v=>{createIntentRef.current=null;setCreateBusinessFields(v)}} disabled={saving}/><label>标题<input aria-label="测试用例标题" value={createTitle} onChange={(event) => { createIntentRef.current = null; setCreateTitle(event.target.value) }} maxLength={500} required disabled={saving} /></label><label>说明<textarea aria-label="测试用例说明" value={createDescription} onChange={(event) => { createIntentRef.current = null; setCreateDescription(event.target.value) }} rows={2} maxLength={10000} disabled={saving} /></label><label>前置条件<textarea aria-label="测试用例前置条件" value={createPreconditions} onChange={(event) => { createIntentRef.current = null; setCreatePreconditions(event.target.value) }} rows={2} maxLength={10000} disabled={saving} /></label><button type="submit" className="primary-button" disabled={saving}>{saving ? '保存中…' : '创建用例'}</button><button type="button" className="secondary-button" onClick={() => setCreateSteps((current) => normalizeSteps([...current, newStep()]))} disabled={saving}>新增步骤</button>{renderSteps(createSteps, true, updateCreateStep, (index) => setCreateSteps((current) => normalizeSteps(current.filter((_step, position) => position !== index))), moveCreateStep)}</form>}
     {state !== 'loading' && state !== 'error' && items.length === 0 && <p className="access-empty" role="status">当前项目还没有手工测试用例。</p>}
-    {items.length > 0 && <div className="test-cases-layout"><div className="test-case-list" aria-label="测试用例列表"><div className="member-list-heading"><strong>用例列表</strong><span>{items.length} 条</span></div>{items.map((item) => <button type="button" className={`requirement-row${selected?.id === item.id ? ' is-selected' : ''}`} key={item.id} onClick={() => void selectTest(item)}><span><strong>{item.displayNumber}</strong><span>{item.title}</span></span><small>修订 {item.revisionNumber}</small></button>)}{nextCursor && <button type="button" className="secondary-button" onClick={() => void load(nextCursor)} disabled={state === 'loading' || saving}>加载更多用例</button>}</div>
+    {items.length > 0 && <div className="test-cases-layout"><div className="test-case-list" aria-label="测试用例列表"><div className="member-list-heading"><strong>用例列表</strong><span>{items.length} 条</span></div>{items.map((item) => <button type="button" className={`requirement-row${selected?.id === item.id ? ' is-selected' : ''}`} key={item.id} disabled={saving} onClick={() => void selectTest(item)}><span><strong>{item.displayNumber}</strong><span>{item.title}</span></span><small>修订 {item.revisionNumber}</small></button>)}{nextCursor && <button type="button" className="secondary-button" onClick={() => void load(nextCursor)} disabled={state === 'loading' || saving}>加载更多用例</button>}</div>
       {selected && <div className="test-case-detail" aria-label="测试用例详情"><div className="requirement-detail-heading"><div><span className="panel-label">用例详情 · {selected.displayNumber}</span><h3>{selected.title}</h3><p>MANUAL · 修订 {selected.revisionNumber} · 版本 {selected.rowVersion}</p></div>{conflict && <span className="requirements-draft-badge">草稿已保留</span>}</div>{writable ? <form onSubmit={(event) => void save(event)}><BusinessFieldsForm kind="test_case" prefix="编辑" projectId={projectId} value={businessFields} onChange={writable?v=>{saveIntentRef.current=null;setBusinessFields(v)}:undefined} disabled={detailLoading||!detailReady||saving}/><label>标题<input aria-label="编辑测试用例标题" value={title} onChange={(event) => { saveIntentRef.current = null; setTitle(event.target.value) }} maxLength={500} required disabled={detailLoading || !detailReady || saving} /></label><label>说明<textarea aria-label="编辑测试用例说明" value={description} onChange={(event) => { saveIntentRef.current = null; setDescription(event.target.value) }} rows={3} maxLength={10000} disabled={detailLoading || !detailReady || saving} /></label><label>前置条件<textarea aria-label="编辑测试用例前置条件" value={preconditions} onChange={(event) => { saveIntentRef.current = null; setPreconditions(event.target.value) }} rows={3} maxLength={10000} disabled={detailLoading || !detailReady || saving} /></label>{renderSteps(steps, true, updateStep, (index) => setSteps((current) => normalizeSteps(current.filter((_step, position) => position !== index))), moveStep, detailLoading || !detailReady)}<div className="test-detail-actions"><button type="button" className="secondary-button" onClick={() => setSteps((current) => normalizeSteps([...current, newStep()]))} disabled={detailLoading || !detailReady || saving}>新增步骤</button><button className="primary-button" type="submit" disabled={saving || detailLoading || !detailReady}>{saving ? '保存中…' : '保存为新修订'}</button></div></form> : <><BusinessFieldsForm kind="test_case" projectId={projectId} value={selected.businessFields}/><p className="requirement-body">{selected.description || '（无说明）'}</p><p className="access-empty">只读用户可以查看用例和历史，但不能创建或保存。</p>{renderSteps(selected.steps, false, updateStep, () => undefined, moveStep)}</>}
+        {detailReady && !scopeInvalid && <ReviewPanel projectId={projectId} testCaseId={selected.id} revisionId={selected.currentRevisionId} rowVersion={selected.rowVersion} contextKey={`${accessKeyFor(access)}:${resetSignal}`} readOnly={!can(access,'test:update')} disabled={contentSaving} onLock={lockReview} onDenied={()=>clearInvalidData('当前测试用例复核范围不可访问，请重新选择项目')} onChanged={review=>{setSelected(old=>old&&old.id===review.testCaseId&&old.currentRevisionId===review.revisionId?{...old,rowVersion:review.rowVersion,etag:`"${review.rowVersion}"`}:old);setItems(old=>old.map(item=>item.id===review.testCaseId?{...item,rowVersion:review.rowVersion,etag:`"${review.rowVersion}"`}:item))}}/>}
         {detailReady && !scopeInvalid && <AttachmentsPanel projectId={projectId} target={{kind:'TEST_CASE',id:selected.id}} access={access} resetSignal={resetSignal} onDenied={()=>clearInvalidData('当前附件及测试用例范围不可访问，请重新选择项目')} />}
         {detailReady && !scopeInvalid && <HistoryPanel key={`${selected.id}:${selected.rowVersion}`} projectId={projectId} objectType="test_case" objectId={selected.id} />}
-        {historyReadable && <section className="requirement-history" aria-label="测试用例修订历史"><div className="member-list-heading"><strong>不可变修订历史</strong><span>{revisions.length} 个修订</span></div>{revisions.length === 0 ? <p className="access-empty">暂无修订历史。</p> : <div className="revision-list">{revisions.map((revision) => <button type="button" className="revision-row" key={revision.id} onClick={() => setSelectedRevision(revision)}><span>修订 {revision.revisionNumber}</span><small>{revision.createdBy} · {revision.createdAt}</small></button>)}</div>}{selectedRevision && <article className="revision-readonly"><strong>修订 {selectedRevision.revisionNumber}（只读）</strong><h4>{selectedRevision.title}</h4><p>{selectedRevision.description || '（无说明）'}</p><p>{selectedRevision.preconditions || '（无前置条件）'}</p><BusinessFieldsForm kind="test_case" projectId={projectId} value={selectedRevision.businessFields}/>{renderSteps(selectedRevision.steps, false, updateStep, () => undefined, moveStep)}</article>}</section>}
+        {historyReadable && <section className="requirement-history" aria-label="测试用例修订历史"><div className="member-list-heading"><strong>不可变修订历史</strong><span>{revisions.length} 个修订</span></div>{revisions.length === 0 ? <p className="access-empty">暂无修订历史。</p> : <div className="revision-list">{revisions.map((revision) => <button type="button" className="revision-row" key={revision.id} onClick={() => setSelectedRevision(revision)}><span>修订 {revision.revisionNumber}</span><small>{revision.createdBy} · {revision.createdAt}</small></button>)}</div>}{selectedRevision && <article className="revision-readonly"><strong>修订 {selectedRevision.revisionNumber}（只读）</strong><h4>{selectedRevision.title}</h4><p>{selectedRevision.description || '（无说明）'}</p><p>{selectedRevision.preconditions || '（无前置条件）'}</p><BusinessFieldsForm kind="test_case" projectId={projectId} value={selectedRevision.businessFields}/>{renderSteps(selectedRevision.steps, false, updateStep, () => undefined, moveStep)}<ReviewPanel projectId={projectId} testCaseId={selected.id} revisionId={selectedRevision.id} rowVersion={selected.rowVersion} contextKey={`${accessKeyFor(access)}:${resetSignal}`} readOnly historical/></article>}</section>}
       </div>}
     </div>}
     </div></div>

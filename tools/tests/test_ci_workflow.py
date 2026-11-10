@@ -26,10 +26,10 @@ class CiWorkflowTests(unittest.TestCase):
         self.assertIn("github_sha=", workflow)
         self.assertIn("checkout_sha=", workflow)
 
-    def test_migration_job_records_formal_v24_before_intentional_v25_failure(self):
+    def test_migration_job_records_formal_v25_before_intentional_v26_failure(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("Verify formal V24 then intentional V25 migration startup failure", workflow)
-        self.assertIn("Formal V24 migration and intentional V25 failure were detected", workflow)
+        self.assertIn("Verify formal V25 then intentional V26 migration startup failure", workflow)
+        self.assertIn("Formal V25 migration and intentional V26 failure were detected", workflow)
         self.assertIn("verify_r02_migration_failure.py", workflow)
 
     def test_server_job_requires_project_access_rls_evidence(self):
@@ -59,6 +59,11 @@ class CiWorkflowTests(unittest.TestCase):
         self.assertIn("Require real PostgreSQL manual execution integration report", workflow)
         self.assertIn("verify_r06_manual_execution_report.py", workflow)
         self.assertIn("apps/server/manual-execution-report.txt", workflow)
+
+    def test_server_job_requires_exact_revision_review_evidence(self):
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("verify_test_review_report.py target/failsafe-reports", workflow)
+        self.assertIn("apps/server/test-review-report.txt", workflow)
 
     def test_server_requires_nonempty_upgrade_before_full_regression(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")

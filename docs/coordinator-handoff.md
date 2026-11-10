@@ -7,12 +7,12 @@
 - 用户已明确“执行全部”，继续本地实现/测试/审查/集成：审计、业务字段、执行网格、复核、模拟签署与锁定、报告、A03十四用例闭环。Run `run_ac1961a61108`，细则 `docs/oq-delivery-plan.md`，清单 `tasks/oq-delivery-todo.md`。不推送、不部署或接生产，不自行确认业务报告格式认可。
 - 目录树已在 `dev@da47293`。审计总管组合后端 `34c19f6` 完整85单元/167集成真实S3/ClamAV/EICAR全绿，cleanup true；真实浏览器源 `4a13589` 的用例/执行/缺陷三条Keycloak流程全部passed，单worker、0retry/skip，exit0、cleanup/processes_stopped均true。总管已独立核对脱敏JSON、实际源码相同性及审查结论，批准本地dev集成。
 - 审计交接原文归档到 `docs/reviews/audit-history-worker-handoff.md`，正式验收在 `docs/reviews/audit-history-coordinator-review.md`。旧Windows Defender导致的失败保留历史事实，未更改安全软件或降低真实扫描断言。
-- B业务字段worker `ctx_75ff43d25b84` 与C执行网格/运行器worker `ctx_625abb4f3c84` 已完成各自验收。正式迁移已含B V23、C V24，共24个实际文件；C本轮故意失败探针V25未执行。D预留正式V25、D线探针V26；合流时更新数量与探针，旧V1—V23不改。
+- B业务字段worker `ctx_75ff43d25b84`、C执行网格/运行器worker `ctx_625abb4f3c84` 及D复核worker `ctx_9ed975ccb1ec` 已完成各自验收。正式迁移现含B V23、C V24、D V25，共25个实际文件，旧V1—V24不改。D线故意失败探针V26未执行；E正式迁移预留V26，探针顺延V27，实施时按实际文件逐名核对。
 - D复核依赖B，E模拟签署/锁定依赖C/D，F报告依赖E，G最终A03验收依赖全部合流。任务已经入队；收到worker完成事件后按真实验收及依赖启动，不把代码检查点视为整功能通过。
 - 审计、B及C本轮测试资源已精确清理；后续重型Docker验证仍严格串行。W1演示与其他项目资源继续保持，不复用未知资源、日常.env或5173/8080。
 - B业务字段本轮B1/B2已完成总管验收：后端源da9906c的89单元/175完整集成、浏览器源b5cc1b2的三条真实流程全部通过，报告/运行源码一致性及精确清理均已独立核对；最终worker交接b2d9ec2归档为 `docs/reviews/business-fields-worker-handoff.md`，正式决定见 `docs/reviews/business-fields-coordinator-review.md`。批准本地dev集成；独立故障探针和完整14条浏览器全集仍NOT_RUN。
 - C已完成总管独立验收：后端源96def34/run d3142b41的scan93/1→unit93→focused93/51→full93/187全零F/E/S，逐名库存匹配；浏览器源8f48057/run7dfd6f17的三条真实Keycloak流程全部passed，1worker/0retry/0skip，real-owned S3/ClamAV及正式双SCRAM provision通过。总管同Engine复核后端53容器、浏览器4容器/1网络/3卷及标签均无残留，秘密删除、同root Java/Node0。最终交接ba65160仅文档变化，原文归档 `docs/reviews/execution-grid-worker-handoff.md`，正式验收 `docs/reviews/execution-grid-coordinator-review.md`；C1/C2批准本地集成，旧失败及cleanup=false记录保留。
-- C已实际集成本地 `dev@1b5ee2353f4b36ababb835dce2ababd1b98c0b9c`，主工作区干净；总管集成增量 `trail check --base ba65160` 通过、无冲突，运行树与最终被测源一致。D复核worker `ctx_9ed975ccb1ec`（`feat-review`，task_7c52218a8a7e）的原离线检查点84eb68b尚未验收；已通过 `msg_6884f578d3cc` 主动续派上述确切基线，要求保留全部历史夹具合流并提交逐名库存/固定专项及第四条复核浏览器适配。下一重型窗口预留D，审查新源后才能启动；95/202只是预估，不能充当实际库存或绿色，D1/D2仍未完成。正式V25/探针V26，不提前启动资源。此后总管纯文档提交不改变该正式依赖源的运行树。
+- C已实际集成本地 `dev@1b5ee2353f4b36ababb835dce2ababd1b98c0b9c`。D在该基线完成组合后已获总管D1/D2最终验收：后端6fa15ce/run5222fc82的scan95/1→unit95→focused95/66→full95/202全部逐名零F/E/S，浏览器afa0f4a/run77c0d60c显式with-assets四条真实Keycloak UI全passed、单worker零retry/skip，真实扫描与正式双SCRAM通过。总管自行Docker核验57后端完整容器ID、浏览器4完整容器/1完整网络/3卷及标签均空，三秘密文件删除、同root Java/Node0。最终交接a27d306仅文档变化，原文归档 `docs/reviews/test-case-review-worker-handoff.md`，正式验收 `docs/reviews/test-case-review-coordinator-review.md`；旧3P1skip及原网络12位限制保留。批准本地dev集成，正式V25/旧V1..V24不改；V26独立故障探针/15UI全集仍NOT_RUN。E模拟签署与锁定从本地已集成D开始，正式V26/探针V27，先离线实现与审查，资源继续严格串行，不提前启动。
 
 ### B/C 真实验证前检查点（2026-11-11）
 
