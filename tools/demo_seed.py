@@ -108,6 +108,29 @@ def cases():
                ]}
 
 
+def demo_folder(api, root, kind):
+    """Discover durable folder identities when resuming an interrupted fresh seed."""
+    nodes = api.call(root + '/folders?kind=' + kind)
+    parent = None
+    for index, name in enumerate(('OQ运行确认', SET_NAME)):
+        node = next((f for f in nodes if f['parentId'] == parent and f['name'] == name), None)
+        if node is None:
+            node = api.call(root + '/folders', {'kind': kind, 'parentId': parent,
+                            'name': name, 'sortOrder': 0}, key=f'folder-{kind}-{index}')
+        parent = node['id']
+    return parent
+
+
+def place_demo_object(api, root, kind, object_id, folder_id):
+    path = root + '/folder-placements/' + kind + '/' + object_id
+    location = api.call(path)
+    if location['folderId'] == folder_id:
+        return
+    if location['folderId'] is not None:
+        raise RuntimeError('Demo organization was changed; refusing to overwrite it')
+    api.call(path, {'folderId': folder_id}, method='PUT', version=location['rowVersion'])
+
+
 def seed(config, bootstrap, checkpoint=None):
     base = config['TEST365ALM_WEB_ORIGIN']
     issuer = config['TEST365ALM_OIDC_ISSUER']
@@ -149,6 +172,9 @@ def seed(config, bootstrap, checkpoint=None):
     test_set = next((s for s in sets if s['name'] == SET_NAME), None)
     if test_set is None:
         test_set = admin.call(root + '/test-sets', {'name': SET_NAME, 'description': 'SAP 交货与退货 OQ 合成演示'}, key='set')
+    plan_folder = demo_folder(admin, root, 'TEST_PLAN')
+    lab_folder = demo_folder(admin, root, 'TEST_LAB')
+    place_demo_object(admin, root, 'TEST_LAB', test_set['id'], lab_folder)
     setroot = root + '/test-sets/' + test_set['id']
     instances = {i['testCaseId']: i for i in admin.call(setroot + '/instances/page?limit=100')['items']}
     runs = admin.call(root + '/runs/page?testSetId=' + test_set['id'] + '&limit=100')['items']
@@ -162,6 +188,7 @@ def seed(config, bootstrap, checkpoint=None):
         else:
             # The list endpoint returns summaries, without currentRevision or steps.
             case = admin.call(root + '/tests/' + case['id'])
+        place_demo_object(admin, root, 'TEST_PLAN', case['id'], plan_folder)
         instance = instances.get(case['id'])
         if instance is None:
             instance = admin.call(setroot + '/instances', {'testCaseId': case['id'],
