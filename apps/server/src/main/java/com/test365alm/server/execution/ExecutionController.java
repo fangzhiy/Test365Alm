@@ -210,6 +210,32 @@ public class ExecutionController {
         return executions.rerun(actors.requirePrincipal(authentication), projectId, runId, key);
     }
 
+    @GetMapping("/test-sets/{setId}/execution-grid")
+    public ExecutionService.GridPage executionGrid(Authentication authentication, @PathVariable UUID projectId,
+            @PathVariable UUID setId, @RequestParam(required=false) String cursor,
+            @RequestParam(required=false) Integer limit, @RequestParam(required=false) String status,
+            @RequestParam(required=false) UUID assigneeId) {
+        return executions.executionGrid(actors.requirePrincipal(authentication), projectId, setId, cursor, limit, status, assigneeId);
+    }
+
+    @GetMapping("/execution-assignees")
+    public ExecutionService.AssigneePage executionAssignees(Authentication authentication, @PathVariable UUID projectId,
+            @RequestParam(required=false) String cursor, @RequestParam(required=false) Integer limit) {
+        return executions.executionAssignees(actors.requirePrincipal(authentication), projectId, cursor, limit);
+    }
+
+    @PutMapping("/test-instances/{instanceId}/assignee")
+    public ExecutionService.AssignmentView assignInstance(Authentication authentication, @PathVariable UUID projectId,
+            @PathVariable UUID instanceId, @RequestBody JsonNode body,
+            @RequestHeader(name="Idempotency-Key", required=false) String key,
+            @RequestHeader(name="If-Match", required=false) String ifMatch) {
+        fields(body, Set.of("assigneeId", "expectedVersion"));
+        if (!body.has("assigneeId")) throw ProjectAccessException.invalid("assigneeId is required (null clears it)");
+        UUID assignee = body.get("assigneeId").isNull() ? null : uuid(body.get("assigneeId"), "assigneeId");
+        return executions.assignInstance(actors.requirePrincipal(authentication), projectId, instanceId,
+                assignee, expectedVersion(body, ifMatch), key);
+    }
+
     private static long number(JsonNode value, String field) {
         if (value == null || !value.isIntegralNumber() || !value.canConvertToLong() || value.longValue() < 1) {
             throw ProjectAccessException.invalid(field + " must be a positive integer");
