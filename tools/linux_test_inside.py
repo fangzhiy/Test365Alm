@@ -112,16 +112,62 @@ def valid_report(phase: str, report: dict) -> bool:
     return True
 
 
+# Failure diagnostics are lossy classifications, never raw exception/log exports.
+DIAGNOSTIC_TYPES = frozenset((
+    "org.opentest4j.AssertionFailedError", "java.lang.AssertionError",
+    "org.springframework.jdbc.BadSqlGrammarException",
+    "org.springframework.dao.DataIntegrityViolationException",
+    "org.springframework.dao.InvalidDataAccessApiUsageException",
+    "org.postgresql.util.PSQLException", "java.lang.IllegalStateException",
+    "com.test365alm.server.project.ProjectAccessException",
+))
+DIAGNOSTIC_SQLSTATES = frozenset(("42703", "42P01", "42501", "23502", "23503", "23505", "23514", "40001", "40P01"))
+DIAGNOSTIC_CLASSES = {suite for suite, _ in UNIT_METHODS | INTEGRATION_METHODS} | {
+    "com.test365alm.server.execution.ExecutionService",
+    "com.test365alm.server.fixture.HistoricalExecutionService61711294",
+    "com.test365alm.server.fixture.HistoricalExecutionUpgradeSupport",
+    "com.test365alm.server.defect.DefectEvidence",
+    "com.test365alm.server.defect.LegacyDefectService",
+    "com.test365alm.server.defect.DefectService",
+}
+
+
+def failure_diagnostics(node: ET.Element) -> dict:
+    # Bound both input work and output size; ignore attributes other than type.
+    body = (node.text or "")[:262144]
+    types = []
+    for candidate in [node.get("type", ""), *re.findall(r"(?m)^(?:Caused by: )?([\w.$]+)(?=:|$)", body)]:
+        if candidate in DIAGNOSTIC_TYPES and candidate not in types:
+            types.append(candidate)
+    states = sorted(set(re.findall(r"\b(?:SQLState|SQL state|SQLSTATE):?\s*([A-Z0-9]{5})\b", body)) & DIAGNOSTIC_SQLSTATES)
+    frames = []
+    for cls, filename, line in re.findall(r"(?m)^\s*at ([\w.$]+)\.[\w$<>]+\(([\w$]+\.java):(\d{1,5})\)\s*$", body):
+        if cls not in DIAGNOSTIC_CLASSES or filename != cls.rsplit(".", 1)[-1] + ".java" or int(line) < 1:
+            continue
+        frame = {"class": cls, "file": filename, "line": int(line)}
+        if frame not in frames:
+            frames.append(frame)
+        if len(frames) == 8:
+            break
+    return {"types": types, "sqlstates": states, "frames": frames}
+
+
 def summarize(directory: Path) -> dict:
     cases = []
     for path in sorted(directory.glob("TEST-*.xml")):
         suite = ET.parse(path).getroot()
         for case in suite.findall("testcase"):
-            # Never export system-out/err, exception messages, properties, or stack traces.
-            cases.append({"class": case.get("classname"), "method": case.get("name"),
+            # Never export system-out/err, messages, properties, SQL, or raw stack traces.
+            item = {"class": case.get("classname"), "method": case.get("name"),
                           "failure": case.find("failure") is not None,
                           "error": case.find("error") is not None,
-                          "skipped": case.find("skipped") is not None})
+                          "skipped": case.find("skipped") is not None}
+            failed = case.find("failure")
+            if failed is None:
+                failed = case.find("error")
+            if failed is not None:
+                item["diagnostics"] = failure_diagnostics(failed)
+            cases.append(item)
     for case in cases:
         if not all(re.fullmatch(r"[\w.$#()\[\], :\-]+", case[k] or "") for k in ("class", "method")):
             raise ValueError("Unexpected test identity; refuse export")

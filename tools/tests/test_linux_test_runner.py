@@ -170,6 +170,42 @@ class LinuxRunnerGuardTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 summarize(Path(directory))
 
+    def test_failure_diagnostics_export_only_known_types_states_and_source_locations(self):
+        with tempfile.TemporaryDirectory() as directory:
+            (Path(directory) / "TEST-safe.xml").write_text('''<testsuite>
+              <testcase classname="com.test365alm.server.execution.ManualExecutionDatabaseIT"
+                        name="manifestAssignmentAndOldAttemptStayFrozenAfterReassignmentRenameAndRevision">
+                <failure type="org.opentest4j.AssertionFailedError" message="secret-message">
+org.opentest4j.AssertionFailedError: secret-assertion-values
+ at com.test365alm.server.execution.ManualExecutionDatabaseIT.manifestAssignmentAndOldAttemptStayFrozenAfterReassignmentRenameAndRevision(ManualExecutionDatabaseIT.java:1003)
+ at evil.Secret.secret(Secret.java:12)
+Caused by: org.postgresql.util.PSQLException: secret-sql SQLState: 42703
+ at com.test365alm.server.execution.ExecutionService.attempt(ExecutionService.java:450)
+                </failure><properties>secret-property</properties><system-out>secret-log</system-out>
+              </testcase></testsuite>''', encoding="utf-8")
+            report = summarize(Path(directory))
+            diagnostics = report["cases"][0]["diagnostics"]
+            self.assertEqual(["org.opentest4j.AssertionFailedError", "org.postgresql.util.PSQLException"], diagnostics["types"])
+            self.assertEqual(["42703"], diagnostics["sqlstates"])
+            self.assertEqual([{"class": "com.test365alm.server.execution.ManualExecutionDatabaseIT",
+                               "file": "ManualExecutionDatabaseIT.java", "line": 1003},
+                              {"class": "com.test365alm.server.execution.ExecutionService",
+                               "file": "ExecutionService.java", "line": 450}], diagnostics["frames"])
+            self.assertNotIn("secret", str(report).lower())
+            self.assertNotIn("evil", str(report))
+
+    def test_unknown_diagnostics_are_omitted_and_known_frames_are_bounded(self):
+        with tempfile.TemporaryDirectory() as directory:
+            frames = "\n".join(f" at com.test365alm.server.execution.ExecutionService.run(ExecutionService.java:{i})" for i in range(1, 30))
+            (Path(directory) / "TEST-safe.xml").write_text('<testsuite><testcase classname="SafeTest" name="rejects">'
+                '<error type="secret.CustomError">secret SQLState: ABCDE\n' + frames +
+                '\n at com.test365alm.server.execution.ExecutionService.secret(Secret.java:999)</error></testcase></testsuite>', encoding="utf-8")
+            diagnostic = summarize(Path(directory))["cases"][0]["diagnostics"]
+            self.assertEqual([], diagnostic["types"])
+            self.assertEqual([], diagnostic["sqlstates"])
+            self.assertEqual(8, len(diagnostic["frames"]))
+            self.assertNotIn("secret", str(diagnostic).lower())
+
 
 if __name__ == "__main__":
     unittest.main()
