@@ -215,6 +215,22 @@ class FakeApi:
         if '/members/' in path:
             data['members'].append(dict(body, principalId=path.rsplit('/', 1)[1]))
             return body
+        if '/folders?kind=' in path:
+            kind = path.split('kind=')[1]
+            return copy.deepcopy([f for f in data['folders'] if f['kind'] == kind])
+        if path.endswith('/folders'):
+            folder = dict(body, id='folder-' + str(len(data['folders'])), rowVersion=1)
+            data['folders'].append(folder)
+            return copy.deepcopy(folder)
+        if '/folder-placements/' in path:
+            location_key = path.split('/folder-placements/')[1]
+            old = data['placements'].get(location_key, {'objectId': location_key.split('/')[-1], 'folderId': None, 'rowVersion': 1})
+            if body is not None:
+                if version != old['rowVersion']:
+                    raise AssertionError('Stale placement version')
+                old = dict(old, folderId=body['folderId'], rowVersion=version + 1)
+                data['placements'][location_key] = old
+            return copy.deepcopy(old)
         if '/tests?' in path:
             return {'items': [{'id': c['id'], 'title': c['currentRevision']['title'],
                                'currentRevisionId': c['currentRevision']['id']} for c in data['tests']]}
@@ -274,7 +290,8 @@ class FakeApi:
 
 class DemoSeedTests(unittest.TestCase):
     def setUp(self):
-        FakeApi.data = {key: [] for key in ('projects', 'members', 'tests', 'sets', 'instances', 'defects')}
+        FakeApi.data = {key: [] for key in ('projects', 'members', 'tests', 'sets', 'instances', 'defects', 'folders')}
+        FakeApi.data['placements'] = {}
         FakeApi.data['runs'] = {}
         FakeApi.writes = 0
         self.config = {'TEST365ALM_WEB_ORIGIN': 'http://127.0.0.1:15173', 'TEST365ALM_OIDC_ISSUER': 'http://127.0.0.1:18090/realms/test365alm',
@@ -301,6 +318,35 @@ class DemoSeedTests(unittest.TestCase):
         self.assertEqual(len(FakeApi.data['tests']), 14)
         self.assertEqual(len(FakeApi.data['instances']), 14)
         self.assertEqual(len(FakeApi.data['runs']), 14)
+
+    def test_seed_organizes_cases_and_set_without_changing_revisions(self):
+        with patch.object(demo_seed, 'Api', FakeApi):
+            demo_seed.seed(self.config, lambda ids: None)
+        for kind, count in [('TEST_PLAN', 14), ('TEST_LAB', 1)]:
+            folders = [f for f in FakeApi.data['folders'] if f['kind'] == kind]
+            parent = next(f for f in folders if f['name'] == 'OQ运行确认')
+            child = next(f for f in folders if f['name'] == demo_seed.SET_NAME)
+            self.assertEqual(child['parentId'], parent['id'])
+            self.assertEqual(sum(p['folderId'] == child['id'] for p in FakeApi.data['placements'].values()), count)
+        self.assertEqual(len(FakeApi.data['tests']), 14)
+
+    def test_partial_seed_refuses_to_overwrite_manual_organization(self):
+        with patch.object(demo_seed, 'Api', FakeApi):
+            demo_seed.seed(self.config, lambda ids: None)
+            FakeApi.data['placements']['TEST_PLAN/0']['folderId'] = 'manual-folder'
+            with self.assertRaisesRegex(RuntimeError, 'organization'):
+                demo_seed.seed(self.config, lambda ids: None)
+        self.assertEqual(FakeApi.data['placements']['TEST_PLAN/0']['folderId'], 'manual-folder')
+
+    def test_completed_seed_preserves_manual_organization_without_writes(self):
+        with tempfile.TemporaryDirectory() as temporary, patch.object(demo_seed, 'Api', FakeApi):
+            checkpoint = Path(temporary) / 'complete.json'
+            demo_seed.seed(self.config, lambda ids: None, checkpoint)
+            FakeApi.data['placements']['TEST_PLAN/0']['folderId'] = 'manual-folder'
+            writes = FakeApi.writes
+            demo_seed.seed(self.config, lambda ids: None, checkpoint)
+        self.assertEqual(FakeApi.writes, writes)
+        self.assertEqual(FakeApi.data['placements']['TEST_PLAN/0']['folderId'], 'manual-folder')
 
     def test_completed_seed_does_not_overwrite_a_users_new_running_attempt(self):
         with tempfile.TemporaryDirectory() as temporary, patch.object(demo_seed, 'Api', FakeApi):

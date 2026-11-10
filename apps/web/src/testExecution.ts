@@ -115,8 +115,8 @@ const versionedWrite = (input: RequestInfo | URL, version: number, options?: Acc
 
 export const executionApi = {
   async listSets(projectId: string, options?: AccessRequestOptions) { return parseList(await requestJson(path(projectId, '/test-sets'), undefined, options), parseSet, '服务返回了无效测试集列表') },
-  async pageSets(projectId: string, cursor?: string | null, limit?: number, options?: AccessRequestOptions) {
-    const body = await requestJson(path(projectId, `/test-sets/page${query({ cursor: cursor ?? undefined, limit })}`), undefined, options)
+  async pageSets(projectId: string, cursor?: string | null, limit?: number, options?: AccessRequestOptions, folderId?: string) {
+    const body = await requestJson(path(projectId, `/test-sets/page${query({ cursor: cursor ?? undefined, limit, folderId })}`), undefined, options)
     return parsePage(body, parseSet, '服务返回了无效测试集分页')
   },
   async createSet(projectId: string, input: { name: string; description: string }, options?: AccessRequestOptions) { return parse(await write(path(projectId, '/test-sets'), input, options), parseSet, '服务返回了无效测试集') },

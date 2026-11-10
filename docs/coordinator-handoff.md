@@ -106,6 +106,14 @@
 
 ## 附件失败与合并标准
 
+### 总管继续推进的集成检查点
+
+- 当前总管在 `integration/folders` 独立工作区集成 `r2-merge-w2@60e1989` 与最新 dev，总管文档和目录业务无冲突；不修改目录运行实现。归档 R2 交接到 `docs/reviews/folder-tree-integration.md`，更新路线图第 7 节，不把整个阶段 1 标完成。
+- 本次实际通过 Java21 单元 69、前端 224、Python 145、lint/build；目录线沿用原先明确的局部演示集成决定，完整资产失败仍单独记录，不冒充全量绿色。审计的全绿／真实浏览器门槛保持。
+- 原 R2 Dispatch 属于旧总管 Run，续派被 Orca 以 consumer_fenced 拒绝；未绕过身份限制或改旧任务结果，改为当前总管自行集成。原工作区／演示资源保留。
+- 总管已复核审计还原／权限／分页、面板请求生命周期、缺陷刷新 `814d5db` 及 scanner 修复 `4764d63`；检查点在 `docs/reviews/audit-history-coordinator-review.md`，仍待 Linux 全集成和真实浏览器验收。
+- 审计 worker 已独立提交 Linux runner 检查点 `ef27b7a`，含七项 Python 守卫与三项 Java 标签 SPI 回归；正串行执行固定快照的构建、连通、真实 ClamAV/EICAR 与 82 单元／157 集成，结果未结束。已通知无需等待新的既定范围批准。
+
 - 已知非通过集中于 AssetDatabaseIT、AssetMigrationUpgradeIT、AssetProvisioningUpgradeIT、AssetTerminalOutcomeIT 和 OIDC 的三条附件 HTTP 方法。
 - 接任时故障现象包括扫描服务不可用、容器端点检查失败、存储不可用／请求超时；“恢复后端口映射失效”是旧假设。上节 worker 新复现的是暂停时 Ports 暂缺引发异常、扫描器未恢复；仍需总管审查和完整测试证明其对整组失败的解释范围。
 - 原总管对 W1／W2 曾接受“与既有附件基线逐方法完全一致、无新增失败”作为局部演示集成依据；这不是测试通过，也不是所有后续功能的自动豁免。

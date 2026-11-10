@@ -151,10 +151,11 @@ const encodeInput = (input: TestCaseInput, preserveStepKeys = true, includeTestT
 })
 
 export const testsApi = {
-  async list(projectId: string, query = '', cursor?: string | null, options?: AccessRequestOptions): Promise<TestCasePage> {
+  async list(projectId: string, query = '', cursor?: string | null, options?: AccessRequestOptions, folderId?: string): Promise<TestCasePage> {
     const params = new URLSearchParams({ limit: '50' })
     if (query.trim()) params.set('q', query.trim())
     if (cursor) params.set('cursor', cursor)
+    if (folderId) params.set('folderId', folderId)
     const result = await requestJsonWithResponse(`/api/v1/projects/${encodeURIComponent(projectId)}/tests?${params.toString()}`, undefined, options)
     return parsePage(result.body)
   },
