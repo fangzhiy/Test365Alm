@@ -23,7 +23,7 @@ creation times and image identities. The test-only Testcontainers SPI preserves 
 labels and adds the same provenance to sibling containers, including Ryuk. Ryuk remains
 enabled and unprivileged. A separate disposable HTTP peer first checks
 `host.docker.internal` published-port connectivity. Then the existing real ClamAV/EICAR
-method runs, followed by units and the full integration suite, sequentially. Each phase
+method runs, followed by units, the fixed business-field database phase, and the full integration suite, sequentially. Each phase
 uses the same immutable source snapshot and runner. A failed phase stops progression.
 
 The business-fields/folder/history snapshot expects 89 unit and 175 integration methods, with no failures/errors/
@@ -49,3 +49,18 @@ If daemon/identity/ownership changes, cleanup reports failure and refuses those 
 This is independent of CI-owned browser acceptance; it sets no CI identity variables.
 
 Reviewer directory adds `BusinessFieldsDatabaseIT.reviewerDirectoryIsReadableByMembersBoundedSearchableAndRejectsForeignOrInactiveScope`, bringing the reviewed inventory to 89/175.
+
+The explicitly approved fixed focused command is `mvn -B -ntp -Pintegration verify -Dit.test=BusinessFieldsDatabaseIT,BusinessFieldsMigrationUpgradeIT`.
+It requires 89 units and all eight exact methods below; the full 175-method suite must also contain them.
+Any nonzero phase, missing/replaced/duplicate method, failure, error or skip stops before later phases; there is no retry.
+
+- BusinessFieldsDatabaseIT.fieldsPersistOnExactRevisionReplayAndHistory
+- BusinessFieldsDatabaseIT.customDefinitionRevisionsRemainFrozenAndCrossProjectIsRejected
+- BusinessFieldsDatabaseIT.reviewerRejectsForeignDisabledExpiredAndRevokedIdentitiesAndReplayReauthorizes
+- BusinessFieldsDatabaseIT.requirementAndDefectFieldsPersistAndStatusCopiesFrozenValues
+- BusinessFieldsDatabaseIT.runtimeSqlCannotRewriteSealedFieldsOrInsertForeignReviewerAndViewerCannotWrite
+- BusinessFieldsDatabaseIT.outboxFailureRollsBackBusinessFieldsAndIdempotency
+- BusinessFieldsDatabaseIT.reviewerDirectoryIsReadableByMembersBoundedSearchableAndRejectsForeignOrInactiveScope
+- BusinessFieldsMigrationUpgradeIT.nonemptyV22UpgradePreservesAllHistoricalContentAndRuntimeCannotRewriteIt
+
+`test_linux_test_runner` exercises actual phase progression, early stop for each failed phase, exact focused command selection, and reports with missing/replaced/duplicate/failed methods.
