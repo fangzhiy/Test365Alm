@@ -1,6 +1,6 @@
 # 业务字段总管复核
 
-2026-11-11；业务源 `da9906c6967edd53bfde5808eb405a47b7106571`，已验收前置基线 `8bd7408e3c7dc1f65ed19721d40c98136b0fa5b7`。当前后端证据已核对，真实浏览器仍在运行；本文不代表已批准业务合入dev。
+2026-11-11；业务源 `da9906c6967edd53bfde5808eb405a47b7106571`，已验收前置基线 `8bd7408e3c7dc1f65ed19721d40c98136b0fa5b7`。当前后端证据已核对，首轮真实浏览器2通过/1失败；本文不代表已批准业务合入dev。
 
 ## 已核对的后端证据
 
@@ -14,6 +14,12 @@
 | 唯一完整集成 | 89 | 175 | 零failure/error/skip，exit0 |
 
 run.json固定上述源SHA，exit0、cleanup=true。此前52e7735专项夹具错误及7433ef2两处旧冻结DTO相等失败报告保留，不能改写为通过；当前绿色来自修复后的新提交完整执行。
+
+## 首轮真实浏览器结果
+
+同一da9906c源，证据 `local-evidence/local-browser/bb35d43bc533419a9fc4ee1f9c07db1e/`。总管独立读取run/results：缺陷FAIL→复测PASS→关闭及历史流程passed；手工执行/恢复/完成/重跑流程passed；用例创建/步骤编辑/历史/viewer只读流程failed。workers=1、retries=0，每条retry=0，无skip；exit1、cleanup=true、processes_stopped=true。B正在定位失败，不将两条通过视为整组验收。
+
+保留本轮失败证据，修复固定新SHA后再执行真实浏览器验收；如仅修改测试选择器/断言且运行源码一致，无需无关重跑后端；如修改业务源码，必须重新确定验证范围及旧结果适用边界。
 
 ## 已复核的关键边界
 
