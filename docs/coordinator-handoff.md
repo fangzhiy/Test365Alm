@@ -1,0 +1,153 @@
+# 总管交接与当前工作台
+
+更新：2026-11-11。本文长期保留，不属于功能合并后删除的 `docs/handoff/` 文件。
+
+## 当前负责人和交接状态
+
+- 用户最新原话：“现在你是总管，你们两个总管交接好文档”。当前外层 Wetest365ALM 的 Codex 接任总管，负责方向、拆任务、答疑、验收及最终合并决定。
+- 当前总管邮箱：`orca_session_id:codex_05223c99_c316_4acc_bfd6_b2a2fcca04ff`。
+- 原 Claude 总管邮箱：`orca_session_id:claude_94da3475_ec0c_41a0_9aec_0af745ae8239`。它转为交接方，不再派新任务或操作 dev；以后恢复额度也不自动恢复总管身份。角色再次变更以用户新指令为准。
+- 旧会话中“Claude 始终是总管、不得交给 Codex”的偏好已被本次指令取代；功能内同 worktree 接力、主文件夹只做集成的规则继续有效。
+- 已向原总管发送交接请求，回执 `msg_c99c7dcf243b`。截至本文初稿，未收到原总管的新确认；旧会话最后可见结果为服务 503。发送成功不等于对方已完成核对。
+- 接任已生效；交接事实依据本地会话、Git、功能交接及 worker 报告。原总管待补充的事项见末节。
+
+## 目标和边界
+
+- 沿用现有 Test365Alm，自用，替换内部 OpenText ALM 24.1；先演示核心闭环，以 A03 的 14 个手工用例为验收锚点。
+- 先做目录、执行、业务字段、复核、模拟签署、审计、报告；历史数据迁移暂缓，不为商业化或全量 ALM 菜单扩范围。
+- 电子签名先模拟并保留替换接口；真实厂商接口、部署、GMP 验证及迁移策略后续确认。
+- 保留自动化测试和安全数据约束；无需每轮成套证据文档，不把规划、测试总数或历史 CI 当本轮业务验收。
+- 本轮交接只改文档，不集成目录树或审计业务，不推送、不开 PR、不停演示、不删除 worktree。
+
+## 仓库和入口
+
+| 用途 | 路径或入口 |
+|---|---|
+| 外层总管工作区、需求文档 | `D:/code/ProOrca/Wetest365ALM`，需求在 `zl/` |
+| 代码主文件夹 | `D:/code/ProOrca/Wetest365ALM/Test365Alm`，固定 `dev`，只集成 |
+| 代码远端 | `https://github.com/fangzhiy/Test365Alm.git` |
+| Orca 代码 repo id | `7d777de0-65fb-4c9d-bb61-96d9ab74c24f` |
+| 总纲 | `docs/alm-replacement-roadmap.md` |
+| 当前总管状态 | 本文件；优先于旧会话及私有记忆中的角色说明 |
+| 共享经验 | `.trail/learnings/`；先读相关 trail 结果 |
+
+主工作区中的本文件是稳定入口。工作区、分支或会话有变化时先核对实际状态；Orca 运行时重启后重新发现地址，不盲目重用旧身份。
+
+## 接任时的分支快照
+
+以下为接任前读到的事实，不代表后续分支永远停在该提交。本文进入 dev 的文档提交不计作业务进展。
+
+接任文档已通过 `a14d7d4` 进入本地 dev。该提交使 dev 与 `r2-merge-w2@60e1989` 分叉，R2 旧报告中的“dev 可直接快进”已经过时；后续先在独立集成 worktree 合并双方，再由总管审查，不重置 dev 或丢掉交接文档。
+
+| 工作线 | 分支／提交 | 状态和下一步 |
+|---|---|---|
+| 集成 | `dev@a667343` | W1 已合入；W2、审计未合入 |
+| W1 演示 | `w1-demo-env@d6e8bfa` | 通过 R1 集成进 dev；资源原属 W1，不删工作区 |
+| W2 目录树 | `w2-folder-tree@b4e602d` | 已实现，R2 审查后形成下一行提交 |
+| R2 目录集成 | `r2-merge-w2@60e1989` | 包含合并 `b7f4141` 和演示目录播种；未进 dev |
+| 审计历史 | `feat/audit-history@a797f3f` | 三入口已接通，收尾审查／集成／真实浏览器验收中 |
+| 总管文档 | `docs/coordinator-handoff` | 从接任时 dev 建立，仅交接文件和规则入口 |
+
+外层用户正在修改 `zl/Orca+Trail-Code安装配置指南.md`，不混入交接提交。多个工作区的 `.claude/settings.json`、`.trail/hook.cjs` 存在自动刷新改动，不混入功能或交接提交，不擅自清理。
+
+## 各线证据和限制
+
+### W1：演示已集成
+
+- `python tools/demo_up.py`；默认前端 `http://127.0.0.1:15173`、后端 `18083`。5173、8080 属于用户其他项目，不能动。
+- 报告已验证空演示卷启动、重复启动、真实 Keycloak 登录、14 用例各 3 步、1 测试集 14 实例、11 PASS／2 FAIL／1 RUNNING、1 偏差。
+- R1 报告 Python 142、Java 单元 66、前端 213、lint/build 通过；未在 R1 重跑后端完整集成，因为后端／迁移未改。
+- W1 报告当时演示保持运行；交接本轮未重做存活检查，不能仅凭旧报告声称现在仍健康。密码只在忽略的 `.env.demo`，不复制入文档或消息。
+- 资源清单绑定 `C:/Users/22538/orca/workspaces/Test365Alm/w1-demo-env`。迁移演示需在原位置按归属保护正常停止，再迁移／重建；不直接删卷或目录。
+
+### W2／R2：代码已审查，最终集成未执行
+
+- 共用目录树、归属移动、分页前目录过滤、RLS／CSRF／版本条件／幂等／审计 Outbox；正式迁移 V22、故意失败探针 V23；旧 V1—V21 不改。
+- R2 报告：69 后端单元、224 前端、145 Python、lint/build、trail check 通过。完整集成 162 项，2 failures／21 errors／0 skipped，与 W2 的 162 个方法状态逐项一致；不能写全绿。
+- R2 修正 README 探针说明，并为新建／中断续建演示增加两层目录归档。已完成演示检查点保持只读，不能删检查点强制重播。
+- 交接报告：`r2-merge-w2:docs/handoff/r2-merge-w2.md`；脱敏证据在该工作区 `local-evidence/r2/`。
+- 未做真实浏览器目录 E2E；目录 DB 精确名称门禁、目录浏览器回归为后续建议。
+- 原总管最后停在检查交接文件清理策略，随后服务 503；尚未快进 dev。保留报告的验收事实后，按规则删除功能交接、更新路线图，再决定集成，不能把本轮文档合入误写成 W2 已合入。
+
+### audit-history：实现完成，验收待完成
+
+- 工作区：`C:/Users/22538/orca/workspaces/Test365Alm/audit-history`。
+- Codex 邮箱：`orca_session_id:codex_647f15f5_b420_4207_8e80_922dd07246c9`；聊天“继续审计历史前端面板”。
+- 后端接口 `GET /api/v1/projects/{projectId}/history/{objectType}/{objectId}`；用例／缺陷对比不可变修订，运行读取 `execution_event.payload`，不能从只有哈希的 audit_event 编造旧值／新值。
+- `historyApi`、分页 HistoryPanel、缺陷／用例／运行入口已完成；记录变化自动刷新。历史 403／404 局部处理，不能关掉父级详情。
+- 交接报告：该工作区 `docs/handoff/feat-audit-history.md`，优先读顶部 Codex 接力更新，下面旧“下一步”已部分完成。
+- 报告：234 前端、lint/build 通过；72 后端单元通过，HistoryDatabaseIT 5 项通过；完整集成 157 项仍 2 failures／21 errors／0 skipped。
+- 三条真实 Keycloak 流程已补历史断言，尚未实际运行。合成夹具浏览器检查通过，只证明组件行为，不等于真实业务 E2E。
+- 原转达 `msg_00dd0c6f8165` 已送达，Codex 正在独立推进审查与排错；应再告知总管已改为本 Codex，后续汇报发当前总管。
+
+#### 后续进度：收到了审计 Codex 的排错报告
+
+- 来源 `msg_e5d888f86885`：已读总管文档，保留全绿门槛，不移动 dev。发现缺陷复测／同版本手动刷新不重载历史，先红后绿修复后前端 235 项通过。
+- worker 在新建且归属核验的容器复现：Docker Desktop 暂停时 `NetworkSettings.Ports` 为空；旧 `pauseScanner` 在调用方 try/finally 之前抛错，导致未恢复。修复保留标签、容器 ID、启动时间、配置绑定检查，恢复后严格核验原发布端口。
+- worker 报告原有 `scannerUnavailableAndTimeoutRemainRetryableWithoutPublication` 先失败后通过；完整后端集成仍在运行，尚未证明原 2 failures／21 errors 全部消除。总管尚未审查最终 diff 和原始脱敏证据，不能写成整组故障已解决。
+- 总管回复 `msg_076575e72744`：继续完成当前测试；审计刷新修复与附件测试设施修复分开提交，补异常路径恢复及归属拒绝证据，报告完整结果和真实 Keycloak 浏览器验收状态；不移动 dev、不推送。
+
+#### 后续进度：完整集成已结束，剩余 EICAR 环境干扰
+
+- 来源 `msg_be485458b72d`：完整集成 157 项，1 failure／5 errors／0 skipped（先前 2 failures／21 errors）；worker 报告扫描器连锁故障消除，但整套仍失败。
+- 六项剩余失败均发生在 EICAR 上传：`AssetDatabaseIT.realClamdCleanAndEicarProduceSafeTerminalStates`、AssetTerminalOutcomeIT 四个 infected／terminalReplay 方法、OIDC terminalComplete 方法（PUT 预期 200，实际 503）；完整准确方法名待最终交接补齐。
+- worker 报告本轮时间窗 Defender Operational 1116 恰有六条 `Virus:DOS/EICAR_Test_File` 检测，对应 Java `test365alm-upload` 临时文件，另有 1117 隔离事件；脱敏证据在其工作区 `local-evidence/audit-history/defender-events.json`。未修改安全软件设置。总管尚未独立核查证据，不能将相关性直接写成六项均已验证修复。
+- 七项隔离守卫单元回归通过：暂停后检查异常仍恢复原容器；归属／替换／启动时间／配置不符拒绝；恢复端口不符仍失败。抽取共用守卫后正在跑全单元及两个真实暂停恢复方法，不并行重跑完整集成；两类修复待分提交。
+- 总管回复 `msg_306ad29ea17b`：先完成当前回归、分提交、保存交接；评估在本机 Linux 容器内运行 Maven 并保留 EICAR 临时文件于容器文件系统的最小方案，保持真实 ClamAV／原断言及资源守卫。不能安全执行时记 BLOCKED；不改 Defender 设置、不推送触发 CI、不伪造 CI-owned 身份，不改生产上传语义。
+- 三条真实浏览器流程仍 NOT_RUN。完整集成全绿及真实验收门槛不变，未批准业务合并。
+
+#### 后续检查点与 Linux 测试设施批准
+
+- 来源 `msg_40f40e14c655`：业务刷新修复 `814d5db`、附件测试设施修复 `4764d63`、交接 `a45bfcd` 已分别保存；起点 `a797f3f`。最终 79 单元（含七项守卫）及两个真实暂停恢复方法通过，均 0 failure/error/skipped；前端 235 项、lint/build 通过。完整集成仍为先前 157 项 1 failure／5 errors／0 skipped；三条浏览器仍 NOT_RUN。
+- 总管已读取该检查点交接并核对本机 Engine 为 Linux Docker Desktop 29.7.2；批准在本机制作固定 digest 的受控测试镜像（Java21/Maven/Python3/Docker CLI），仅复制 Git 受控提交快照进入容器可写层，tmp/target/cache 不绑定 Windows。现有 Compose manifest 不能冒充覆盖裸 runner，需专门的归属守卫及离线回归。
+- 批准本轮测试 runner 挂本机 Docker socket，以使用兄弟 Testcontainers；socket 具有 daemon 完整权限，标签守卫只是操作限制，不是权限隔离。仅受控测试和工具使用，禁止 privileged、DinD、host PID、宿主根挂载、全局配置变更及操作未知资源。
+- 操作／清理核对 daemon/context、本轮随机标签及精确资源身份，保留 Ryuk；归属或 daemon 改变拒绝，不批量按前缀删除。先验证守卫、连通及真实扫描，再在明确快照运行完整测试；只拷出脱敏报告，不拷出 EICAR 或临时文件。
+- 镜像与最小测试工具是本次批准的新测试依赖范围；不升级生产依赖，不改 Defender／生产上传，不复制日常 .env／未提交文件／凭据，不推送或创建远程资源。测试设施独立提交；不授权移动 dev、业务合并或放宽真实浏览器验收。
+
+## 附件失败与合并标准
+
+### 总管继续推进的集成检查点
+
+- 当前总管在 `integration/folders` 独立工作区集成 `r2-merge-w2@60e1989` 与最新 dev，总管文档和目录业务无冲突；不修改目录运行实现。归档 R2 交接到 `docs/reviews/folder-tree-integration.md`，更新路线图第 7 节，不把整个阶段 1 标完成。
+- 本次实际通过 Java21 单元 69、前端 224、Python 145、lint/build；目录线沿用原先明确的局部演示集成决定，完整资产失败仍单独记录，不冒充全量绿色。审计的全绿／真实浏览器门槛保持。
+- 原 R2 Dispatch 属于旧总管 Run，续派被 Orca 以 consumer_fenced 拒绝；未绕过身份限制或改旧任务结果，改为当前总管自行集成。原工作区／演示资源保留。
+- 总管已复核审计还原／权限／分页、面板请求生命周期、缺陷刷新 `814d5db` 及 scanner 修复 `4764d63`；检查点在 `docs/reviews/audit-history-coordinator-review.md`，仍待 Linux 全集成和真实浏览器验收。
+- 审计 worker 已独立提交 Linux runner 检查点 `ef27b7a`，含七项 Python 守卫与三项 Java 标签 SPI 回归；正串行执行固定快照的构建、连通、真实 ClamAV/EICAR 与 82 单元／157 集成，结果未结束。已通知无需等待新的既定范围批准。
+
+- 已知非通过集中于 AssetDatabaseIT、AssetMigrationUpgradeIT、AssetProvisioningUpgradeIT、AssetTerminalOutcomeIT 和 OIDC 的三条附件 HTTP 方法。
+- 接任时故障现象包括扫描服务不可用、容器端点检查失败、存储不可用／请求超时；“恢复后端口映射失效”是旧假设。上节 worker 新复现的是暂停时 Ports 暂缺引发异常、扫描器未恢复；仍需总管审查和完整测试证明其对整组失败的解释范围。
+- 原总管对 W1／W2 曾接受“与既有附件基线逐方法完全一致、无新增失败”作为局部演示集成依据；这不是测试通过，也不是所有后续功能的自动豁免。
+- 审计最新交接要求完整集成全绿后才能合并。当前总管保留该门槛；先排错并拿证据，未全绿时审计保持待验收，不自行扩大豁免。
+- W2 的历史局部接受与审计的全绿要求分别记录。后续若调整验收标准，写清适用分支、失败方法、理由、风险和决定者，不静默放宽。
+- 不删测试、不跳过、不用重试或历史绿色掩盖；测试只针对本轮归属可证的隔离资源。
+
+## 接任后的执行顺序
+
+1. 完成交接文档、双方通知及共享入口；记录原总管是否回确认。
+2. 复核 R2 报告和实时 diff／祖先关系，处理交接归档及路线图状态；再独立决定 W2 集成。本次不提前执行业务合并。
+3. 通知审计 Codex 在 W2 集成后同步最新 dev，保留目录树和历史入口；等待前推进独立审查与附件故障取证。
+4. 在符合资源归属门禁的隔离环境运行审计的真实登录流程，固定单 worker、零 retry；缺环境明确 NOT_RUN／BLOCKED，不伪造 CI-owned 身份。
+5. 满足验收条件后审查、测试、trail check，再合并审计、删除功能交接、更新路线图阶段 2c。三个历史入口存在不等于阶段已验收。
+6. 再推进业务字段／手工运行器／执行网格及复核，之后模拟签署／锁定／报告；按最新路线图与演示缺口拆小任务，避免并行改同一面板。
+
+路线图第 7 节仍是早期状态，接任时未准确反映 W1 已集成、W2 待集成、2c 实现待验收；更新必须基于集成事实，不整阶段一律标完成。
+
+## 操作与通信
+
+- Java 21：`D:/code/ProOrca/Wetest365ALM/.tools/jdk-21`；系统默认 Java 17，Maven 前显式切换。Maven 3.9.14；目标 Node 24 LTS，本机已有记录为 Node 26，不能称目标环境已验收。
+- 真实测试报告和诊断放忽略的 `local-evidence/`／target；不提交原始 Cookie、token、realm、环境秘密或未脱敏日志。
+- 当前 Orca CLI：`C:/Users/22538/AppData/Local/Programs/orca/resources/bin/orca.exe`；先加载版本匹配技能。发消息用已发现的邮箱，发送成功只证明入队。
+- 历史 worker 身份：W1 `task_8967cf745fe7 / ctx_611cc592e0a8`；R1 `task_250dc261d586 / ctx_2e0031111d40`；W2 `task_cd894adf86d8 / ctx_b1fbeb152991`；R2 `task_bda755762fce / ctx_947631193d90`。这些是旧总管任务，不能假定已转入新总管的 Run 或自动改结果。
+- R2 原 payload outcome 为 failed（集成退出码 1），不得篡改成 succeeded；新总管可以另写有范围的集成决定。
+- 继续工作前读 AGENTS.md、本文、当前功能交接、git log/status 和相关 trail 学习；关键决定写共享文件，不只留私有记忆。
+
+## 原总管待核对
+
+- [ ] 确认收到接任通知，停止旧总管调度。
+- [ ] 补充未落盘的用户决定、未读问题、仍在运行的任务／资源。
+- [ ] 确认 R2 最后检查结果、附件基线接受范围及未记录的风险。
+- [ ] 对本文补充遗漏；由当前总管单点编辑，避免同时改文档。
+
+文档入 dev 后已再次通知原 Claude 总管（`msg_7b136488b5ec`）和审计 Codex（`msg_3754b440b57c`）；两条发送均成功，原总管仍待回复。
+
+收到确认或发现新事实后追加日期和结论。服务不可用时保持“未确认”，不代替原总管签字。

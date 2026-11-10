@@ -1,6 +1,38 @@
 # Test365Alm
 企业级应用质量管理平台研发规划基线。对标原 ALM/Quality Center 产品体系；具体目标版本、Edition、扩展和旧生态兼容范围须在 P0 冻结。
 
+## 演示环境（一键启动）
+
+Windows 11 本机需要 Docker Desktop 已运行、Python 3.10+、Node/npm、系统 Maven，以及 `AGENTS.md` 指定位置的 Java 21。在仓库根目录运行一条命令（首次会构建后端并安装前端依赖，可能需要数分钟）：
+
+```powershell
+python tools/demo_up.py
+```
+
+成功后打开 <http://127.0.0.1:15173>，点击“登录 Test365Alm”。管理员为 `r03-user`，普通成员为 `r03-member`，只读用户为 `r03-viewer`；随机密码分别在被 Git 忽略的 `.env.demo` 的 `R03_TEST_USER_PASSWORD`、`R03_MEMBER_PASSWORD`、`R03_VIEWER_PASSWORD` 中，只在本机查看，不复制到仓库或报告。登录后选择“OQ 演示租户”及“jinsai 验证测试”项目。
+
+项目含合成 SAP 交货/退货 OQ 示例：`GS-VDZ50118-OQP-01-A03-1` 至 `A03-14` 共 14 条手工用例，每条 3 步；同名 A03 测试集和 14 个实例；11 条 PASS、2 条 FAIL、1 条进行中的运行，以及从 A03-12 失败步骤发起的偏差。A03-13 特意保留“实际结果：符合预期、步骤结论：FAIL”，演示实际文本和结论相互独立。这些是合成样例，不是客户历史数据，也不代表完整 OQ 验收。
+
+新建或中断续建的演示会在测试计划与测试实验室分别创建 `OQ运行确认 / GS-VDZ50118-OQP-01-A03`：14 条用例放入计划目录，测试集放入实验室目录。已有完成检查点的演示仍只读核对，不自动改变目录；可在界面中显式整理。中断续建时若对象已被人工移到其他目录，播种会拒绝覆盖。
+
+启动器只操作固定 Compose 项目 `test365alm-demo`，保留 PostgreSQL、Keycloak 身份、对象存储和扫描数据库卷；独立使用 `.env.demo`、`local-evidence/demo/realm.json`，不修改已有 `.env.r03` 或 R03 realm。重复执行同一启动命令会读取已有业务记录、恢复未完成播种，并通过 API 核对数量，不重复新增。健康结果和 API 核对输出会显示在终端；脱敏计数保存在 `local-evidence/demo/verification.json`，本机日志及包含秘密的生成配置均在被忽略的 `local-evidence/demo/`，不要上传整个目录。
+
+默认后端为 `127.0.0.1:18083`，其余回环端口为 PostgreSQL `54339`、Keycloak `18090`、S3 `18333`、clamd `13310`。启动前检查所有端口，占用时明确报错，绝不停止占用它们的进程或其他项目容器。首次启动可换前后端端口（回调地址会同步生成）：
+
+```powershell
+python tools/demo_up.py --web-port 15174 --server-port 18084
+```
+
+后续启动须使用相同端口参数，已存在的凭据和 realm 不会被覆盖。若基础服务端口冲突，启动器报错后、尚未创建容器前，在 `.env.demo` 中成对调整对应端口和 URL：`R03_POSTGRES_PORT` 与两个 JDBC URL、`R03_KEYCLOAK_PORT` 与 `TEST365ALM_OIDC_ISSUER`、`R11_S3_PORT` 与 S3 endpoint、`R11_CLAMD_PORT` 与应用 clamd port。已有数据环境不要只修改配置中的端口；先停止并备份，按需要显式重建演示环境。
+
+停止前后端及本演示容器，默认保留全部数据：
+
+```powershell
+python tools/demo_down.py
+```
+
+仅当确实要丢弃演示数据时，显式运行 `python tools/demo_down.py --delete-data`；它按本次归属清单删除演示容器、网络和数据卷，不使用全局清理或其他项目的资源。配置文件仍保留，再次启动可重建同一示例；若还需要更换前后端端口，先在本机安全归档 `.env.demo` 和 `local-evidence/demo/realm.json`，再重新启动生成新配置。
+
 ## R11-FIX01：资产边界修正（代码CI通过，待独立审核）
 
 继续[PR #10](https://github.com/fangzhiy/Test365Alm/pull/10)，依赖未合并PR9。原c150958交付的完整成功证据保留；新增回归c3c1d13已在真实CI复现allocator/current回退及感染同key结果变化。最新范围/验收见[FIX01记录](docs/progress/runs/R11-CORE-BATCH04-FIX01.md)。正式迁移追加V21，故意失败探针V22；下文旧V20/V21仅为原轮次历史，不改写旧迁移或清库。
@@ -322,7 +354,7 @@ python tools/verify_r02_readiness.py --env-file .env.r02-test --compose-project 
 
 脚本严格要求监听地址可验证且只能是 `127.0.0.1`、`::1` 或 `::ffff:127.0.0.1`；无法枚举监听、进程提前退出、版本提交不一致、端口被占用或数据源不是本机专用 PostgreSQL 时失败。首次 `up` 前会检查目标项目是否已有容器（包括停止的容器）、网络或卷；任何已有资源都会使脚本拒绝运行。默认使用当前本地 Docker context；若专用测试配置写入 `TEST365ALM_DOCKER_CONTEXT`，它必须与当前 context 一致。远端 Docker context 被拒绝。测试配置只接受脚本规定的键；父进程的 Spring、JVM 和 Compose 覆盖项不会传入子进程。
 
-启动迁移失败验证保留正式 V21，向临时目录注入独立的 V22 故障迁移，不修改正式 `db/migration`；脚本先确认正式 V21 已成功记录：
+启动迁移失败验证保留正式 V22（通用目录树），向临时目录注入独立的 V23 故障迁移，不修改正式 `db/migration`；脚本先确认正式 V22 已成功记录：
 
 ```powershell
 python tools/verify_r02_migration_failure.py --env-file .env.r02-test --compose-project test365alm-r02-migration-manual --server-port 18082

@@ -1294,6 +1294,37 @@ class OidcCallbackSecurityIT {
         var finished=testCasePost(actor,path+"/finish","\""+version+"\"","{\"expectedVersion\":"+version+"}");assertEquals(200,finished.statusCode(),finished.body());
     }
     private String defectBody(String title){return "{\"title\":\""+title+"\",\"description\":\"reproduce\",\"severity\":\"HIGH\",\"priority\":\"MEDIUM\"}";}
+    @Test
+    void realOidcFolderHttpCsrfVersionsPlacementsAndViewerBoundary() throws Exception {
+        var f=testCaseHttpFixture();String root="/api/v1/projects/"+f.project();
+        String body="{\"kind\":\"TEST_PLAN\",\"parentId\":null,\"name\":\"OQ\",\"sortOrder\":0}";
+        assertEquals(401,get(newClientFixture().client(),root+"/folders?kind=TEST_PLAN").statusCode());
+        assertTestCaseRejected(()->defectHttp(f.member(),root+"/folders","POST",null,body,UUID.randomUUID().toString(),null),403,"CSRF_REJECTED");
+        assertTestCaseRejected(()->testCasePost(f.viewer(),root+"/folders",null,body),403,"FORBIDDEN");
+        String key=UUID.randomUUID().toString();
+        var created=defectHttp(f.member(),root+"/folders","POST",null,body,key,f.member().csrfToken());
+        assertEquals(201,created.statusCode(),created.body());assertEquals("\"1\"",created.headers().firstValue("ETag").orElseThrow());
+        String id=jsonField(created.body(),"id"),path=root+"/folders/"+id;
+        var replay=defectHttp(f.member(),root+"/folders","POST",null,body,key,f.member().csrfToken());
+        assertEquals(JSON.readTree(created.body()),JSON.readTree(replay.body()));
+        assertEquals(1,JSON.readTree(get(f.viewer().flow().client(),root+"/folders?kind=TEST_PLAN").body()).size());
+        String edit="{\"parentId\":null,\"name\":\"PQ\",\"sortOrder\":2}";
+        assertTestCaseRejected(()->defectHttp(f.member(),path,"PUT",null,edit,UUID.randomUUID().toString(),f.member().csrfToken()),428,"PRECONDITION_REQUIRED");
+        assertTestCaseRejected(()->defectHttp(f.viewer(),path,"PUT","\"1\"",edit,UUID.randomUUID().toString(),f.viewer().csrfToken()),403,"FORBIDDEN");
+        var updated=defectHttp(f.member(),path,"PUT","\"1\"",edit,UUID.randomUUID().toString(),f.member().csrfToken());assertEquals(200,updated.statusCode(),updated.body());
+        assertTestCaseRejected(()->defectHttp(f.member(),path,"PUT","\"1\"",edit,UUID.randomUUID().toString(),f.member().csrfToken()),412,"STALE_VERSION");
+        var test=testCasePost(f.member(),root+"/tests",null,testCaseBody("Folder test",null,true));assertEquals(201,test.statusCode(),test.body());
+        String testId=jsonField(test.body(),"id"),placement=root+"/folder-placements/TEST_PLAN/"+testId;
+        assertEquals(1,JSON.readTree(get(f.viewer().flow().client(),placement).body()).get("rowVersion").asInt());
+        String target="{\"folderId\":\""+id+"\"}";
+        var placed=defectHttp(f.member(),placement,"PUT","\"1\"",target,UUID.randomUUID().toString(),f.member().csrfToken());assertEquals(200,placed.statusCode(),placed.body());
+        assertEquals(1,JSON.readTree(get(f.viewer().flow().client(),root+"/tests?folderId="+id).body()).get("items").size());
+        assertEquals(0,JSON.readTree(get(f.viewer().flow().client(),root+"/tests?folderId=root").body()).get("items").size());
+        assertTestCaseRejected(()->defectHttp(f.member(),path,"DELETE","\"2\"","{}",UUID.randomUUID().toString(),f.member().csrfToken()),409,"FOLDER_NOT_EMPTY");
+        assertEquals(200,defectHttp(f.member(),placement,"PUT","\"2\"","{\"folderId\":null}",UUID.randomUUID().toString(),f.member().csrfToken()).statusCode());
+        assertEquals(200,defectHttp(f.member(),path,"DELETE","\"2\"","{}",UUID.randomUUID().toString(),f.member().csrfToken()).statusCode());
+    }
+
     private HttpResponse<String> defectHttp(HttpActor actor,String path,String method,String tag,String body,String key,String csrf)throws Exception{
         var b=HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+appPort+path)).timeout(REQUEST_TIMEOUT).header("Content-Type","application/json").header("Idempotency-Key",key);if(tag!=null)b.header("If-Match",tag);if(csrf!=null)b.header(actor.csrfHeader(),csrf);
         return actor.flow().client().send(b.method(method,HttpRequest.BodyPublishers.ofString(body)).build(),HttpResponse.BodyHandlers.ofString());

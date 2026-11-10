@@ -26,8 +26,11 @@ enabled and unprivileged. A separate disposable HTTP peer first checks
 method runs, followed by units and the full integration suite, sequentially. Each phase
 uses the same immutable source snapshot and runner. A failed phase stops progression.
 
-The current snapshot expects 82 unit and 157 integration methods, with no failures/errors/
+The combined folder/history snapshot expects 85 unit and 167 integration methods, with no failures/errors/
 skips or duplicate identities. Changing those counts requires reviewing the actual tests.
+Compared with the history-only snapshot, folders add three unit methods, nine
+`FolderDatabaseIT` methods and one real OIDC folder HTTP method. Existing migration
+assertions now require V22; they remain assertions rather than additional methods.
 Raw Maven logs, upload temp files, caches and EICAR bytes stay inside Linux. Only runtime
 versions, package names/versions, method identities and aggregate status JSON are exported
 under ignored `local-evidence/linux-tests/<run>/`. No XML properties/system-out, exception

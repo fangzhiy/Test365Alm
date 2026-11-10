@@ -5,6 +5,7 @@ import { testsApi } from './tests'
 import type { TestCase, TestCaseInput, TestRevision, TestStep } from './tests'
 import type { ProjectAccess } from './projectAccess'
 import AttachmentsPanel from './AttachmentsPanel'
+import FolderTree from './FolderTree'
 import HistoryPanel from './HistoryPanel'
 
 type PanelState = 'idle' | 'loading' | 'ready' | 'error'
@@ -27,6 +28,8 @@ const newStep = (): TestStep => ({ stepKey: `draft-${newIdempotencyKey()}`, ordi
 const normalizeSteps = (steps: TestStep[]) => steps.map((step, index) => ({ ...step, ordinal: index + 1 }))
 
 export default function TestCasesPanel({ projectId, access, resetSignal = 0 }: TestCasesPanelProps) {
+  const [folderId, setFolderId] = useState('root')
+  const folderRef = useRef('root')
   const [state, setState] = useState<PanelState>('idle')
   const [items, setItems] = useState<TestCase[]>([])
   const [nextCursor, setNextCursor] = useState<string | null>(null)
@@ -110,7 +113,7 @@ export default function TestCasesPanel({ projectId, access, resetSignal = 0 }: T
     setState('loading'); setSaving(false); setScopeInvalid(false); setWriteDenied(false); setNotice(''); setConflict(false); setDetailLoading(false); setDetailReady(false); setSelected(null); setRevisions([]); setSelectedRevision(null); setItems(cursor ? items : []); setNextCursor(cursor ? nextCursor : null)
     if (!cursor) { setTitle(''); setDescription(''); setPreconditions(''); setSteps([]); saveIntentRef.current = null }
     try {
-      const page = await testsApi.list(context.projectId, query, cursor, { signal: controller.signal })
+      const page = await testsApi.list(context.projectId, query, cursor, { signal: controller.signal }, folderRef.current)
       if (readRoundRef.current !== round || !isCurrentContext(context)) return
       setItems((current) => cursor ? [...current, ...page.items.filter((item) => !current.some((existing) => existing.id === item.id))] : page.items)
       setNextCursor(page.nextCursor ?? null); setState('ready'); if (!cursor && page.items.length === 0) setNotice('当前项目还没有手工测试用例')
@@ -128,6 +131,7 @@ export default function TestCasesPanel({ projectId, access, resetSignal = 0 }: T
     const changed = activeProjectRef.current !== projectId
     activeProjectRef.current = projectId
     if (changed) {
+      folderRef.current = 'root'; setFolderId('root')
       invalidateOperations(); resetData()
     }
     if (!projectId || !access || !can(access, 'test:read')) { invalidateOperations(); resetData(); return }
@@ -176,6 +180,7 @@ export default function TestCasesPanel({ projectId, access, resetSignal = 0 }: T
     try {
       const created = await testsApi.create(context.projectId, input, { signal: controller.signal, idempotencyKey: key })
       if (writeRoundRef.current !== operation || !isCurrentContext(context)) return
+      if (folderRef.current !== 'root') { folderRef.current = 'root'; setFolderId('root'); setItems([]); setNextCursor(null) }
       createIntentRef.current = null; setCreateTitle(''); setCreateDescription(''); setCreatePreconditions(''); setCreateSteps([]); setItems((current) => current.some((item) => item.id === created.id) ? current.map((item) => item.id === created.id ? created : item) : [...current, created]); setSelected(created); setState('ready')
       const loaded = await selectTest(created, { keepWrite: true })
       if (loaded && writeRoundRef.current === operation && isCurrentContext(context)) setNotice('测试用例已创建')
@@ -231,6 +236,7 @@ export default function TestCasesPanel({ projectId, access, resetSignal = 0 }: T
   const creator = can(access, 'test:create') && !writeDenied; const writable = can(access, 'test:update') && !writeDenied; const historyReadable = can(access, 'test:history:read') || can(access, 'test:read')
   return <section className="test-cases-panel" aria-labelledby="test-cases-heading">
     <div className="access-panel-header"><div><span className="panel-label">M08 · 手工测试用例</span><h2 id="test-cases-heading">测试用例</h2><p>项目内手工用例、步骤和不可变修订。</p></div><button type="button" className="secondary-button" onClick={() => void load()} disabled={state === 'loading' || saving}>{state === 'loading' ? '加载中…' : '刷新用例'}</button></div>
+    <div className="folder-workspace"><FolderTree key={`${projectId}:${accessKeyFor(access)}:${resetSignal}`} projectId={projectId} kind="TEST_PLAN" writable={creator && !scopeInvalid && !writeDenied} selected={folderId} objectId={selected?.id} disabled={saving} onSelect={id => { folderRef.current = id; setFolderId(id); void load() }} onMoved={() => void load()} /><div className="folder-content">
     <form className="test-search-form" onSubmit={(event) => { event.preventDefault(); setSearch(searchInput); void load(null, searchInput) }}><label>查询<input aria-label="查询测试用例" value={searchInput} onChange={(event) => setSearchInput(event.target.value)} placeholder="标题或编号" maxLength={200} /></label><button type="submit" className="secondary-button" disabled={state === 'loading' || saving}>查询</button></form>
     {state === 'error' && <p className="access-error" role="alert">{notice}</p>}
     {notice && state !== 'error' && <p className={conflict ? 'requirements-conflict' : 'access-notice'} role={conflict ? 'alert' : 'status'}>{notice}{conflict && selected && <button type="button" className="secondary-button" onClick={() => void selectTest(selected, { preserveDraft: true })}>查看最新版本</button>}</p>}
@@ -243,5 +249,6 @@ export default function TestCasesPanel({ projectId, access, resetSignal = 0 }: T
         {historyReadable && <section className="requirement-history" aria-label="测试用例修订历史"><div className="member-list-heading"><strong>不可变修订历史</strong><span>{revisions.length} 个修订</span></div>{revisions.length === 0 ? <p className="access-empty">暂无修订历史。</p> : <div className="revision-list">{revisions.map((revision) => <button type="button" className="revision-row" key={revision.id} onClick={() => setSelectedRevision(revision)}><span>修订 {revision.revisionNumber}</span><small>{revision.createdBy} · {revision.createdAt}</small></button>)}</div>}{selectedRevision && <article className="revision-readonly"><strong>修订 {selectedRevision.revisionNumber}（只读）</strong><h4>{selectedRevision.title}</h4><p>{selectedRevision.description || '（无说明）'}</p><p>{selectedRevision.preconditions || '（无前置条件）'}</p>{renderSteps(selectedRevision.steps, false, updateStep, () => undefined, moveStep)}</article>}</section>}
       </div>}
     </div>}
+    </div></div>
   </section>
 }
