@@ -96,6 +96,14 @@
 - 总管回复 `msg_306ad29ea17b`：先完成当前回归、分提交、保存交接；评估在本机 Linux 容器内运行 Maven 并保留 EICAR 临时文件于容器文件系统的最小方案，保持真实 ClamAV／原断言及资源守卫。不能安全执行时记 BLOCKED；不改 Defender 设置、不推送触发 CI、不伪造 CI-owned 身份，不改生产上传语义。
 - 三条真实浏览器流程仍 NOT_RUN。完整集成全绿及真实验收门槛不变，未批准业务合并。
 
+#### 后续检查点与 Linux 测试设施批准
+
+- 来源 `msg_40f40e14c655`：业务刷新修复 `814d5db`、附件测试设施修复 `4764d63`、交接 `a45bfcd` 已分别保存；起点 `a797f3f`。最终 79 单元（含七项守卫）及两个真实暂停恢复方法通过，均 0 failure/error/skipped；前端 235 项、lint/build 通过。完整集成仍为先前 157 项 1 failure／5 errors／0 skipped；三条浏览器仍 NOT_RUN。
+- 总管已读取该检查点交接并核对本机 Engine 为 Linux Docker Desktop 29.7.2；批准在本机制作固定 digest 的受控测试镜像（Java21/Maven/Python3/Docker CLI），仅复制 Git 受控提交快照进入容器可写层，tmp/target/cache 不绑定 Windows。现有 Compose manifest 不能冒充覆盖裸 runner，需专门的归属守卫及离线回归。
+- 批准本轮测试 runner 挂本机 Docker socket，以使用兄弟 Testcontainers；socket 具有 daemon 完整权限，标签守卫只是操作限制，不是权限隔离。仅受控测试和工具使用，禁止 privileged、DinD、host PID、宿主根挂载、全局配置变更及操作未知资源。
+- 操作／清理核对 daemon/context、本轮随机标签及精确资源身份，保留 Ryuk；归属或 daemon 改变拒绝，不批量按前缀删除。先验证守卫、连通及真实扫描，再在明确快照运行完整测试；只拷出脱敏报告，不拷出 EICAR 或临时文件。
+- 镜像与最小测试工具是本次批准的新测试依赖范围；不升级生产依赖，不改 Defender／生产上传，不复制日常 .env／未提交文件／凭据，不推送或创建远程资源。测试设施独立提交；不授权移动 dev、业务合并或放宽真实浏览器验收。
+
 ## 附件失败与合并标准
 
 - 已知非通过集中于 AssetDatabaseIT、AssetMigrationUpgradeIT、AssetProvisioningUpgradeIT、AssetTerminalOutcomeIT 和 OIDC 的三条附件 HTTP 方法。
