@@ -12,7 +12,7 @@
 - 审计、B及C本轮测试资源已精确清理；后续重型Docker验证仍严格串行。W1演示与其他项目资源继续保持，不复用未知资源、日常.env或5173/8080。
 - B业务字段本轮B1/B2已完成总管验收：后端源da9906c的89单元/175完整集成、浏览器源b5cc1b2的三条真实流程全部通过，报告/运行源码一致性及精确清理均已独立核对；最终worker交接b2d9ec2归档为 `docs/reviews/business-fields-worker-handoff.md`，正式决定见 `docs/reviews/business-fields-coordinator-review.md`。批准本地dev集成；独立故障探针和完整14条浏览器全集仍NOT_RUN。
 - C已完成总管独立验收：后端源96def34/run d3142b41的scan93/1→unit93→focused93/51→full93/187全零F/E/S，逐名库存匹配；浏览器源8f48057/run7dfd6f17的三条真实Keycloak流程全部passed，1worker/0retry/0skip，real-owned S3/ClamAV及正式双SCRAM provision通过。总管同Engine复核后端53容器、浏览器4容器/1网络/3卷及标签均无残留，秘密删除、同root Java/Node0。最终交接ba65160仅文档变化，原文归档 `docs/reviews/execution-grid-worker-handoff.md`，正式验收 `docs/reviews/execution-grid-coordinator-review.md`；C1/C2批准本地集成，旧失败及cleanup=false记录保留。
-- D复核worker `ctx_9ed975ccb1ec`（`feat-review`，task_7c52218a8a7e）已在B基线23d138c离线提交84eb68b，尚未验收，按安排待命且无资源。C集成后总管主动发送确切已验收基线，D保留全部历史夹具合流并提交逐名库存/固定专项及第四条复核浏览器适配，审查后获下一串行Docker窗口。95/202只是预估，不能充当实际库存或绿色；D1/D2仍未完成。正式V25/探针V26，不提前启动资源。
+- C已实际集成本地 `dev@1b5ee2353f4b36ababb835dce2ababd1b98c0b9c`，主工作区干净；总管集成增量 `trail check --base ba65160` 通过、无冲突，运行树与最终被测源一致。D复核worker `ctx_9ed975ccb1ec`（`feat-review`，task_7c52218a8a7e）的原离线检查点84eb68b尚未验收；已通过 `msg_6884f578d3cc` 主动续派上述确切基线，要求保留全部历史夹具合流并提交逐名库存/固定专项及第四条复核浏览器适配。下一重型窗口预留D，审查新源后才能启动；95/202只是预估，不能充当实际库存或绿色，D1/D2仍未完成。正式V25/探针V26，不提前启动资源。此后总管纯文档提交不改变该正式依赖源的运行树。
 
 ### B/C 真实验证前检查点（2026-11-11）
 
