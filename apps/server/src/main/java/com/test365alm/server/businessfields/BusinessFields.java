@@ -58,6 +58,7 @@ public final class BusinessFields {
             if(field!=null)frozen.put("fieldId",field.toString());
             frozen.set("definition",definition);frozen.set("value",value);result.set(key,frozen);
         }
-        return result;
+        // Match the JSON numeric node representation read back from JSONB, so unchanged values stay a no-op.
+        return read(result.toString());
     }
 }

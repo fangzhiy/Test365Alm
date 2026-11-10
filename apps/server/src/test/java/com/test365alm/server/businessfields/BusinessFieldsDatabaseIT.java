@@ -76,6 +76,8 @@ class BusinessFieldsDatabaseIT {
         var f=fixture();String key=key();var input=create(f,"original");
         var first=tests.create(f.member,f.project,input,key);
         assertEquals("original",first.currentRevision().businessFields().path("test_purpose").path("value").asText());
+        var unchanged=first.currentRevision();
+        assertEquals(first,tests.appendRevision(f.member,f.project,first.id(),new TestCaseService.RevisionCommand(unchanged.title(),unchanged.description(),unchanged.preconditions(),unchanged.steps().stream().map(s->new TestCaseService.StepCommand(s.stepKey(),s.ordinal(),s.action(),s.expected())).toList(),unchanged.businessFields()),"\"1\"",key()),"normalizing a persisted snapshot must not append an unchanged content revision");
         var set=executions.createSet(f.member,f.project,"Frozen","",key());
         var instance=executions.addInstance(f.member,f.project,set.id(),first.id(),first.currentRevision().id(),key());
         var run=executions.createRun(f.member,f.project,instance.id(),key());

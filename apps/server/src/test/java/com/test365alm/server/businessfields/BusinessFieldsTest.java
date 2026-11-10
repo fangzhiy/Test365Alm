@@ -12,6 +12,8 @@ class BusinessFieldsTest {
         assertEquals("Verify pump",saved.path("test_purpose").path("value").asText());
         assertEquals(1,saved.path("test_purpose").path("revision").asInt());
         assertEquals(saved,BusinessFields.normalize("test_case",saved,null,null));
+        var persisted=BusinessFields.read(saved.toString());
+        assertEquals(persisted,BusinessFields.normalize("test_case",persisted,null,null),"persisted fields must normalize identically for no-op revision detection");
         assertThrows(ProjectAccessException.class,()->BusinessFields.normalize("test_case",CoreCommands.JSON.readTree("{\"title\":{\"value\":\"x\"}}"),null,null));
         assertThrows(ProjectAccessException.class,()->BusinessFields.normalize("test_case",CoreCommands.JSON.readTree("{\"test_purpose\":{\"value\":5}}"),null,null));
         assertThrows(ProjectAccessException.class,()->BusinessFields.normalize("requirement",CoreCommands.JSON.readTree("{\"equipment_system_id\":{\"value\":\""+"x".repeat(201)+"\"}}"),null,null));
