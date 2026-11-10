@@ -1,5 +1,27 @@
 # D 用例复核离线检查点
 
+## 最新真实验证与浏览器准入修复（2026-11-11，优先于下文）
+
+D1/D2仍未验收，不可worker_done。总管放行的确切源 `6fa15ce79a91158e5a61dc2258be3366d1998a33` 已完成真实后端，首次四UI验收失败关闭；当前仅修复浏览器准入与归属证据设施，等待总管审查新源后明确放行四UI，不自行启动资源或机械重跑未变后端。
+
+### 已执行事实与清理
+
+- 后端run `5222fc820d024cc49cbc63f285a1ae67`，context `default`，Engine `a6f010ac-61a2-4544-b133-c2b0d92d11d3`：固定scan95/1（真实clean/EICAR）→unit95→focused95/66→唯一full95/202全部exit0、逐名库存匹配、零F/E/S；包括D12数据库、1项非空V24→V25、2项真实OIDC。runner cleanup=true，独立核对57个完整捕获容器ID均不存在，同run的容器/网络/卷标签为空，前后Engine一致。
+- 浏览器run `r03-local-1ab1d837c94c459990029a13670a5e2a`，project `test365alm-r03-local-1ab1d837c94c459990029a13670a5e2a`，context `desktop-linux`，同Engine：显式with-assets，真实S3/ClamAV预检及正式scanner两独立SCRAM连接通过；原缺陷/执行/用例三流程passed，D designated-reviewer流程skipped且expected=skipped。Playwright aggregate虽为passed，严格四身份门禁正确exit1，不能验收。
+- 浏览器cleanup=true、processes_stopped=true；独立核对四个完整容器ID、三个确切卷名不存在，原始捕获网络12位前缀不存在，同project/run容器/网络/卷标签为空，三个秘密文件已删除，该snapshot所属Java/Node进程为0，Engine一致。**本轮未捕获完整网络ID，12位限制永久保留，不能事后补写成原始完整证据。**
+- 原始脱敏证据保留于忽略目录 `local-evidence/linux-tests/5222fc820d024cc49cbc63f285a1ae67/` 和 `local-evidence/local-browser/1ab1d837c94c459990029a13670a5e2a/`，包括run、逐阶段报告、独立cleanup与进程核验；不导出原始Maven日志、EICAR或秘密。
+
+### 本次最小修复与离线结果
+
+- 独立本地提交：`0efbbbf` 为D准入修复及14场景实际回调回归；`434c144` 为业务前完整归属快照、严格结果守卫补充、资产失败夹具适配及新learning。两者均未推送。
+- D回调原先误用CI-only `isOwnedCiRun`；仅改为原三流程已用的 `isOwnedRun`，保留随机run/source与local-owned/CI-owned边界及全部业务断言。新 `reviewBrowserOwnership.test.ts` 导入实际spec和归属实现，验证确切D回调注册一次并执行：合法local/CI到达首次page.goto，12类unowned/缺失/错误归属在此前拒绝，且不访问真实Docker。旧实现真实RED为1失败/13通过，修改后14通过。
+- 独立设施新增 `ownership_start`：create并验证manifest后、compose start及任何业务前写 `ownership-start.json`，捕获四容器完整64位ID及Created/Image、网络完整64位ID及其实际Created/Name/Driver、三个确切卷名，以及run/source/project/context/Engine；只输出白名单元数据，不输出Env或Options。前后复验Engine与manifest，拒绝错误标签、缺失/替换/不完整ID或重复身份。下一轮必须保留这份原始起点证据。
+- Python回归覆盖完整捕获、逐资源逐标签反例、缺失属性、替换ID、写入顺序及秘密不导出；原四身份门禁另加强每条expected-skipped/status-skipped反例，原缺失/替换/重复/非零retry拒绝保持。既有资产失败夹具仅适配新快照边界，保留原清理/脱敏/进程断言。
+- 当前完整Vitest **343通过/33文件、0失败/跳过**，完整Python **201通过**；lint exit0（8项既有warning），build exit0，Playwright list仅发现15项/7文件；原M05/M06逐名前端门禁对同343 JSON通过。RED、中间失败与最终日志均保留于 `local-evidence/review/`；最初完整Python出现2个资产mock夹具错误，适配新边界后全绿，不覆盖旧失败。
+- `apps/server`、`tools/linux_test_inside.py`、`tools/linux_test_runner.py`、`tools/linux-test/combined-methods.json` 相对6fa15ce逐字不变，固定95/202/66及selector/阶段、旧迁移与业务断言不变。`git diff --check`通过，限定6fa15ce基线的trail check无冲突；新增独立learning `l-4474239b`，旧learning未改。
+
+下一步仅在总管审查新确切源并明确窗口后运行同源显式with-assets四UI，1worker/0retry/0skip，执行前保存完整ownership-start，完成后按捕获身份和run/project标签独立精确清理核验。独立V26故障探针与完整15UI全集仍NOT_RUN，不混入本次四UI验收；没有push/PR/merge dev，两份自动dirty保留不提交。
+
 ## 最新父组件复核意图修复（2026-11-11，优先于下文）
 
 总管对 `b8c1bbe` 静态审查及独立42项守卫核对确认旧迁移/夹具与95/202库存保留，但发现父组件导航可卸载ReviewSession并丢失未知结果原意图，暂未放行Docker。本轮按续派仅修复这个前端边界，D1/D2仍待真实验收。
