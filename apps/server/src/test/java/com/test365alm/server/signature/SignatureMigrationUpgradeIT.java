@@ -60,8 +60,8 @@ class SignatureMigrationUpgradeIT {
         var set=execution.createSet(actor,project,"V25 set","","v25-create-set");
         var instance=execution.addInstance(actor,project,set.id(),test.id(),revision,"v25-add-instance");
         var run=execution.createRun(actor,project,instance.id(),"v25-create-run");var a=run.currentAttempt();
-        execution.saveStep(actor,project,run.run().id(),a.id(),a.steps().get(0).stepKey(),"Observed","PASS",1,"v25-step-pass");
-        execution.finish(actor,project,run.run().id(),a.id(),1,"v25-run-finish");
+        var recorded=execution.saveStep(actor,project,run.run().id(),a.id(),a.steps().get(0).stepKey(),"Observed","PASS",a.steps().get(0).rowVersion(),"v25-step-pass");
+        execution.finish(actor,project,run.run().id(),a.id(),recorded.rowVersion(),"v25-run-finish");
         var defect=defects.create(actor,project,CoreCommands.JSON.readTree("{\"title\":\"V25 deviation\",\"description\":\"Frozen\",\"severity\":\"HIGH\",\"priority\":\"HIGH\"}"),null,"v25-create-defect");
         Map<String,List<String>> before;try(var c=owner()){before=snapshot(c);}
         for(String table:List.of("test_revision","test_step","test_review_event","test_review_outbox_event","execution_manifest","execution_manifest_step","run_attempt","run_step","execution_event","execution_idempotency","defect","defect_revision","defect_outbox_event","core_command_idempotency","audit_event"))assertFalse(before.get(table).isEmpty(),table);

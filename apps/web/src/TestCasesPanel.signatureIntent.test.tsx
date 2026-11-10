@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom/vitest'
-import { act,cleanup,fireEvent,render,screen,waitFor } from '@testing-library/react'
+import { act,cleanup,fireEvent,render,screen,waitFor,within } from '@testing-library/react'
 import { afterEach,beforeEach,expect,it,vi } from 'vitest'
 import TestCasesPanel from './TestCasesPanel'
 import { testsApi,type TestCase } from './tests'
@@ -41,4 +41,15 @@ it.each(['project','identity','viewer','reset'])('clears signature pending inten
  const signal=vi.mocked(signatureApi.prepare).mock.calls[0][6]?.signal
  const project=scope==='project'?'new-project':'project',next={...access,projectId:project,principalId:scope==='identity'?'other-author':access.principalId,permissions:scope==='viewer'?['test:read']:access.permissions}
  ui.rerender(<TestCasesPanel projectId={project} access={next} resetSignal={scope==='reset'?1:0}/>);await waitFor(()=>expect(signal?.aborted).toBe(true));await act(async()=>d.resolve(challenge));expect(screen.queryByRole('button',{name:'重新登录以确认身份'})).not.toBeInTheDocument();expect(screen.queryByRole('button',{name:'重试原签署意图'})).not.toBeInTheDocument()
+})
+it.each(['unknown','in-flight'])('locks historical revision navigation during %s signature intent',async phase=>{
+ vi.mocked(testsApi.revisions).mockResolvedValue([{...saved,id:'historical',title:'Historical content'}])
+ const d=deferred<typeof challenge>();vi.mocked(signatureApi.prepare).mockReturnValue(d.promise)
+ render(<TestCasesPanel projectId="project" access={access}/>);await open()
+ fireEvent.click(screen.getByRole('button',{name:'开始模拟签署'}));await waitFor(()=>expect(signatureApi.prepare).toHaveBeenCalledTimes(1))
+ if(phase==='unknown')await act(async()=>d.reject(new Error('unknown outcome')))
+ const navigation=within(screen.getByRole('region',{name:'测试用例修订历史'})).getByRole('button',{name:/修订 1/})
+ expect(navigation).toBeDisabled();fireEvent.click(navigation)
+ expect(screen.queryByText('Historical content')).not.toBeInTheDocument()
+ if(phase==='in-flight')await act(async()=>d.reject(new Error('unknown outcome')))
 })

@@ -32,3 +32,8 @@
 
 - Extended the accepted execution and deviation UI flows to reauthenticate and sign their exact terminal snapshots without removing their original assertions; added a fifth exact UI flow for wrong password, same-subject success, signed history/new unsigned revision, viewer read, and other-subject rejection.
 - Registered D/E callbacks pass 28 offline ownership cases; lint exits 0 with eight existing warnings and TypeScript/Vite build passes. No browser or product service was started; real UI remains NOT_RUN.
+
+### Self-review corrections before real execution
+
+- A new historical-revision navigation test failed twice with the actual enabled button, then passed after the existing scope lock also guards historical selection (16 parent signature cases now pass). The first selector-only failure and corrected business RED are both retained.
+- Corrected the new nonempty upgrade fixture to finish with the real saveStep response's incremented attempt version; no business service or old fixture was changed, and the database regression remains NOT_RUN.
