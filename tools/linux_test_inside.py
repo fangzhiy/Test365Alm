@@ -74,12 +74,16 @@ EXECUTION_METHODS = {
     ('com.test365alm.server.release.ReleaseMigrationUpgradeIT', 'nonemptyV18RequirementsTestsExecutionDefectsAndTraceSurviveV19AndRemainUsable'),
 }
 FOCUSED_METHODS = BUSINESS_METHODS | EXECUTION_METHODS
+INVENTORY = json.loads((Path(__file__).with_name("linux-test") / "combined-methods.json").read_text(encoding="utf-8"))
+UNIT_METHODS = {(suite,name) for suite,names in INVENTORY["unit"].items() for name in names}
+INTEGRATION_METHODS = {(suite,name) for suite,names in INVENTORY["integration"].items() for name in names}
+if len(UNIT_METHODS) != 93 or len(INTEGRATION_METHODS) != 187 or not FOCUSED_METHODS <= INTEGRATION_METHODS:
+    raise ValueError("Frozen combined method inventory does not match the reviewed gate")
 
 
 def valid_report(phase: str, report: dict) -> bool:
-    # Keep audited baseline totals until the final B+C merge is inventoried by
-    # method identity. 93/187 are forecasts, not permission to lower this gate.
-    expected = {"scan": (85, 1), "unit": (85, None), "focused": (85, 51), "integration": (85, 167)}[phase]
+    # The merged source inventory is frozen by identity, not a caller-selected total.
+    expected = {"scan": (93, 1), "unit": (93, None), "focused": (93, 51), "integration": (93, 187)}[phase]
     if report["unit"]["tests"] != expected[0]:
         return False
     if expected[1] is not None and report["integration"]["tests"] != expected[1]:
@@ -94,6 +98,9 @@ def valid_report(phase: str, report: dict) -> bool:
         if any(summary[key] for key in ("failures", "errors", "skipped")):
             return False
         if any(case.get(flag, False) for case in summary["cases"] for flag in ("failure", "error", "skipped")):
+            return False
+        required = UNIT_METHODS if kind == "unit" else INTEGRATION_METHODS if phase == "integration" else None
+        if required is not None and set(identities) != required:
             return False
     if phase == "scan" and {(case["class"], case["method"]) for case in report["integration"]["cases"]} != {
             ("com.test365alm.server.asset.AssetDatabaseIT", "realClamdCleanAndEicarProduceSafeTerminalStates")}:

@@ -351,6 +351,7 @@ class ManualExecutionMigrationUpgradeIT {
         Map<String,List<String>> result=new LinkedHashMap<>();
         for(String table:TABLES) {
             String projection="to_jsonb(t)" + switch(table) {
+                case "test_revision" -> "-'business_fields'";
                 case "test_instance" -> "-'assignee_id'-'assignee_name'-'assignment_version'";
                 case "execution_manifest" -> "-'assignee_id'-'assignee_name'";
                 case "run_step" -> "-'id'-'executed_at'";

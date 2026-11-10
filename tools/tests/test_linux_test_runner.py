@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from tools.linux_test_runner import Guard, Identity, RUN, SOURCE, committed_archive, main, validate, run_phases
-from tools.linux_test_inside import summarize, valid_report, BUSINESS_METHODS, PHASES
+from tools.linux_test_inside import summarize, valid_report, FOCUSED_METHODS, UNIT_METHODS, PHASES
 from tools.r02_resource_guard import ResourceOwnershipError
 
 RUN_ID = "a" * 32
@@ -22,7 +22,7 @@ class LinuxRunnerGuardTests(unittest.TestCase):
         with patch("tools.linux_test_runner.phase", return_value=0) as phase:
             self.assertEqual(0, run_phases(Mock(), "runner", Path("evidence")))
             self.assertEqual(["scan", "unit", "focused", "integration"], [call.args[2] for call in phase.call_args_list])
-        self.assertEqual(["-Pintegration", "verify", "-Dit.test=BusinessFieldsDatabaseIT,BusinessFieldsMigrationUpgradeIT"], PHASES["focused"])
+        self.assertEqual(["-Pintegration", "verify", "-Dit.test=BusinessFieldsDatabaseIT,BusinessFieldsMigrationUpgradeIT,ManualExecutionDatabaseIT,ManualExecutionMigrationUpgradeIT,AssetDatabaseIT#stepEvidence*,OidcCallbackSecurityIT#realOidcManualExecutionHttpRunsAndRejectsViewerWrites,AssetMigrationUpgradeIT,DefectMigrationUpgradeIT,ReleaseMigrationUpgradeIT,AssetProvisioningUpgradeIT#upgradedDatabaseUsesProvisionedRestrictedScannerLogin"], PHASES["focused"])
 
     def test_every_failed_phase_stops_before_later_phases(self):
         for failure_index in range(4):
@@ -35,8 +35,8 @@ class LinuxRunnerGuardTests(unittest.TestCase):
     def test_focused_report_rejects_replaced_duplicate_missing_and_failed_methods(self):
         def summary(cases):
             return {"tests":len(cases),"cases":cases,"failures":0,"errors":0,"skipped":0}
-        report={"unit":summary([{"class":"Unit","method":str(i)} for i in range(89)]),
-                "integration":summary([{"class":c,"method":m} for c,m in sorted(BUSINESS_METHODS)])}
+        report={"unit":summary([{"class":c,"method":m} for c,m in sorted(UNIT_METHODS)]),
+                "integration":summary([{"class":c,"method":m} for c,m in sorted(FOCUSED_METHODS)])}
         self.assertTrue(valid_report("focused",report))
         for alteration in ("replace","duplicate","missing","failures","errors","skipped"):
             bad=copy.deepcopy(report)

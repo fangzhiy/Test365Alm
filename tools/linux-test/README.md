@@ -26,22 +26,23 @@ enabled and unprivileged. A separate disposable HTTP peer first checks
 method runs, followed by units, the fixed combined focused phase, and the full integration suite, sequentially. Each phase
 uses the same immutable source snapshot and runner. A failed phase stops progression.
 
-The last audited folder/history totals, 85 units and 167 integrations, remain in
-the gate until the final B+C merge is inventoried by exact method identity. This
-preparation checkpoint intentionally refuses the newer source's totals; it is
-not ready for a real combined run until those totals are reviewed and committed.
-93/187 are forecasts, not verified combined inventory or passing execution.
-All phases require zero failures/errors/skips and duplicate identities.
-Changing the total gates requires reviewing the actual merged tests.
-Compared with the history-only snapshot, folders add three unit methods, nine
-`FolderDatabaseIT` methods and one real OIDC folder HTTP method. Business fields add four `BusinessFieldsTest` unit methods, seven
-`BusinessFieldsDatabaseIT` methods and one `BusinessFieldsMigrationUpgradeIT` method.
-The scan preflight expects exactly 89 units and one real scan method; unit expects
-89 units; full integration expects 89 units and 175 integrations. Existing latest
-migration assertions require formal V23 (23 migrations); the deliberate failure
-probe is V25, with V24 reserved for the execution workline. These remain assertions
-rather than additional methods. The coordinator explicitly authorized this exact
-inventory update; commands, zero-failure checks and resource guards stay fixed.
+The accepted B source `23d138cda8fd6d34ec598064778b42b121175109` is now
+merged with C. The merged Java source has **93 unit methods in 30 suites** and
+**187 integration methods in 25 suites**, frozen by exact identity in
+`combined-methods.json`. The offline inventory regression compares every Java
+`@Test` identity with that file and refuses unsupported test annotations. The
+current JDK21 unit execution also matched all 93 identities with zero F/E/S.
+The 187 inventory entries are not a passing integration result.
+
+The fixed scan/unit/focused/full phases require respectively 93/1, 93, 93/51
+and 93/187. Unit identities must match the complete frozen unit inventory in
+every phase; full identities must match the complete integration inventory.
+Missing/replaced/duplicate methods and F/E/S remain failures. No arbitrary
+counts or selectors are accepted. Formal migrations are B V23 and C V24,
+24 actual files in this combined source; intentional failure remains V25.
+No migration V1-V23 was rewritten. Database/runtime/browser validation of the
+combined source still needs the coordinator's reviewed exact source/window.
+
 Raw Maven logs, upload temp files, caches and EICAR bytes stay inside Linux. Only runtime
 versions, package names/versions, method identities and aggregate status JSON are exported
 under ignored `local-evidence/linux-tests/<run>/`. No XML properties/system-out, exception
@@ -80,4 +81,5 @@ progression without retry. The scan phase also requires the exact real clean/EIC
 method identity. Offline regressions are in `test_execution_focus` and the existing
 `test_linux_test_runner`; their synthetic reports do not count as real execution.
 Do not start Docker before the coordinator supplies the final combined source and
-serial execution window. B's final verified implementation is not merged here yet.
+serial execution window. B's accepted runtime/test/facility tree is merged here;
+C's combined real execution remains NOT_RUN.
