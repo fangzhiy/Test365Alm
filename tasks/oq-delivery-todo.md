@@ -2,8 +2,8 @@
 
 计划与验收细则：`docs/oq-delivery-plan.md`。用户已授权执行全部；此清单独立于旧P0任务，只有取得实际证据才勾选。
 
-- [ ] A1 组合85单元／167集成全绿及精确清理。
-- [ ] A2 三入口真实Keycloak UI验收；审查后审计合入dev。
+- [x] A1 组合85单元／167集成全绿及精确清理（确切源34c19f6；总管核对scan/unit/integration/run脱敏JSON，均0F/E/S、退出0、cleanup true）。
+- [x] A2 三入口真实Keycloak UI验收（确切源4a13589，run06caafafb42e4762b6f4b9f222265ab7；三条passed、1worker/0retry/0skip、exit0、cleanup/processes_stopped均true）；审查批准本地dev集成。
 - [ ] B1 业务字段保存/读取与不可变历史、权限、版本、事务回归。
 - [ ] B2 用例/缺陷/需求UI字段和真实持久化验证。
 - [ ] C1 实例网格负责人/状态/执行日期与权限版本回归。
