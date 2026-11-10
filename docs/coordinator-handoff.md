@@ -87,6 +87,15 @@
 - worker 报告原有 `scannerUnavailableAndTimeoutRemainRetryableWithoutPublication` 先失败后通过；完整后端集成仍在运行，尚未证明原 2 failures／21 errors 全部消除。总管尚未审查最终 diff 和原始脱敏证据，不能写成整组故障已解决。
 - 总管回复 `msg_076575e72744`：继续完成当前测试；审计刷新修复与附件测试设施修复分开提交，补异常路径恢复及归属拒绝证据，报告完整结果和真实 Keycloak 浏览器验收状态；不移动 dev、不推送。
 
+#### 后续进度：完整集成已结束，剩余 EICAR 环境干扰
+
+- 来源 `msg_be485458b72d`：完整集成 157 项，1 failure／5 errors／0 skipped（先前 2 failures／21 errors）；worker 报告扫描器连锁故障消除，但整套仍失败。
+- 六项剩余失败均发生在 EICAR 上传：`AssetDatabaseIT.realClamdCleanAndEicarProduceSafeTerminalStates`、AssetTerminalOutcomeIT 四个 infected／terminalReplay 方法、OIDC terminalComplete 方法（PUT 预期 200，实际 503）；完整准确方法名待最终交接补齐。
+- worker 报告本轮时间窗 Defender Operational 1116 恰有六条 `Virus:DOS/EICAR_Test_File` 检测，对应 Java `test365alm-upload` 临时文件，另有 1117 隔离事件；脱敏证据在其工作区 `local-evidence/audit-history/defender-events.json`。未修改安全软件设置。总管尚未独立核查证据，不能将相关性直接写成六项均已验证修复。
+- 七项隔离守卫单元回归通过：暂停后检查异常仍恢复原容器；归属／替换／启动时间／配置不符拒绝；恢复端口不符仍失败。抽取共用守卫后正在跑全单元及两个真实暂停恢复方法，不并行重跑完整集成；两类修复待分提交。
+- 总管回复 `msg_306ad29ea17b`：先完成当前回归、分提交、保存交接；评估在本机 Linux 容器内运行 Maven 并保留 EICAR 临时文件于容器文件系统的最小方案，保持真实 ClamAV／原断言及资源守卫。不能安全执行时记 BLOCKED；不改 Defender 设置、不推送触发 CI、不伪造 CI-owned 身份，不改生产上传语义。
+- 三条真实浏览器流程仍 NOT_RUN。完整集成全绿及真实验收门槛不变，未批准业务合并。
+
 ## 附件失败与合并标准
 
 - 已知非通过集中于 AssetDatabaseIT、AssetMigrationUpgradeIT、AssetProvisioningUpgradeIT、AssetTerminalOutcomeIT 和 OIDC 的三条附件 HTTP 方法。
