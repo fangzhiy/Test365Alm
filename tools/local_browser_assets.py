@@ -32,9 +32,18 @@ def configure(values: dict[str, str], used: set[int], allocate_port) -> None:
 def prepare_document(document: dict) -> None:
     if set(document["services"]) != {"postgres", "keycloak", "asset-store", "asset-scanner"}:
         raise ResourceOwnershipError("Only the four explicitly owned browser services are allowed")
+    postgres = document["services"]["postgres"]["environment"]
+    # Applies only before creating this run's fresh owned volume. The image's
+    # default initdb loopback trust cannot satisfy require_auth=scram-sha-256.
+    # Never rewrite HBA on an existing database or accept conflicting overrides.
+    for key, value in (("POSTGRES_INITDB_ARGS", "--auth-host=scram-sha-256"),
+                       ("POSTGRES_HOST_AUTH_METHOD", "scram-sha-256")):
+        if postgres.get(key, value) != value:
+            raise ResourceOwnershipError("Owned scanner database requires explicit SCRAM host initialization")
+        postgres[key] = value
     # Flyway creates the NOLOGIN capability; the repository operator tool creates
     # a distinct restricted child LOGIN after migration. Never bootstrap a group LOGIN.
-    document["services"]["postgres"]["environment"].pop("POSTGRES_SCANNER_PASSWORD", None)
+    postgres.pop("POSTGRES_SCANNER_PASSWORD", None)
     for name, image, _, _ in SERVICES:
         if document["services"][name]["image"] != image:
             raise ResourceOwnershipError("Asset service image is not the approved digest")

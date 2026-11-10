@@ -123,11 +123,27 @@ class LocalBrowserAssetTests(unittest.TestCase):
         document = {"services": {"postgres": {"environment": {"POSTGRES_SCANNER_PASSWORD": "private", "POSTGRES_RUNTIME_PASSWORD": "runtime"}},
                                  "keycloak": {}, **{name: {"image": image} for name, image, _, _ in assets.SERVICES}}}
         assets.prepare_document(document)
-        self.assertEqual({"POSTGRES_RUNTIME_PASSWORD": "runtime"}, document["services"]["postgres"]["environment"])
+        self.assertEqual({"POSTGRES_RUNTIME_PASSWORD": "runtime", "POSTGRES_INITDB_ARGS": "--auth-host=scram-sha-256",
+                          "POSTGRES_HOST_AUTH_METHOD": "scram-sha-256"}, document["services"]["postgres"]["environment"])
         for service in ("asset-store", "asset-scanner"):
             changed = copy.deepcopy(document)
             changed["services"][service]["image"] = "latest"
             with self.assertRaises(ResourceOwnershipError):
+                assets.prepare_document(changed)
+
+    def test_fresh_owned_postgres_requires_scram_on_loopback_and_rejects_auth_overrides(self):
+        assets, _, _, _ = self.fixture()
+        document = {"services": {"postgres": {"environment": {}}, "keycloak": {},
+                                 **{name: {"image": image} for name, image, _, _ in assets.SERVICES}}}
+        assets.prepare_document(document)
+        env = document["services"]["postgres"]["environment"]
+        self.assertEqual("--auth-host=scram-sha-256", env.get("POSTGRES_INITDB_ARGS"))
+        self.assertEqual("scram-sha-256", env.get("POSTGRES_HOST_AUTH_METHOD"))
+        for key, value in (("POSTGRES_INITDB_ARGS", "--auth-host=trust"), ("POSTGRES_HOST_AUTH_METHOD", "trust"),
+                           ("POSTGRES_INITDB_ARGS", "--auth-host=scram-sha-256 --auth-local=trust")):
+            changed = copy.deepcopy(document)
+            changed["services"]["postgres"]["environment"][key] = value
+            with self.subTest(key=key, value=value), self.assertRaises(ResourceOwnershipError):
                 assets.prepare_document(changed)
 
     def test_asset_stage_failures_stop_owned_processes_redact_and_clean_only_captured_ids(self):
