@@ -1,5 +1,35 @@
 # D 用例复核离线检查点
 
+## 最新组合检查点（2026-11-11，优先于下文历史）
+
+已按总管正式续派在原 worktree/分支合流确切已验收 B+C `1b5ee2353f4b36ababb835dce2ababd1b98c0b9c`，合流提交 `7d84d59`；原 D `84eb68b` 与两份自动 dirty 均保留。未启动 Docker、产品服务、真实浏览器；未触碰 W1、日常 .env、Defender 或禁止端口。D1/D2 仍待真实验收，不能 worker_done。
+
+- `e9e83d3`：D 非空 V24→V25 升级先封存合法旧用例/步骤/指定人，快照全部既有表、行和列，再断言仅执行1份V25且重复0份；正式runtime提交/批准/新修订与旧批准保留源码不变。旧 latest 断言按实际25份文件更新；旧目标检查点不改。B/C全部旧内容/执行夹具（包括旧target DefectEvidence绑定）、三表投影、未知执行时间、hash及冻结重放断言保留，fixture目录与已验收C逐字一致。V1—V24与C基线逐字一致。
+- `e886064` 为独立设施提交：精确库存 `tools/linux-test/combined-methods.json` 固定95单元/31类、202集成/27类；相对C删除0，增加D2单元/15集成。源码注解逐方法比较及实际JDK21报告95身份匹配。固定51（C43+B8）+D15=66，D方法名在 `tools/verify_test_review_report.py:REQUIRED` 与 runner REVIEW_METHODS 双向相等回归中固定；完整202也逐名核验。任意selector/count仍拒绝。
+- 固定 scan95/1→unit95→focused95/66→唯一full95/202，任何非零、缺名/替换/重复、case或aggregate F/E/S立即停止，scan只接纳真实clean/EICAR原方法；没有retry/skip兼容路径。计数是源码库存与离线门禁，尚非真实集成绿色。
+- local runner保留原用例/执行/缺陷三条全流程并加入确切 `real Keycloak UI designated reviewer rejects approves and new revision requires fresh review`，必须按既定计划显式 `--with-assets` 运行。固定4条、1worker、0retry，guard新增逐条缺失/替换/重复/重放及状态负例；reporter回归保留全部真实身份和实际失败/跳过/retry状态，不把结果归一成绿色。
+
+实际离线结果（忽略目录 `local-evidence/review/`）：
+
+| 命令/核对 | 实际结果 |
+| --- | --- |
+| JDK21 `mvn -B -ntp test` | 95单元，0F/E/S，实际报告逐名匹配95库存 |
+| 最后升级快照增强后 `mvn -B -ntp test-compile` | 成功；未重复冒称IT执行 |
+| 完整Vitest JSON | 288通过/31文件，0失败/跳过；含新增第四流程reporter回归 |
+| 原M06/M05前端名称门禁 | 对同一288 JSON实际通过 |
+| `npm run lint` / `npm run build` | exit0；既有9 warning保留，无新warning |
+| 完整Python unittest discover | 198通过；其中设施相关36项先RED后GREEN |
+| `npx playwright test --list` | 15项/7文件发现；不是实际浏览器通过 |
+| `git diff --check` | 通过 |
+
+本轮离线失败保留：新增66/4条门禁先在旧设施失败（5F2E），随后适配通过；首次合流冲突脚本错误截断4个设施文件，被完整Python立即发现（3F1E/186），已从双方原SHA重新逐块三方恢复，并修正合流提交。修复后四文件相对C仅保留D既有门禁/迁移版本差异，全部198通过；旧失败日志不覆盖。该故障没有触及产品或真实资源。
+
+Trail：合流检查因400KB上限只检查部分diff，3处词语误报与总管C审查一致（folder_placement与冻结revision、pending与历史刷新）；合流提交已写明理由。设施检查2处词语误报为固定真实扫描方法名/固定专项selector；实际保留唯一真实clean/EICAR，且完整库存包括两个无runtime角色升级测试，V25授权已有角色存在条件，不增加角色夹具或降低断言；独立设施提交已说明。没有删改旧learning，不能声称全diff静态审查无局限。
+
+下一步由总管审查本源与独立设施diff并发明确串行窗口，然后在确切提交上执行固定后端四阶段、精确清理，再运行显式with-assets四条真实浏览器及清理核验。D数据库/HTTP/非空升级、真实clean/EICAR/完整集成、独立故障探针、真实浏览器仍NOT_RUN；完整15条浏览器全集也NOT_RUN。不得把本检查点作为D1/D2验收。
+
+## 以下为原B基线离线历史记录
+
 依赖总管确认的已验收 B 基线 `23d138cda8fd6d34ec598064778b42b121175109`，分支 `feat-review`。仅本地提交；没有 push、PR 或 dev 合并。正式 V25、故障探针 V26；V24 仍由 C 持有。本文件记录未完成的 D1/D2，不能据此勾选业务验收。
 
 ## 已实现
