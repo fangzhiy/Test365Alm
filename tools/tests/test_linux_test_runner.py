@@ -305,6 +305,48 @@ Caused by: org.postgresql.util.PSQLException: secret-sql SQLState: 42703
             self.assertEqual(8, len(diagnostic["frames"]))
             self.assertNotIn("secret", str(diagnostic).lower())
 
+    def test_flyway_diagnostics_keep_only_known_migration_line_and_sqlstate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            (Path(directory) / "TEST-safe.xml").write_text('''<testsuite><testcase classname="SafeTest" name="rejects">
+              <error type="java.lang.IllegalStateException">secret-config
+Caused by: org.flywaydb.core.internal.sqlscript.FlywaySqlScriptException: Migration V26__simulated_signatures.sql failed
+SQL State  : 42601
+Error Code : 0
+Message    : secret SQL and credentials
+Location   : secret/path/V26__simulated_signatures.sql
+Line       : 125
+Statement  : secret SQL
+              </error></testcase></testsuite>''', encoding="utf-8")
+            diagnostic = summarize(Path(directory))["cases"][0]["diagnostics"]
+            self.assertEqual(["java.lang.IllegalStateException",
+                              "org.flywaydb.core.internal.sqlscript.FlywaySqlScriptException"], diagnostic["types"])
+            self.assertEqual(["42601"], diagnostic["sqlstates"])
+            self.assertEqual([{"version": 26, "line": 125}], diagnostic["migrations"])
+            for forbidden in ("secret", "Location", "Statement", "V26__simulated_signatures.sql", "Message", "path"):
+                self.assertNotIn(forbidden, str(diagnostic))
+
+    def test_flyway_diagnostics_refuse_foreign_migrations_bad_lines_and_unknown_states(self):
+        from tools.linux_test_inside import failure_diagnostics
+        import xml.etree.ElementTree as ET
+        for name, line in (("V999__secret.sql", "125"), ("V26__simulated_signatures.sql", "0"),
+                           ("V26__simulated_signatures.sql", "99999"),
+                           ("../V26__simulated_signatures.sql", "125"),
+                           ("V26__simulated_signatures.sql", "125 secret")):
+            with self.subTest(name=name, line=line):
+                node = ET.Element("error", type="secret.CustomError")
+                node.text = f"Migration {name} failed\nSQL State  : ABCDE\nLine       : {line}\nsecret"
+                diagnostic = failure_diagnostics(node)
+                self.assertEqual([], diagnostic["migrations"])
+                self.assertEqual([], diagnostic["sqlstates"])
+                self.assertNotIn("secret", str(diagnostic))
+
+    def test_flyway_diagnostics_bound_distinct_known_migration_locations(self):
+        from tools.linux_test_inside import failure_diagnostics
+        import xml.etree.ElementTree as ET
+        node = ET.Element("error")
+        node.text = "\n".join(f"Migration V26__simulated_signatures.sql failed\nLine : {line}" for line in range(1, 30))
+        self.assertEqual([{"version": 26, "line": line} for line in range(1, 5)], failure_diagnostics(node)["migrations"])
+
 
 if __name__ == "__main__":
     unittest.main()

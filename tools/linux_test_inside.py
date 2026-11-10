@@ -156,8 +156,15 @@ DIAGNOSTIC_TYPES = frozenset((
     "org.springframework.dao.InvalidDataAccessApiUsageException",
     "org.postgresql.util.PSQLException", "java.lang.IllegalStateException",
     "com.test365alm.server.project.ProjectAccessException",
+    "org.flywaydb.core.internal.command.DbMigrate$FlywayMigrateException",
+    "org.flywaydb.core.internal.sqlscript.FlywaySqlScriptException",
 ))
-DIAGNOSTIC_SQLSTATES = frozenset(("42703", "42P01", "42501", "23502", "23503", "23505", "23514", "40001", "40P01"))
+DIAGNOSTIC_SQLSTATES = frozenset(("42601", "42703", "42704", "42883", "42P01", "42501", "23502", "23503", "23505", "23514", "40001", "40P01"))
+DIAGNOSTIC_MIGRATIONS = {
+    path.name: (int(path.name.split('__', 1)[0][1:]), len(path.read_text(encoding='utf-8').splitlines()))
+    for path in (Path(__file__).resolve().parents[1] / 'apps/server/src/main/resources/db/migration').glob('V*__*.sql')
+    if re.fullmatch(r'V[1-9][0-9]*__[a-z0-9_]+\.sql', path.name)
+}
 DIAGNOSTIC_CLASSES = {suite for suite, _ in UNIT_METHODS | INTEGRATION_METHODS} | {
     "com.test365alm.server.execution.ExecutionService",
     "com.test365alm.server.fixture.HistoricalExecutionService61711294",
@@ -175,7 +182,7 @@ def failure_diagnostics(node: ET.Element) -> dict:
     for candidate in [node.get("type", ""), *re.findall(r"(?m)^(?:Caused by: )?([\w.$]+)(?=:|$)", body)]:
         if candidate in DIAGNOSTIC_TYPES and candidate not in types:
             types.append(candidate)
-    states = sorted(set(re.findall(r"\b(?:SQLState|SQL state|SQLSTATE):?\s*([A-Z0-9]{5})\b", body)) & DIAGNOSTIC_SQLSTATES)
+    states = sorted(set(re.findall(r"\b(?:SQLState|SQL[ \t]+[Ss]tate|SQLSTATE)[ \t]*:?[ \t]*([A-Z0-9]{5})\b", body)) & DIAGNOSTIC_SQLSTATES)
     frames = []
     for cls, filename, line in re.findall(r"(?m)^\s*at ([\w.$]+)\.[\w$<>]+\(([\w$]+\.java):(\d{1,5})\)\s*$", body):
         if cls not in DIAGNOSTIC_CLASSES or filename != cls.rsplit(".", 1)[-1] + ".java" or int(line) < 1:
@@ -185,7 +192,23 @@ def failure_diagnostics(node: ET.Element) -> dict:
             frames.append(frame)
         if len(frames) == 8:
             break
-    return {"types": types, "sqlstates": states, "frames": frames}
+    migrations = []
+    locations = list(re.finditer(r"(?m)(?:^Migration |: Migration )([^\r\n]+) failed[ \t]*$", body))
+    for index, location in enumerate(locations):
+        known = DIAGNOSTIC_MIGRATIONS.get(location.group(1))
+        if known is None:
+            continue
+        end = locations[index + 1].start() if index + 1 < len(locations) else len(body)
+        for match in re.finditer(r"(?m)^Line[ \t]*:[ \t]*([1-9][0-9]{0,4})[ \t]*$", body[location.end():end]):
+            line = int(match.group(1))
+            item = {"version": known[0], "line": line}
+            if line <= known[1] and item not in migrations:
+                migrations.append(item)
+            if len(migrations) == 4:
+                break
+        if len(migrations) == 4:
+            break
+    return {"types": types, "sqlstates": states, "frames": frames, "migrations": migrations}
 
 
 def summarize(directory: Path) -> dict:
