@@ -39,6 +39,26 @@ class BusinessFieldsTest {
         assertThrows(ProjectAccessException.class,()->BusinessFields.normalize("requirement",input,jdbc,project));
     }
     @Test void missingValueNullAndInvalidReviewerCannotSilentlyBecomeValid() {
+        var old=new com.test365alm.server.defect.DefectService.Revision(java.util.UUID.randomUUID(),java.util.UUID.randomUUID(),1,"Old","body","HIGH","HIGH","OPEN","",java.util.UUID.randomUUID(),java.time.OffsetDateTime.parse("2026-11-10T12:00:00Z"));
+        var replay=CoreCommands.JSON.readValue(CoreCommands.JSON.writeValueAsString(old),com.test365alm.server.defect.DefectService.Revision.class);
+        assertEquals(old.businessFields(),replay.businessFields(),"legacy optional fields must round trip without changing the frozen response");
+        assertEquals(old,replay);
+        var at=old.createdAt();var actor=old.createdBy();var id=old.id();var parent=old.defectId();
+        for(Object snapshot:java.util.List.of(old,
+            new com.test365alm.server.testcase.TestCaseService.RevisionView(id,parent,1,"Old","body","",at,actor,java.util.List.of()),
+            new com.test365alm.server.requirement.RequirementService.RequirementView(id,parent,1,1,at,actor,id,1,"Old","body","HIGH"),
+            new com.test365alm.server.requirement.RequirementService.RevisionView(id,parent,1,"Old","body","HIGH",at,actor))) {
+            assertEquals(snapshot,CoreCommands.JSON.readValue(CoreCommands.JSON.writeValueAsString(snapshot),snapshot.getClass()));
+            String kind=snapshot instanceof com.test365alm.server.defect.DefectService.Revision?"defect":snapshot instanceof com.test365alm.server.testcase.TestCaseService.RevisionView?"test_case":"requirement";
+            String field=kind.equals("defect")?"occurrence_department":kind.equals("test_case")?"test_purpose":"equipment_system_id";
+            var values=CoreCommands.JSON.createObjectNode();values.set(field,CoreCommands.JSON.createObjectNode().put("value","Frozen value"));
+            for(var frozen:java.util.List.of(BusinessFields.empty(),BusinessFields.normalize(kind,values,null,null))) {
+                var response=(tools.jackson.databind.node.ObjectNode)CoreCommands.JSON.readTree(CoreCommands.JSON.writeValueAsString(snapshot));response.set("businessFields",frozen);
+                var decoded=CoreCommands.JSON.readValue(response.toString(),snapshot.getClass());
+                assertEquals(frozen,CoreCommands.JSON.readTree(CoreCommands.JSON.writeValueAsString(decoded)).get("businessFields"));
+                assertEquals(decoded,CoreCommands.JSON.readValue(CoreCommands.JSON.writeValueAsString(decoded),snapshot.getClass()));
+            }
+        }
         for(String json:java.util.List.of("null","[]","{\"reviewer\":{\"value\":\"display name\"}}","{\"test_purpose\":{\"value\":\"x\",\"kind\":\"CUSTOM\"}}"))
             assertThrows(ProjectAccessException.class,()->BusinessFields.normalize("test_case",CoreCommands.JSON.readTree(json),null,null));
         assertTrue(BusinessFields.normalize("requirement",null,null,null).isEmpty());

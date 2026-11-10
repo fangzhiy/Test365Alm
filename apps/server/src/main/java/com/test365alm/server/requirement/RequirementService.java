@@ -495,11 +495,11 @@ public class RequirementService {
     public record RequirementPage(List<RequirementView> items, String nextCursor) { }
     public record RequirementView(UUID id, UUID projectId, long displayNumber, long rowVersion,
             OffsetDateTime createdAt, UUID createdBy, UUID currentRevisionId, long revisionNumber,
-            String title, String body, String priority, JsonNode businessFields) { public RequirementView(UUID id, UUID projectId, long displayNumber, long rowVersion,
+            String title, String body, String priority, JsonNode businessFields) { public RequirementView { if(businessFields!=null&&businessFields.isNull())businessFields=null; } public RequirementView(UUID id, UUID projectId, long displayNumber, long rowVersion,
             OffsetDateTime createdAt, UUID createdBy, UUID currentRevisionId, long revisionNumber,
             String title, String body, String priority){this(id,projectId,displayNumber,rowVersion,createdAt,createdBy,currentRevisionId,revisionNumber,title,body,priority,null);} }
     public record RevisionView(UUID id, UUID requirementId, long revisionNumber, String title, String body,
-            String priority, OffsetDateTime createdAt, UUID createdBy, JsonNode businessFields) { public RevisionView(UUID id, UUID requirementId, long revisionNumber, String title, String body,
+            String priority, OffsetDateTime createdAt, UUID createdBy, JsonNode businessFields) { public RevisionView { if(businessFields!=null&&businessFields.isNull())businessFields=null; } public RevisionView(UUID id, UUID requirementId, long revisionNumber, String title, String body,
             String priority, OffsetDateTime createdAt, UUID createdBy){this(id,requirementId,revisionNumber,title,body,priority,createdAt,createdBy,null);} }
     private record RequirementRow(UUID id, long rowVersion, UUID revisionId, long revisionNo,
             String title, String body, String priority, JsonNode businessFields) { }

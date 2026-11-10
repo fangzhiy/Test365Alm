@@ -616,7 +616,7 @@ public class TestCaseService {
     public record TestCaseView(UUID id, UUID projectId, long displayNumber, String testType, long rowVersion,
             OffsetDateTime createdAt, UUID createdBy, RevisionView currentRevision) { }
     public record RevisionView(UUID id, UUID testCaseId, long revisionNo, String title, String description,
-            String preconditions, OffsetDateTime createdAt, UUID createdBy, List<StepView> steps, JsonNode businessFields) { public RevisionView(UUID id, UUID testCaseId, long revisionNo, String title, String description,
+            String preconditions, OffsetDateTime createdAt, UUID createdBy, List<StepView> steps, JsonNode businessFields) { public RevisionView { if(businessFields!=null&&businessFields.isNull())businessFields=null; } public RevisionView(UUID id, UUID testCaseId, long revisionNo, String title, String description,
             String preconditions, OffsetDateTime createdAt, UUID createdBy, List<StepView> steps){this(id,testCaseId,revisionNo,title,description,preconditions,createdAt,createdBy,steps,null);} }
     public record StepView(UUID stepKey, int ordinal, String action, String expected) { }
     private record TestCaseRow(UUID id, UUID projectId, long displayNumber, String testType, long rowVersion,
