@@ -180,7 +180,7 @@ async function write(page: Page, method: string, path: string, data?: unknown, d
 }
 
 test('real Keycloak UI designated reviewer rejects approves and new revision requires fresh review', async ({page,browser})=>{
-  test.skip(!isOwnedCiRun(),'review flow requires the current owned isolated R03 stack')
+  test.skip(!isOwnedRun(),'review flow requires an explicitly owned isolated R03 stack')
   test.setTimeout(180_000)
   const diagnostics=new UiDiagnostics()
   let memberContext:import('@playwright/test').BrowserContext|undefined,viewerContext:import('@playwright/test').BrowserContext|undefined
