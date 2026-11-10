@@ -128,7 +128,9 @@ class BrowserResourceGuardTests(unittest.TestCase):
             duplicate={**report,"cases":[*report["cases"][:index],report["cases"][(index+1)%4],*report["cases"][index+1:]]}
             replacement={**report,"cases":[*report["cases"][:index],{**report["cases"][index],"name":"unapproved"},*report["cases"][index+1:]]}
             replay={**report,"cases":[*report["cases"][:index],{**report["cases"][index],"retry":1},*report["cases"][index+1:]]}
-            for changed in (missing,duplicate,replacement,replay):self.assertFalse(validate_results(changed))
+            expected_skip={**report,"cases":[*report["cases"][:index],{**report["cases"][index],"expected":"skipped"},*report["cases"][index+1:]]}
+            skipped={**report,"cases":[*report["cases"][:index],{**report["cases"][index],"status":"skipped","expected":"skipped"},*report["cases"][index+1:]]}
+            for changed in (missing,duplicate,replacement,replay,expected_skip,skipped):self.assertFalse(validate_results(changed))
 
         for status in ("skipped", "failed", "timedOut"):
             changed = {**report, "cases": [{**report["cases"][0], "status": status}, *report["cases"][1:]]}
