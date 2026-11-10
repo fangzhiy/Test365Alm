@@ -120,7 +120,7 @@ test('real Keycloak UI manual execution creates, resumes, finishes and reruns a 
     const grid=execution.getByRole('table',{name:'实例执行网格'})
     await expect(grid).toContainText('尚无执行日期')
     await grid.getByRole('button',{name:`分配负责人 ${title}`}).click()
-    await execution.getByLabel('实例负责人').selectOption(memberId)
+    await execution.getByRole('combobox',{name:'实例负责人',exact:true}).selectOption(memberId)
     await execution.getByRole('button',{name:'保存负责人'}).click()
     await expect(grid).toContainText('R03 Member')
     const started=memberPage.waitForResponse(r=>new URL(r.url()).pathname===`/api/v1/projects/${projectId}/runs`&&r.request().method()==='POST')
@@ -154,7 +154,7 @@ test('real Keycloak UI manual execution creates, resumes, finishes and reruns a 
     await expect(execution.locator('.execution-step').first()).toContainText('步骤执行时间：尚未记录')
     await expect(execution.locator('.execution-step').first().locator('time')).toHaveCount(1)
     // Reassignment changes the live instance while the run retains its frozen identity.
-    await execution.getByRole('button',{name:`分配负责人 ${title}`}).click();await execution.getByLabel('实例负责人').selectOption('')
+    await execution.getByRole('button',{name:`分配负责人 ${title}`}).click();await execution.getByRole('combobox',{name:'实例负责人',exact:true}).selectOption('')
     await execution.getByRole('button',{name:'保存负责人'}).click();await expect(execution.getByRole('table',{name:'实例执行网格'})).toContainText('未分配')
     await expect(execution).toContainText('运行冻结负责人：R03 Member')
     })
