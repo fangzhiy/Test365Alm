@@ -75,6 +75,17 @@ class TestReviewDatabaseIT {
         code("REVIEW_REVISION_NOT_CURRENT",()->act(f,f.reviewer,t,"APPROVE",changed.rowVersion(),key()));
     }
 
+    @Test void reviewerIdentityUsesUuidValueWhileDigestPreservesOriginalFrozenText()throws Exception {
+        var f=fixture();String identity=f.reviewer.toString().toUpperCase(Locale.ROOT);
+        var t=tests.create(f.member,f.project,new TestCaseService.CreateCommand("MANUAL","UUID reviewer","","",List.of(),
+            CoreCommands.JSON.createObjectNode().set("reviewer",CoreCommands.JSON.createObjectNode().put("value",identity))),key());
+        var submitted=act(f,f.member,t,"SUBMIT",t.rowVersion(),key());
+        var approved=act(f,f.reviewer,t,"APPROVE",submitted.rowVersion(),key());
+        assertEquals(f.reviewer,approved.reviewerId());assertEquals("APPROVED",approved.state());
+        assertEquals(identity,tests.revision(f.viewer,f.project,t.id(),t.currentRevision().id()).businessFields().path("reviewer").path("value").asText());
+        assertEquals(submitted.contentDigest(),approved.contentDigest());
+    }
+
     @Test void onlyDesignatedWriterCanDecideAndViewerForeignScopesOrForgedIdentityHaveNoEffects() throws Exception {
         var f=fixture();var foreign=fixture();var t=create(f);var s=act(f,f.member,t,"SUBMIT",t.rowVersion(),key());
         var before=snapshot(f);

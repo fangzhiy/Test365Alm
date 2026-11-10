@@ -82,7 +82,7 @@ BEGIN
   AND test_case_id=NEW.test_case_id AND id=NEW.revision_id;
  IF tc.id IS NULL OR tr.id IS NULL OR tr.sealed_at IS NULL OR tc.current_revision_id<>NEW.revision_id
   OR tc.row_version<>NEW.row_version OR tr.revision_no<>NEW.revision_no
-  OR tr.business_fields#>>'{reviewer,value}' IS DISTINCT FROM NEW.reviewer_id::TEXT
+  OR NULLIF(tr.business_fields#>>'{reviewer,value}','')::UUID IS DISTINCT FROM NEW.reviewer_id
   OR NEW.content_digest IS DISTINCT FROM app_test_review_digest(NEW.tenant_id,NEW.project_id,NEW.test_case_id,NEW.revision_id)
   OR NEW.actor_id IS DISTINCT FROM NULLIF(current_setting('test365alm.principal_id',true),'')::UUID
   OR NOT app_has_active_project_writer(NEW.tenant_id,NEW.project_id,NEW.actor_id)
