@@ -118,6 +118,7 @@ test('real Keycloak UI manual execution creates, resumes, finishes and reruns a 
     await expect(execution).toContainText('运行中')
 
     await expect(execution.getByLabel('步骤 1 实际结果')).toBeVisible()
+    await expect(execution.getByRole('region', { name: '审计历史', exact: true })).toContainText('开始运行')
     })
     await diagnostics.step(memberPage, '保存两个步骤、暂停和继续', async () => {
     await execution.getByLabel('步骤 1 实际结果').fill('Login form is visible')
@@ -181,6 +182,10 @@ test('real Keycloak UI manual execution creates, resumes, finishes and reruns a 
     const viewerRun = viewerExecution.getByRole('button', { name: /运行 .*FINISHED/ }).first()
     await viewerRun.click()
     await expect(viewerExecution).toContainText('运行详情 · 尝试 2')
+    const audit = viewerExecution.getByRole('region', { name: '审计历史', exact: true })
+    await expect(audit).toContainText('记录步骤结果')
+    await expect(audit).toContainText('重新运行')
+    await expect(audit).toContainText('Login form is visible')
     await viewerExecution.getByRole('button', { name: '尝试 1 · FAIL' }).click()
     await expect(viewerExecution.getByLabel('步骤 1 实际结果')).toHaveValue('Login form is visible')
     await expect(viewerExecution.getByLabel('步骤 2 结论')).toHaveValue('FAIL')

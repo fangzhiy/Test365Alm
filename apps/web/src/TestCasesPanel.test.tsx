@@ -1,9 +1,12 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import TestCasesPanel from './TestCasesPanel'
 import { testsApi } from './tests'
 import type { TestCase, TestRevision } from './tests'
+import { historyApi } from './historyApi'
+
+vi.mock('./historyApi', () => ({ historyApi: { list: vi.fn() } }))
 
 vi.mock('./tests', async () => {
   const actual = await vi.importActual<typeof import('./tests')>('./tests')
@@ -22,9 +25,39 @@ const deferred = <T,>() => {
   return { promise, resolve, reject }
 }
 
+beforeEach(() => { vi.mocked(historyApi.list).mockReset().mockResolvedValue({ items: [], nextCursor: null }) })
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 
 describe('TestCasesPanel', () => {
+  it('loads case audit history by stable identity and reloads after saving a revision', async () => {
+    const updated = { ...testCase, rowVersion: 2, revisionNumber: 2, currentRevisionId: 'test-rev-2', etag: '"2"', title: 'Updated' }
+    vi.mocked(testsApi.list).mockResolvedValue({ items: [testCase], nextCursor: null })
+    vi.mocked(testsApi.get).mockResolvedValueOnce(testCase).mockResolvedValue(updated)
+    vi.mocked(testsApi.revisions).mockResolvedValue([revision])
+    vi.mocked(testsApi.appendRevision).mockResolvedValue(updated)
+    render(<TestCasesPanel projectId="project-1" access={access} />)
+    fireEvent.click(await screen.findByRole('button', { name: /TC-1/ }))
+    await screen.findByText('暂无历史')
+    expect(historyApi.list).toHaveBeenLastCalledWith('project-1', 'test_case', 'test-1', null, expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    await waitFor(() => expect(screen.getByRole('button', { name: '保存为新修订' })).toBeEnabled())
+    fireEvent.change(screen.getByLabelText('编辑测试用例标题'), { target: { value: 'Updated' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存为新修订' }))
+    await screen.findByText('测试用例已保存为新修订')
+    await waitFor(() => expect(historyApi.list).toHaveBeenCalledTimes(2))
+  })
+
+  it('keeps viewer case details readable when audit history returns 404', async () => {
+    vi.mocked(testsApi.list).mockResolvedValue({ items: [testCase], nextCursor: null })
+    vi.mocked(testsApi.get).mockResolvedValue(testCase)
+    vi.mocked(testsApi.revisions).mockResolvedValue([revision])
+    vi.mocked(historyApi.list).mockRejectedValue({ status: 404 })
+    render(<TestCasesPanel projectId="project-1" access={viewer} />)
+    fireEvent.click(await screen.findByRole('button', { name: /TC-1/ }))
+    expect(await screen.findByText('无权查看或对象不存在')).toBeVisible()
+    expect(screen.getByText('User signs in')).toBeVisible()
+    expect(screen.getByRole('region', { name: '测试用例修订历史' })).toBeVisible()
+    expect(screen.queryByRole('button', { name: '保存为新修订' })).not.toBeInTheDocument()
+  })
   it('loads a project-scoped manual case and immutable history', async () => {
     vi.mocked(testsApi.list).mockResolvedValue({ items: [testCase], nextCursor: null })
     vi.mocked(testsApi.get).mockResolvedValue(testCase)
@@ -145,7 +178,7 @@ describe('TestCasesPanel', () => {
     fireEvent.click(await screen.findByRole('button', { name: /TC-1/ }))
     await screen.findByDisplayValue('Sign in')
     fireEvent.click(screen.getByRole('button', { name: '保存为新修订' }))
-    expect(await screen.findByRole('status')).toHaveTextContent('没有修改')
+    expect(await screen.findByText('当前主体没有修改该项目测试用例的权限。')).toBeVisible()
     expect(screen.getByText('TC-1')).toBeVisible()
     expect(screen.queryByRole('button', { name: '保存为新修订' })).not.toBeInTheDocument()
   })

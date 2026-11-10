@@ -7,7 +7,7 @@
 - 审计后端 `d78d0b9`：HistoryService、HistoryDiff、HistoryController；对照 HistoryDiffTest 六项和 HistoryDatabaseIT 五项的实际断言。
 - 审计前端 `4ff8aae`／`a797f3f` 的 HistoryPanel 请求生命周期及三入口接入设计；复核 `814d5db` 中缺陷复测／同版本刷新触发与回归。
 - 扫描器测试设施 `4764d63`：pauseScanner／resumeScanner、原进程和发布端点检查、七项隔离守卫回归。
-- Linux runner `ef27b7a` 为 worker 新增检查点，本次尚未完成其代码审查；其离线测试不等于业务集成验收。
+- Linux runner `ef27b7a`：已复核固定源码归档、最小子进程环境、镜像内容身份、逐次 daemon/context 核验、精确 ID 清理及白名单报告导出。Docker socket 赋予完整 daemon 权限，标签只作操作守卫；离线测试不等于业务集成验收。
 
 ## 结论与证据
 
@@ -20,8 +20,12 @@
 ## 待验收
 
 1. Linux runner 的镜像与源码固定、socket 范围、精确资源归属／清理实现及最终退出结果；完整集成须全绿，不凭专项通过认定整套通过。
-2. 目录树进入 dev 后同步两边 UI，保留目录与历史面板，验证组合版本。
+2. 目录树已进 `dev@da47293`；`integration/audit` 保留目录与历史入口。总管实跑前端 246、Java 单元 85、Python 152 通过，lint/build 通过（9 个既有 lint 警告）。组合完整集成尚未运行。对照测试差异确认比审计单线新增 9 个 FolderDatabaseIT 和 1 个真实 OIDC 方法，Linux 精确门槛调整为 85 单元／167 集成，不沿用 82／157。
 3. 三条真实 Keycloak 浏览器流程仍 NOT_RUN，合成夹具不替代实际验收；不伪造 CI-owned 变量。
 4. 性能建议（非本阶段阻塞）：用例历史按修订缓存，相邻修订仍逐版读取，最坏请求数随页大小增长；演示数据少且页大小有上限，数据量增大时再测量并批量读取，不提前扩大本轮改动。
 
 后续以精确提交、实际报告和这份检查点补充结论；不把“未发现问题”改写为完整验收。
+
+## 经验导入冲突
+
+目录树记录与审计分支两份记录共用 `l-0b383489`。目录记录原文保留；两份审计原始字节分别归档到本目录 `audit-history-original-learning.md`、`audit-history-storage-original-learning.md`，审计决策由新建的独立 ID 经验继续提供。未手改旧经验内容或 ID；活动经验 ID 已逐项验证唯一。
