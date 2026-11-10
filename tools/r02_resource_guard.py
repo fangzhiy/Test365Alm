@@ -192,8 +192,8 @@ def verify_manifest(manifest: ResourceManifest, environment: Mapping[str, str]) 
                           ("volume", manifest.volumes)):
             for resource_id in ids:
                 labels = _labels(kind, _inspect(kind, resource_id, environment))
-            if (labels.get("com.docker.compose.project") != manifest.project or
-                    labels.get(manifest.run_label_key) != manifest.run_id):
+                if (labels.get("com.docker.compose.project") != manifest.project or
+                        labels.get(manifest.run_label_key) != manifest.run_id):
                     return False
         return True
     except ResourceOwnershipError:
