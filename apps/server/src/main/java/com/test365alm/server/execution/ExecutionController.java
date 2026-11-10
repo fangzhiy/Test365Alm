@@ -53,8 +53,11 @@ public class ExecutionController {
     @GetMapping("/test-sets/page")
     public ExecutionService.TestSetPage pageSets(Authentication authentication, @PathVariable UUID projectId,
             @RequestParam(name="cursor", required=false) String cursor,
-            @RequestParam(name="limit", required=false) Integer limit) {
-        return executions.pageSets(actors.requirePrincipal(authentication), projectId, cursor, limit);
+            @RequestParam(name="limit", required=false) Integer limit,
+            @RequestParam(name="folderId", required=false) String folderId) {
+        UUID actor = actors.requirePrincipal(authentication);
+        return folderId == null ? executions.pageSets(actor, projectId, cursor, limit)
+                : executions.pageSets(actor, projectId, cursor, limit, folderId);
     }
 
     @GetMapping("/test-sets/{setId}")

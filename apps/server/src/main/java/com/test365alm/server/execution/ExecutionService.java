@@ -82,6 +82,12 @@ public class ExecutionService {
     /** Keyset page for callers that need to continue beyond the bounded list. */
     @Transactional(readOnly = true)
     public TestSetPage pageSets(UUID actor, UUID projectId, String cursor, Integer requestedLimit) {
+        return pageSets(actor, projectId, cursor, requestedLimit, null);
+    }
+
+    @Transactional(readOnly = true)
+    public TestSetPage pageSets(UUID actor, UUID projectId, String cursor, Integer requestedLimit, String folderId) {
+        com.test365alm.server.folder.FolderService.filter(folderId);
         ProjectService.ProjectView project = readProject(actor, projectId);
         setContext(project, actor);
         int limit = boundedLimit(requestedLimit);
@@ -90,15 +96,21 @@ public class ExecutionService {
                 ? jdbc.query("""
                     SELECT id, project_id, name, description, row_version, created_at
                     FROM test_set WHERE tenant_id=? AND project_id=?
+                      AND (?::text IS NULL OR (SELECT fp.folder_id FROM folder_placement fp
+                           WHERE fp.project_id=test_set.project_id AND fp.kind='TEST_LAB' AND fp.object_id=test_set.id)
+                           IS NOT DISTINCT FROM NULLIF(?, 'root')::uuid)
                     ORDER BY created_at, id LIMIT ?
-                    """, ExecutionService::mapSet, project.tenantId(), projectId, limit + 1)
+                    """, ExecutionService::mapSet, project.tenantId(), projectId, folderId, folderId, limit + 1)
                 : jdbc.query("""
                     SELECT id, project_id, name, description, row_version, created_at
                     FROM test_set WHERE tenant_id=? AND project_id=?
+                      AND (?::text IS NULL OR (SELECT fp.folder_id FROM folder_placement fp
+                           WHERE fp.project_id=test_set.project_id AND fp.kind='TEST_LAB' AND fp.object_id=test_set.id)
+                           IS NOT DISTINCT FROM NULLIF(?, 'root')::uuid)
                       AND (created_at, id) > (?, ?)
                     ORDER BY created_at, id LIMIT ?
                     """, ExecutionService::mapSet, project.tenantId(), projectId,
-                    after.time(), after.id(), limit + 1);
+                    folderId, folderId, after.time(), after.id(), limit + 1);
         boolean more = fetched.size() > limit;
         List<TestSetView> items = more ? fetched.subList(0, limit) : fetched;
         String next = more ? cursorFor(items.get(items.size() - 1).createdAt(), items.get(items.size() - 1).id()) : null;

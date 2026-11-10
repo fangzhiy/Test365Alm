@@ -28,7 +28,7 @@ class R03CiEvidenceTests(unittest.TestCase):
         source = (Path(__file__).resolve().parents[2] /
                   "apps/server/src/test/java/com/test365alm/server/identity/OidcCallbackSecurityIT.java").read_text(encoding="utf-8")
         methods = re.findall(r"@Test\s+void\s+(\w+)\s*\(", source)
-        self.assertEqual(24, len(methods))
+        self.assertEqual(25, len(methods))
         self.assertEqual(len(methods), len(set(methods)))
         self.assertIn(TERMINAL_HTTP_TEST, methods)
         self.assertEqual(set(methods), REQUIRED_TESTS)

@@ -100,7 +100,7 @@ class ExecutionControllerTest {
         when(service.pageInstances(actor, project, project, "cursor", 1)).thenReturn(instances);
         when(service.pageRuns(actor, project, "cursor", 1)).thenReturn(runs);
         when(service.pageAttempts(actor, project, run, "cursor", 1)).thenReturn(attempts);
-        assertEquals("next-set", controller.pageSets(authentication, project, "cursor", 1).nextCursor());
+        assertEquals("next-set", controller.pageSets(authentication, project, "cursor", 1, null).nextCursor());
         assertEquals("next-instance", controller.pageInstances(authentication, project, project, "cursor", 1).nextCursor());
         assertEquals("next-run", controller.pageRuns(authentication, project, "cursor", 1).nextCursor());
         assertEquals("next-attempt", controller.pageAttempts(authentication, project, run, "cursor", 1).nextCursor());
