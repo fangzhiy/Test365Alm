@@ -1,13 +1,13 @@
 import {requestJson} from './projectAccess'
 import type {AccessRequestOptions} from './projectAccess'
 
-export type AssetTarget={kind:'REQUIREMENT'|'TEST_CASE'|'DEFECT';id:string}
+export type AssetTarget={kind:'REQUIREMENT'|'TEST_CASE'|'DEFECT'|'RUN_STEP';id:string}
 export type AssetPage<T>={items:T[];nextCursor:string|null}
 export type UploadState='CREATED'|'UPLOADED'|'SCAN_FAILED'|'PUBLISHED'|'REJECTED'
 export type AssetUpload={id:string;projectId:string;assetId:string|null;revisionId:string|null;filename:string;declaredSize:number;declaredSha256:string;declaredContentType:string;actualSize:number|null;computedSha256:string|null;detectedMime:string|null;state:UploadState;cleanupPending:boolean;lastErrorCode:string|null;createdBy:string;createdAt:string;rowVersion:number}
 export type AssetRevision={id:string;projectId:string;assetId:string;revisionNumber:number;filename:string;size:number;sha256:string;mime:string;scanStatus:'CLEAN';createdBy:string;createdAt:string}
 export type Asset={id:string;projectId:string;currentRevisionId:string;currentRevision:AssetRevision;createdBy:string;createdAt:string}
-export type Attachment={id:string;projectId:string;kind:AssetTarget['kind'];requirementId:string|null;testCaseId:string|null;defectId:string|null;assetId:string;assetRevisionId:string;revision:AssetRevision;createdBy:string;createdAt:string}
+export type Attachment={id:string;projectId:string;kind:AssetTarget['kind'];requirementId:string|null;testCaseId:string|null;defectId:string|null;runStepId?:string|null;assetId:string;assetRevisionId:string;revision:AssetRevision;createdBy:string;createdAt:string}
 export type UploadInput={filename:string;size:number;sha256:string;contentType:string;assetId?:string}
 export type UploadReceipt={uploadId:string;state:'UPLOADED';size:number;sha256:string;mime:string}
 const allowed=['text/plain','application/pdf','image/png','image/jpeg']
@@ -31,11 +31,11 @@ function validUpload(v:unknown):boolean {
 }
 const validRevision=(v:unknown)=>common(v)&&str(v.assetId)&&positive(v.revisionNumber)&&str(v.filename)&&size(v.size)&&hash(v.sha256)&&mime(v.mime)&&v.scanStatus==='CLEAN'
 const validAsset=(v:unknown)=>common(v)&&str(v.currentRevisionId)&&validRevision(v.currentRevision)&&record(v.currentRevision)&&v.currentRevision.id===v.currentRevisionId&&v.currentRevision.assetId===v.id&&v.currentRevision.projectId===v.projectId
-const targetFields={REQUIREMENT:'requirementId',TEST_CASE:'testCaseId',DEFECT:'defectId'} as const
+const targetFields={REQUIREMENT:'requirementId',TEST_CASE:'testCaseId',DEFECT:'defectId',RUN_STEP:'runStepId'} as const
 const targetInput=(t:AssetTarget)=>({kind:t.kind,[targetFields[t.kind]]:t.id})
 function validAttachment(v:unknown):boolean {
- if(!common(v)||!['REQUIREMENT','TEST_CASE','DEFECT'].includes(String(v.kind))||!str(v.assetId)||!str(v.assetRevisionId)||!validRevision(v.revision)||!record(v.revision)||v.revision.id!==v.assetRevisionId||v.revision.assetId!==v.assetId||v.revision.projectId!==v.projectId)return false
- return Object.entries(targetFields).every(([k,f])=>k===v.kind?str(v[f]):v[f]===null)
+ if(!common(v)||!['REQUIREMENT','TEST_CASE','DEFECT','RUN_STEP'].includes(String(v.kind))||!str(v.assetId)||!str(v.assetRevisionId)||!validRevision(v.revision)||!record(v.revision)||v.revision.id!==v.assetRevisionId||v.revision.assetId!==v.assetId||v.revision.projectId!==v.projectId)return false
+ return Object.entries(targetFields).every(([k,f])=>k===v.kind?str(v[f]):v[f]===null||(f==='runStepId'&&v[f]===undefined))
 }
 const base=(p:string)=>`/api/v1/projects/${encodeURIComponent(p)}`
 const enc=encodeURIComponent

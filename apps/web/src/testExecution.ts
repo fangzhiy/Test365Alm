@@ -6,13 +6,16 @@ export type StepOutcome = 'NOT_RUN' | 'PASS' | 'FAIL' | 'BLOCKED'
 export type AttemptOutcome = 'PASS' | 'FAIL' | 'BLOCKED' | null
 
 export type TestSet = { id: string; projectId: string; name: string; description: string; rowVersion?: number; instanceCount?: number }
-export type TestInstance = { id: string; projectId?: string; setId: string; testCaseId: string; testRevisionId: string; title: string; revisionNumber: number; displayNumber?: string }
+export type TestInstance = { id: string; projectId?: string; setId: string; testCaseId: string; testRevisionId: string; title: string; revisionNumber: number; displayNumber?: string; assigneeId?: string | null; assigneeName?: string | null; assignmentVersion?: number; runId?: string | null; attemptId?: string | null; status?: ExecutionState | 'NOT_RUN'; conclusion?: AttemptOutcome; executionDate?: string | null }
 // A run step carries its own optimistic-lock version.  The attempt version
 // protects state transitions, but it is not interchangeable with a step
 // version: two step updates may advance different rows independently.
-export type RunStep = { stepKey: string; ordinal: number; action: string; expected: string; actual: string; outcome: StepOutcome; rowVersion?: number }
-export type RunAttempt = { id: string; attemptNo: number; state: ExecutionState; outcome: AttemptOutcome; rowVersion?: number; steps: RunStep[]; updatedAt?: string }
-export type Run = { id: string; projectId: string; instanceId: string; manifestId: string; attemptId: string; state: ExecutionState; outcome: AttemptOutcome; rowVersion: number; attempt?: RunAttempt; manifest?: { title: string; description: string; preconditions: string; steps: RunStep[]; formatVersion?: string; rulesVersion?: string } }
+export type RunStep = { stepKey: string; ordinal: number; action: string; expected: string; actual: string; outcome: StepOutcome; rowVersion?: number; runStepId?: string; executedAt?: string | null; updatedAt?: string | null }
+export type RunAttempt = { id: string; attemptNo: number; state: ExecutionState; outcome: AttemptOutcome; rowVersion?: number; steps: RunStep[]; updatedAt?: string; startedAt?: string; finishedAt?: string | null }
+export type Run = { id: string; projectId: string; instanceId: string; manifestId: string; attemptId: string; state: ExecutionState; outcome: AttemptOutcome; rowVersion: number; attempt?: RunAttempt; manifest?: { title: string; description: string; preconditions: string; steps: RunStep[]; formatVersion?: string; rulesVersion?: string; assigneeId?: string | null; assigneeName?: string | null } }
+export type Assignment = { instanceId: string; assigneeId: string | null; assigneeName: string | null; assignmentVersion: number }
+export type Assignee = { id: string; displayName: string }
+export type GridFilters = { status?: ExecutionState | 'NOT_RUN'; assigneeId?: string }
 export type Page<T> = { items: T[]; nextCursor: string | null }
 export type RunSummary = {
   totalInstances: number
@@ -30,6 +33,9 @@ const invalid = (message: string): AccessError => ({ code: 'INVALID_RESPONSE', m
 const listBody = (body: unknown): unknown[] => Array.isArray(body) ? body : isRecord(body) && Array.isArray(body.items) ? body.items : (() => { throw invalid('服务返回了无效列表') })()
 const stringOrEmpty = (value: unknown): string | null => value === undefined || value === null ? '' : isString(value) ? value : null
 
+const nullableString = (value: unknown): value is string | null => value === null || isString(value)
+const serverTime = (value: unknown): value is string | null => value === null || (isString(value) && /^\d{4}-\d\d-\d\dT/.test(value) && Number.isFinite(Date.parse(value)))
+
 const parseSet = (value: unknown): TestSet | null => {
   if (!isRecord(value) || !isString(value.id) || !isString(value.projectId) || !isString(value.name)) return null
   const description = stringOrEmpty(value.description)
@@ -43,6 +49,25 @@ const parseInstance = (value: unknown): TestInstance | null => {
   return { id: value.id, projectId: isString(value.projectId) ? value.projectId : undefined, setId: isString(value.setId) ? value.setId : value.testSetId as string, testCaseId: value.testCaseId, testRevisionId: isString(value.testRevisionId) ? value.testRevisionId : value.revisionId as string, title: value.title, revisionNumber, displayNumber: isString(value.displayNumber) ? value.displayNumber : undefined }
 }
 
+const parseAssignment = (value: unknown): Assignment | null => {
+  if (!isRecord(value) || !isString(value.instanceId) || !nullableString(value.assigneeId) || !nullableString(value.assigneeName)
+    || (value.assigneeId === null) !== (value.assigneeName === null) || !isPositiveInteger(value.assignmentVersion)) return null
+  return { instanceId: value.instanceId, assigneeId: value.assigneeId, assigneeName: value.assigneeName, assignmentVersion: value.assignmentVersion }
+}
+const parseGridRow = (value: unknown, projectId: string, setId: string): TestInstance | null => {
+  if (!isRecord(value)) return null
+  const instance = parseInstance(value.instance)
+  if (!instance || instance.projectId !== projectId || instance.setId !== setId) return null
+  const assignment = parseAssignment({ ...value, instanceId: instance.id })
+  if (!assignment || !nullableString(value.runId) || !nullableString(value.attemptId) || !serverTime(value.executionDate)
+    || !['NOT_RUN','RUNNING','PAUSED','FINISHED'].includes(String(value.status))
+    || !(value.conclusion === null || ['PASS','FAIL','BLOCKED'].includes(String(value.conclusion)))
+    || (value.status === 'NOT_RUN' ? value.runId !== null || value.attemptId !== null || value.executionDate !== null
+      : !value.runId || !value.attemptId || !value.executionDate)) return null
+  return { ...instance, ...assignment, runId: value.runId, attemptId: value.attemptId,
+    status: value.status as TestInstance['status'], conclusion: value.conclusion as AttemptOutcome, executionDate: value.executionDate }
+}
+
 const parseOutcome = (value: unknown): AttemptOutcome => value === undefined || value === null ? null : value === 'PASS' || value === 'FAIL' || value === 'BLOCKED' ? value : null
 const parseState = (value: unknown): ExecutionState | null => value === 'RUNNING' || value === 'PAUSED' || value === 'FINISHED' ? value : null
 const parseStep = (value: unknown): RunStep | null => {
@@ -50,7 +75,8 @@ const parseStep = (value: unknown): RunStep | null => {
   const actual = value.actual === undefined ? value.actualResult : value.actual
   const outcome = value.outcome === undefined ? value.conclusion : value.outcome
   if (!isString(actual) || !(outcome === 'NOT_RUN' || outcome === 'PASS' || outcome === 'FAIL' || outcome === 'BLOCKED')) return null
-  return { stepKey: value.stepKey, ordinal: value.ordinal, action: value.action, expected: value.expected, actual, outcome, rowVersion: value.rowVersion }
+  if ((value.executedAt !== undefined && !serverTime(value.executedAt)) || (value.updatedAt !== undefined && !serverTime(value.updatedAt)) || (value.runStepId !== undefined && value.runStepId !== null && !isString(value.runStepId))) return null
+  return { stepKey: value.stepKey, ordinal: value.ordinal, action: value.action, expected: value.expected, actual, outcome, rowVersion: value.rowVersion, runStepId: isString(value.runStepId) ? value.runStepId : undefined, executedAt: value.executedAt as string | null | undefined, updatedAt: value.updatedBy === null ? null : value.updatedAt as string | null | undefined }
 }
 const parseManifestStep = (value: unknown): RunStep | null => {
   if (!isRecord(value) || !isString(value.stepKey) || !isPositiveInteger(value.ordinal) || !isString(value.action) || !isString(value.expected)) return null
@@ -61,7 +87,7 @@ const parseAttempt = (value: unknown): RunAttempt | null => {
   const state = parseState(value.state ?? value.status); const outcome = parseOutcome(value.outcome ?? value.conclusion); const values = value.steps === undefined ? [] : value.steps
   if (!state || !Array.isArray(values)) return null
   const steps = values.map(parseStep); if (steps.some((step) => step === null)) return null
-  return { id: value.id, attemptNo: value.attemptNo, state, outcome, rowVersion: value.rowVersion, steps: steps as RunStep[], updatedAt: isString(value.updatedAt) ? value.updatedAt : undefined }
+  return { id: value.id, attemptNo: value.attemptNo, state, outcome, rowVersion: value.rowVersion, steps: steps as RunStep[], startedAt:isString(value.startedAt)?value.startedAt:undefined, finishedAt:nullableString(value.finishedAt)?value.finishedAt:undefined, updatedAt: isString(value.updatedAt) ? value.updatedAt : undefined }
 }
 const parseRun = (value: unknown): Run | null => {
   if (!isRecord(value)) return null
@@ -73,7 +99,7 @@ const parseRun = (value: unknown): Run | null => {
     const manifestSteps = isRecord(value.manifest) && Array.isArray(value.manifest.steps) ? value.manifest.steps.map(parseManifestStep) : null
     if (manifestSteps?.some((step) => step === null)) return null
     const manifest = isRecord(value.manifest) && isString(value.manifest.title) && isString(value.manifest.description) && isString(value.manifest.preconditions) && manifestSteps
-      ? { title: value.manifest.title, description: value.manifest.description, preconditions: value.manifest.preconditions, formatVersion: isString(value.manifest.formatVersion) ? value.manifest.formatVersion : undefined, rulesVersion: isString(value.manifest.rulesVersion) ? value.manifest.rulesVersion : undefined, steps: manifestSteps as RunStep[] }
+      ? { title: value.manifest.title, description: value.manifest.description, preconditions: value.manifest.preconditions, formatVersion: isString(value.manifest.formatVersion) ? value.manifest.formatVersion : undefined, rulesVersion: isString(value.manifest.rulesVersion) ? value.manifest.rulesVersion : undefined, steps: manifestSteps as RunStep[], assigneeId: nullableString(value.manifest.assigneeId) ? value.manifest.assigneeId : undefined, assigneeName: nullableString(value.manifest.assigneeName) ? value.manifest.assigneeName : undefined }
       : base.manifest
     return { ...base, attempt: attempt ?? undefined, attemptId: attempt?.id ?? base.attemptId, manifest }
   }
@@ -114,6 +140,23 @@ const versionedWrite = (input: RequestInfo | URL, version: number, options?: Acc
 }
 
 export const executionApi = {
+  async executionGrid(projectId: string, setId: string, cursor?: string | null, limit = 25, filters: GridFilters = {}, options?: AccessRequestOptions) {
+    const body = await requestJson(path(projectId, `/test-sets/${encodeURIComponent(setId)}/execution-grid${query({ cursor: cursor ?? undefined, limit, ...filters })}`), undefined, options)
+    return parsePage(body, value => parseGridRow(value, projectId, setId), '服务返回了无效执行网格')
+  },
+  async executionAssignees(projectId: string, cursor?: string | null, options?: AccessRequestOptions): Promise<Page<Assignee>> {
+    return parsePage(await requestJson(path(projectId, `/execution-assignees${query({ cursor: cursor ?? undefined, limit:25 })}`), undefined, options), value =>
+      isRecord(value) && isString(value.id) && isString(value.displayName) ? {id:value.id,displayName:value.displayName} : null, '服务返回了无效负责人列表')
+  },
+  async assignInstance(projectId: string, instanceId: string, assigneeId: string | null, version: number, options?: AccessRequestOptions) {
+    const expectedVersion = requireVersion(version)
+    const body = await requestJson(path(projectId, `/test-instances/${encodeURIComponent(instanceId)}/assignee`), {
+      method:'PUT', headers:{'Content-Type':'application/json','If-Match':`"${expectedVersion}"`}, body:JSON.stringify({assigneeId,expectedVersion})
+    }, { ...options, idempotencyKey: options?.idempotencyKey ?? newIdempotencyKey() })
+    const assignment = parse(body, parseAssignment, '服务返回了无效负责人版本')
+    if (assignment.instanceId !== instanceId || assignment.assigneeId !== assigneeId || assignment.assignmentVersion !== expectedVersion + 1) throw invalid('服务返回了不一致的负责人版本')
+    return assignment
+  },
   async listSets(projectId: string, options?: AccessRequestOptions) { return parseList(await requestJson(path(projectId, '/test-sets'), undefined, options), parseSet, '服务返回了无效测试集列表') },
   async pageSets(projectId: string, cursor?: string | null, limit?: number, options?: AccessRequestOptions, folderId?: string) {
     const body = await requestJson(path(projectId, `/test-sets/page${query({ cursor: cursor ?? undefined, limit, folderId })}`), undefined, options)
