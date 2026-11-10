@@ -4,7 +4,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from tools.linux_test_runner import Guard, Identity, RUN, SOURCE, committed_archive, validate
+from tools.linux_test_runner import Guard, Identity, RUN, SOURCE, committed_archive, main, validate
+from tools.linux_test_inside import summarize
 from tools.r02_resource_guard import ResourceOwnershipError
 
 RUN_ID = "a" * 32
@@ -101,6 +102,45 @@ class LinuxRunnerGuardTests(unittest.TestCase):
                     committed_archive(SHA, destination)
                 self.assertEqual(2, run.call_count)
                 self.assertFalse(destination.exists())
+
+    def test_main_phase_exception_always_cleans_and_records_failure(self):
+        guard = Mock(context="local", engine="engine", resources={})
+        guard.labels.return_value = []
+        guard.docker.side_effect = ["built", "sha256:" + "e" * 64]
+        guard.cleanup.return_value = True
+        with tempfile.TemporaryDirectory() as directory, \
+                patch("tools.linux_test_runner.ROOT", Path(directory)), \
+                patch("tools.linux_test_runner.committed_archive"), \
+                patch("tools.linux_test_runner.Guard", return_value=guard), \
+                patch("tools.linux_test_runner.subprocess.run") as run, \
+                patch("tools.linux_test_runner.execute", side_effect=ResourceOwnershipError("phase failed")), \
+                patch("sys.argv", ["runner", "--source", SHA]):
+            run.return_value.stdout = b"FROM official@sha256:fixed\n"
+            self.assertEqual(1, main())
+            guard.cleanup.assert_called_once()
+            import json
+            report = json.loads(next(Path(directory).rglob("run.json")).read_text())
+            self.assertTrue(report["cleanup"])
+            self.assertEqual(1, report["exit_code"])
+            self.assertEqual("ResourceOwnershipError", report["failure_type"])
+
+    def test_export_has_status_but_no_properties_messages_or_system_output(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "TEST-safe.xml"
+            path.write_text('<testsuite><properties><property name="secret" value="hidden"/></properties>'
+                            '<testcase classname="SafeTest" name="rejects"><failure message="hidden">hidden</failure>'
+                            '<system-out>hidden</system-out></testcase></testsuite>')
+            report = summarize(Path(directory))
+            self.assertEqual(1, report["failures"])
+            self.assertNotIn("hidden", str(report))
+            self.assertNotIn("secret", str(report))
+
+    def test_duplicate_method_reports_refuse_export(self):
+        with tempfile.TemporaryDirectory() as directory:
+            (Path(directory) / "TEST-dupe.xml").write_text('<testsuite>'
+                '<testcase classname="SafeTest" name="same"/><testcase classname="SafeTest" name="same"/></testsuite>')
+            with self.assertRaises(ValueError):
+                summarize(Path(directory))
 
 
 if __name__ == "__main__":
