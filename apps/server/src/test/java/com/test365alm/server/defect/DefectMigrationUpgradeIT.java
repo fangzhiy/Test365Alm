@@ -51,7 +51,7 @@ class DefectMigrationUpgradeIT {
    var tables=owner.query("SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename<>'flyway_schema_history' ORDER BY tablename",(r,i)->r.getString(1));var before=snapshot(owner,tables);
    for(String table:List.of("requirement","requirement_revision","test_case","test_revision","test_step","execution_run","run_attempt","run_step","execution_event","execution_idempotency","trace_link","trace_link_revision","core_command_idempotency"))assertFalse(before.get(table).isEmpty(),table+" must be nonempty before upgrade");
    var latest=Flyway.configure().dataSource(pg.getJdbcUrl(),pg.getUsername(),pg.getPassword()).target("18").load();assertEquals(1,latest.migrate().migrationsExecuted);assertEquals(before,snapshot(owner,tables));assertEquals(0,latest.migrate().migrationsExecuted);assertEquals(before,snapshot(owner,tables));
-            assertEquals(6,Flyway.configure().dataSource(pg.getJdbcUrl(),pg.getUsername(),pg.getPassword()).load().migrate().migrationsExecuted);
+            assertEquals(7,Flyway.configure().dataSource(pg.getJdbcUrl(),pg.getUsername(),pg.getPassword()).load().migrate().migrationsExecuted);
             assertEquals(before,snapshot(owner,tables),"latest preserves every original column before current runtime verification");
             HistoricalExecutionUpgradeSupport.assertLegacyColumns(owner,before);
 

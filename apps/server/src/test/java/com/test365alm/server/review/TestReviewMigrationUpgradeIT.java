@@ -34,7 +34,7 @@ class TestReviewMigrationUpgradeIT {
     private Flyway flyway(String target){return Flyway.configure().dataSource(POSTGRES.getJdbcUrl(),POSTGRES.getUsername(),POSTGRES.getPassword()).target(target).load();}
 
     @Test void nonemptyPreReviewUpgradePreservesFrozenContentAndRuntimeReviewsExactRevision()throws Exception {
-        assertEquals(23,flyway("23").migrate().migrationsExecuted);
+        assertEquals(24,flyway("24").migrate().migrationsExecuted);
         UUID actor=UUID.randomUUID(),tenant=UUID.randomUUID(),domain=UUID.randomUUID(),project=UUID.randomUUID(),test=UUID.randomUUID(),revision=UUID.randomUUID(),step=UUID.randomUUID();
         Map<String,List<String>> before;
         try(var c=owner()) {
@@ -51,11 +51,13 @@ class TestReviewMigrationUpgradeIT {
             sql(c,"INSERT INTO test_step(tenant_id,project_id,test_case_id,revision_id,step_key,ordinal,action,expected) VALUES(?,?,?,?,?,1,'Frozen action','Frozen expected')",tenant,project,test,revision,step);
             sql(c,"UPDATE test_revision SET sealed_at=CURRENT_TIMESTAMP WHERE id=?",revision);
             sql(c,"UPDATE test_case SET current_revision_id=? WHERE id=?",revision,test);
-            c.commit();before=snapshot(c,project);c.commit();
+            c.commit();before=snapshot(c);c.commit();
+            for(String table:List.of("principal","tenant","domain","tenant_member","project","project_member","test_case","test_revision","test_step"))
+                assertFalse(before.get(table).isEmpty(),"nonempty V24 fixture: "+table);
         }
         assertEquals(1,flyway("25").migrate().migrationsExecuted);
         assertEquals(0,flyway("25").migrate().migrationsExecuted);
-        try(var c=owner()){assertEquals(before,snapshot(c,project));}
+        try(var c=owner()){assertEquals(before,snapshot(c),"V25 preserves every pre-existing table, row and column");}
         var saved=tests.getAuthorized(actor,project,test);
         var submitted=reviews.act(actor,project,test,revision,CoreCommands.JSON.readTree("{\"action\":\"SUBMIT\"}"),"\"1\"","upgrade-review-submit");
         var approved=reviews.act(actor,project,test,revision,CoreCommands.JSON.readTree("{\"action\":\"APPROVE\"}"),"\"2\"","upgrade-review-approve");
@@ -66,11 +68,16 @@ class TestReviewMigrationUpgradeIT {
         assertEquals("DRAFT",reviews.get(actor,project,test,changed.currentRevision().id(),null,null).state());
         assertEquals(approved.latest(),reviews.get(actor,project,test,revision,null,null).latest());
     }
-    private static Map<String,List<String>> snapshot(Connection c,UUID project)throws SQLException {
-        var result=new TreeMap<String,List<String>>();for(String table:List.of("test_case","test_revision","test_step","audit_event","test_case_outbox_event","test_case_idempotency"))
-            try(var s=c.prepareStatement("SELECT to_jsonb(t)::text FROM "+table+" t WHERE project_id=? ORDER BY to_jsonb(t)::text")) {
-                s.setObject(1,project);try(var r=s.executeQuery()){var rows=new ArrayList<String>();while(r.next())rows.add(r.getString(1));result.put(table,rows);}
-            }return result;
+    private static Map<String,List<String>> snapshot(Connection c)throws SQLException {
+        var tables=new ArrayList<String>();
+        try(var s=c.createStatement();var r=s.executeQuery("SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename NOT IN ('flyway_schema_history','test_review_event','test_review_outbox_event') ORDER BY tablename")) {
+            while(r.next())tables.add(r.getString(1));
+        }
+        var result=new TreeMap<String,List<String>>();
+        for(String table:tables)try(var s=c.createStatement();var r=s.executeQuery("SELECT to_jsonb(t)::text FROM \""+table.replace("\"","\"\"")+"\" t ORDER BY to_jsonb(t)::text")) {
+            var rows=new ArrayList<String>();while(r.next())rows.add(r.getString(1));result.put(table,rows);
+        }
+        return result;
     }
     private static Connection owner()throws SQLException{return DriverManager.getConnection(POSTGRES.getJdbcUrl(),POSTGRES.getUsername(),POSTGRES.getPassword());}
     private static void sql(Connection c,String query,Object... values)throws SQLException{try(var s=c.prepareStatement(query)){for(int i=0;i<values.length;i++)s.setObject(i+1,values[i]);s.executeUpdate();}}

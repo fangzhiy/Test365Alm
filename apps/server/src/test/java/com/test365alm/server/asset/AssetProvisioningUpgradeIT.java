@@ -66,7 +66,7 @@ class AssetProvisioningUpgradeIT {
             assertEquals(0,latest.migrate().migrationsExecuted);assertEquals(before,snapshot(owner,tables));
             assertEquals(2,migration(pg,"23").migrate().migrationsExecuted);assertEquals(before,snapshot(owner,tables),"latest preserves all original columns before current service verification");
 
-            assertEquals(1,Flyway.configure().dataSource(pg.getJdbcUrl(),pg.getUsername(),pg.getPassword()).load().migrate().migrationsExecuted);
+            assertEquals(2,Flyway.configure().dataSource(pg.getJdbcUrl(),pg.getUsername(),pg.getPassword()).load().migrate().migrationsExecuted);
             assertEquals(before,snapshot(owner,tables),"latest must preserve all original asset fields before current runtime calls");
             assertEquals(0,owner.queryForObject("SELECT count(*) FROM attachment_link WHERE run_step_id IS NOT NULL",Integer.class));
             String newLogin=login(),newSecret=secret();
