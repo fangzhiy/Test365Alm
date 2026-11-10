@@ -1,5 +1,18 @@
 # Test365Alm 工作规则
 
+## 当前阶段：演示优先（2026-11-10 起，优先于下文"轮次协作"中的文档要求）
+
+- 总纲是 `docs/alm-replacement-roadmap.md`：目标是替换内部 OpenText ALM，先做出能演示的核心功能（目录树、执行、复核、签署、审计、报告），跑通一个 OQ 测试集。
+- 流程从轻：保留自动化测试和 CI，改动要有测试；**不再**写 `docs/progress/runs/`、`docs/progress/inputs/` 的每轮证据文档，也不必每次更新 `docs/development-status.md`。改动说明写在 PR 描述里，值得留给后人的结论用 `trail note` 记下。
+- 下文的数据约束、安全边界（不可变修订、审计与 Outbox 同事务、权限、禁止提交秘密等）仍然有效。
+
+## 本机环境（Windows 开发机）
+
+- Java 21 在 `D:\code\ProOrca\Wetest365ALM\.tools\jdk-21`（不入库）。系统默认是 Java 17，运行 Maven 前先切到 21：
+  - PowerShell：`$env:JAVA_HOME='D:\code\ProOrca\Wetest365ALM\.tools\jdk-21'; $env:Path="$env:JAVA_HOME\bin;$env:Path"`
+  - Git Bash：`export JAVA_HOME=D:/code/ProOrca/Wetest365ALM/.tools/jdk-21 PATH=/d/code/ProOrca/Wetest365ALM/.tools/jdk-21/bin:$PATH`
+- 用系统 Maven（`mvn`，3.9.14）即可：`cd apps/server; mvn -B -ntp test`；集成测试 `mvn -B -ntp -Pintegration verify`，需要 Docker Desktop 在运行（Testcontainers）。
+
 ## 轮次协作
 
 - 每轮开始先读取本文件、`README.md`、相关实施方案/模块/契约、`docs/development-status.md` 和任务清单。
