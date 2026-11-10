@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { ExecutionDiagnostics } from './executionDiagnostics'
 import { randomUUID } from 'node:crypto'
-import { isOwnedRun, seedProjectAccessScope } from './ownedR03'
+import { assertStepEvidenceFacilities, isOwnedRun, seedProjectAccessScope } from './ownedR03'
 
 type Page = import('@playwright/test').Page
 
@@ -40,6 +40,7 @@ async function selectProject(page: Page, tenantId: string, projectId: string): P
 test('real Keycloak UI manual execution creates, resumes, finishes and reruns a two-step run', async ({ page, browser }) => {
   test.skip(!isOwnedRun(), 'destructive M09 page flow requires the current CI-owned R03 stack')
   test.setTimeout(180_000)
+  assertStepEvidenceFacilities()
   const adminUser = process.env.R03_TEST_USER
   const adminPassword = process.env.R03_TEST_USER_PASSWORD
   const memberUser = process.env.R03_MEMBER_USER

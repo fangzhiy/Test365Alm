@@ -21,9 +21,32 @@ The Java21 location follows AGENTS.md. Existing Edge is used when present.
 Only the three specified tests accept local ownership. CI `isOwnedCiRun` remains
 unchanged, and IdP stop/restart/disable tests stay CI-only. PostgreSQL scope seeding
 uses the verified exact local container ID. No GITHUB identity variables are set.
-The application uses its real OIDC/CSRF/DB services; assets are disabled in this
-browser-only environment, so this is not attachment acceptance (the Linux backend
-suite separately covers real S3/ClamAV/EICAR).
+The application uses its real OIDC/CSRF/DB services. Add `--with-assets` for the
+execution runner's real step attachments; the default retains the earlier
+assets-disabled mode and cannot satisfy the extended manual execution flow.
+
+`python tools/local_browser_runner.py --source <exact commit> --with-assets`
+adds the existing digest-pinned R11 SeaweedFS and ClamAV services to the same
+one-use run. Their two loopback ports are freshly allocated along with the four
+application ports. All services, networks and volumes carry the same run/source
+labels and enter the same exact-ID cleanup manifest. Before each asset readiness
+probe and provisioning connection, the harness rechecks daemon/context, source,
+container ID/creation/image, service identity and exact loopback port bindings.
+The readiness control requires a private S3 response and a real benign ClamAV
+INSTREAM=CLEAN; it does not stand in for UI upload/publication/link/download checks.
+
+The initializer never creates a scanner group LOGIN in this mode. After real
+application Flyway readiness, the repository's explicit scanner provisioning
+entry point creates a fresh, separate restricted LOGIN using the owned PostgreSQL
+container's full ID. Both connections require SCRAM; passwords and verifier SQL
+stay in private environment/stdin, never argv or raw reports. The frontend flow
+also checks the two exact asset container identities and loopback bindings before
+its first write. Missing/foreign services fail acceptance; attachments are not
+skipped or mocked. The summary records asset mode, readiness and provisioning
+separately from business success and cleanup. A failure stops directly owned
+processes, redacts diagnostics and removes only the recorded resource IDs.
+Real EICAR backend tests remain in the independently owned Linux runner to avoid
+Windows quarantine; no Defender exclusions or scanning substitutions are made.
 
 Playwright runs one worker, zero retries, without traces/screenshots/video. An
 allowlisted reporter exports only test names, statuses, retry count and durations;
