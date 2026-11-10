@@ -1,4 +1,5 @@
 import copy
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,6 +8,7 @@ from unittest.mock import Mock, patch
 from tools.linux_test_runner import Guard, Identity, RUN, SOURCE, committed_archive, main, validate, run_phases
 from tools.linux_test_inside import summarize, valid_report, FOCUSED_METHODS, UNIT_METHODS, PHASES
 from tools.r02_resource_guard import ResourceOwnershipError
+from tools import linux_test_runner as runner
 
 RUN_ID = "a" * 32
 SHA = "b" * 40
@@ -14,7 +16,8 @@ SHA = "b" * 40
 
 def container():
     return {"Id": "c" * 64, "Created": "created", "Image": "sha256:image",
-            "Config": {"Labels": {RUN: RUN_ID, SOURCE: SHA}}, "HostConfig": {}, "Mounts": []}
+            "Config": {"Labels": {RUN: RUN_ID, SOURCE: SHA}}, "HostConfig": {}, "Mounts": [],
+            "State": {"StartedAt": "first-start"}}
 
 
 class LinuxRunnerGuardTests(unittest.TestCase):
@@ -57,6 +60,7 @@ class LinuxRunnerGuardTests(unittest.TestCase):
         for change in (lambda c: c["Config"]["Labels"].update({RUN: "foreign"}),
                        lambda c: c["Config"]["Labels"].pop(SOURCE),
                        lambda c: c.update(Id="replacement"), lambda c: c.update(Created="recreated"),
+                       lambda c: c["State"].update(StartedAt="restarted"),
                        lambda c: c.update(Image="changed")):
             changed = copy.deepcopy(actual)
             change(changed)
@@ -119,6 +123,88 @@ class LinuxRunnerGuardTests(unittest.TestCase):
         guard.discover = Mock(side_effect=ResourceOwnershipError("daemon changed"))
         self.assertFalse(guard.cleanup())
 
+    def test_cleanup_confirms_exact_container_absence_when_ryuk_wins_the_require_or_rm_window(self):
+        for window in ("require", "rm"):
+            guard = self.guard()
+            actual = container()
+            guard.resources[actual["Id"]] = validate(actual, RUN_ID, SHA)
+            guard.discover = Mock()
+            guard.verify_engine = Mock()
+            guard.inspect = Mock(side_effect=[actual, None, None] if window == "require" else [actual, actual, None])
+            guard.docker = Mock()
+            if window == "rm":
+                guard.docker.side_effect = runner.OwnedContainerDisappeared()
+            with self.subTest(window=window):
+                self.assertTrue(guard.cleanup())
+                self.assertEqual("confirmed_absent_after_not_found", guard.cleanup_events[-1]["reason"])
+                self.assertEqual(actual["Id"], guard.cleanup_events[-1]["id"])
+                self.assertEqual(0 if window == "require" else 1, guard.docker.call_count)
+
+    def test_cleanup_refuses_non_not_found_errors_replacements_and_daemon_changes(self):
+        for change in ("unexpected_error", "replacement", "restart", "image", "foreign", "daemon"):
+            guard = self.guard()
+            actual = container()
+            guard.resources[actual["Id"]] = validate(actual, RUN_ID, SHA)
+            guard.discover = Mock()
+            guard.verify_engine = Mock()
+            changed = copy.deepcopy(actual)
+            if change == "replacement": changed["Id"] = "d" * 64
+            if change == "restart": changed["State"]["StartedAt"] = "restarted"
+            if change == "image": changed["Image"] = "sha256:changed"
+            if change == "foreign": changed["Config"]["Labels"][RUN] = "foreign"
+            guard.inspect = Mock(side_effect=[actual, changed])
+            guard.remove = Mock(side_effect=ResourceOwnershipError("unsafe") if change == "unexpected_error" else runner.OwnedContainerDisappeared())
+            if change == "daemon": guard.verify_engine.side_effect = [None, ResourceOwnershipError("daemon changed")]
+            with self.subTest(change=change):
+                self.assertFalse(guard.cleanup())
+                guard.remove.assert_called_once_with(actual["Id"])
+                self.assertEqual("refused", guard.cleanup_events[-1]["reason"])
+                self.assertNotIn("unsafe", str(guard.cleanup_events))
+
+    def test_only_exact_owned_rm_not_found_errors_are_classified_as_disappeared(self):
+        guard = self.guard()
+        identity = "c" * 64
+        for error, code, expected in ((f"Error response from daemon: No such container: {identity}\n", 1, True),
+                                      (f"Error response from daemon: No such container: {'d' * 64}\n", 1, False),
+                                      (f"Error response from daemon: No such container: {identity}\nsecret-extra", 1, False),
+                                      (f"Error response from daemon: No such container: {identity}\n", 125, False),
+                                      ("permission denied secret", 1, False)):
+            result = subprocess.CompletedProcess([], code, b"", error.encode())
+            with self.subTest(code=code, expected=expected), patch("tools.linux_test_runner.subprocess.run", return_value=result):
+                with self.assertRaises(runner.OwnedContainerDisappeared if expected else ResourceOwnershipError) as failure:
+                    guard.docker("container", "rm", "-f", "-v", identity)
+                self.assertEqual(expected, isinstance(failure.exception, runner.OwnedContainerDisappeared))
+                self.assertNotIn("secret", str(failure.exception))
+
+    def test_inspect_requires_a_complete_not_found_response_for_the_exact_id(self):
+        guard = self.guard()
+        identity = "c" * 64
+        for error, code, absent in ((f"Error: No such container: {identity}\n", 1, True),
+                                     (f"Error: No such object: {identity}\n", 1, True),
+                                     (f"Error: No such container: {'d'*64}\n", 1, False),
+                                     (f"Error: No such container: {identity}\nsecret-extra", 1, False),
+                                     (f"Error: No such container: {identity}\n", 125, False),
+                                     ("permission denied secret", 1, False)):
+            result = subprocess.CompletedProcess([], code, b"[]", error.encode())
+            with self.subTest(absent=absent, code=code), patch("tools.linux_test_runner.subprocess.run", return_value=result):
+                if absent:
+                    self.assertIsNone(guard.inspect(identity))
+                else:
+                    with self.assertRaises(ResourceOwnershipError): guard.inspect(identity)
+
+    def test_first_start_is_recorded_once_and_a_later_restart_cannot_replace_it(self):
+        guard = self.guard()
+        actual = container()
+        actual["State"]["StartedAt"] = "0001-01-01T00:00:00Z"
+        guard.resources[actual["Id"]] = validate(actual, RUN_ID, SHA)
+        guard.verify_engine = Mock()
+        actual["State"]["StartedAt"] = "first-start"
+        guard.inspect = Mock(return_value=actual)
+        guard.require(actual["Id"])
+        self.assertEqual("first-start", guard.resources[actual["Id"]].started_at)
+        actual["State"]["StartedAt"] = "second-start"
+        with self.assertRaises(ResourceOwnershipError): guard.require(actual["Id"])
+
     def test_archive_requires_exact_commit_and_refuses_daily_env_before_export(self):
         with tempfile.TemporaryDirectory() as directory:
             destination = Path(directory) / "source.tar"
@@ -132,7 +218,7 @@ class LinuxRunnerGuardTests(unittest.TestCase):
                 self.assertFalse(destination.exists())
 
     def test_main_phase_exception_always_cleans_and_records_failure(self):
-        guard = Mock(context="local", engine="engine", resources={})
+        guard = Mock(context="local", engine="engine", resources={}, cleanup_events=[])
         guard.labels.return_value = []
         guard.docker.side_effect = ["built", "sha256:" + "e" * 64]
         guard.cleanup.return_value = True
