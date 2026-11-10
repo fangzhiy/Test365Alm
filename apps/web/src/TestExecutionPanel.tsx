@@ -155,10 +155,10 @@ export default function TestExecutionPanel({ projectId, access, resetSignal = 0 
     finally { if (finish(round, controller)) setPending(null) }
   }
   const loadSet = async (set: TestSet) => {
-    const { round, controller } = begin('测试集详情请求超时，请稍后重试', true); setSelectedSet(set); setInstances([]); setRuns([]); setSelectedRun(null); setAttempts([]); setSelectedAttempt(null); setActuals({}); setOutcomes({}); draftBindingRef.current = null; setState('loading'); setNotice('')
+    const { round, controller } = begin('测试集详情请求超时，请稍后重试', true); setPending('set-detail'); setSelectedSet(set); setInstances([]); setRuns([]); setSelectedRun(null); setAttempts([]); setSelectedAttempt(null); setActuals({}); setOutcomes({}); draftBindingRef.current = null; setState('loading'); setNotice('')
     try { const [detail, listed, listedRuns, runSummary] = await Promise.all([executionApi.getSet(projectId, set.id, { signal: controller.signal }), readInstancesPage(set.id, null, controller.signal), readRunsPage(set.id, null, controller.signal), readSummary(set.id, controller.signal)]); if (!current(round, controller)) return; setSelectedSet(detail); setInstances(listed.items); setInstancesCursor(listed.nextCursor); setRuns(listedRuns.items); setRunsCursor(listedRuns.nextCursor); setSummary(runSummary); setState('ready') }
     catch (error) { if (!current(round, controller)) return; if (isScopeAccessError(error)) { invalidateScope(); return }; setState('error'); setNotice(isAbort(error) ? '测试集详情请求超时，请稍后重试' : messageFor(error)) }
-    finally { finish(round, controller) }
+    finally { if (finish(round, controller)) setPending(null) }
   }
   const refreshGrid = async (filters = gridFilterRef.current) => {
     if (!selectedSet) return
