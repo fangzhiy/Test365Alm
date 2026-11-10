@@ -1,6 +1,6 @@
 # 审计历史及扫描器修复：总管复核检查点
 
-2026-11-11，当前结论：未发现已审范围内的确定阻塞问题；尚不批准审计业务合并，等待完整集成和真实浏览器验收。
+2026-11-11，当前结论：后端组合完整集成、真实Keycloak三入口及资源清理门槛均已满足，总管批准审计历史本地dev集成。本文保留历史检查点及被测源区别，不宣称其他阶段完成。
 
 ## 已审范围
 
@@ -17,14 +17,14 @@
 - scanner 允许的例外仅为暂停期间 live Ports 缺失；容器标签、ID、启动时间、配置绑定继续检查，恢复后发布端口严格匹配。post-pause 检查异常时在调用者 finally 进入前恢复原归属可证进程，再抛原异常；未知或被替换资源不自动恢复。
 - worker 已报告 79 单元、两个真实暂停恢复方法、前端 235 项和 lint/build 通过；其完整 Windows 集成仍为 157 项 1 failure／5 errors／0 skipped，六项均发生于 EICAR 上传，并有对应 Defender 检测／隔离事件。总管已读功能交接及相关代码／回归，未把未直接运行的测试称为本轮自己重跑。
 
-## 待验收
+## 验收结论
 
 1. Linux组合后端门槛已通过：源 `34c19f615c8f80a4e28c64e233be613a3360b7d5`，run `f9aa5b46eb0647908e62affaabeb5eb3`；总管已独立读取该工作区 `local-evidence/linux-tests/<run>/` 的scan/unit/integration/run脱敏JSON，真实扫描预检1、单元85、唯一完整集成167均0F/E/S、退出0、计数验证true、cleanup true。镜像内容ID `sha256:9e97c60376cf6eefaee97ff7e0906abcc07207de5172e1f1c0d9cbe74921adba`。不将后加浏览器设施算入这个被测源。
 2. 目录树已进 `dev@da47293`；`integration/audit` 保留目录与历史入口。总管实跑前端 246、Java 单元 85、Python最终155通过，lint/build通过（9个既有lint警告）。对照测试差异确认比审计单线新增9个FolderDatabaseIT和1个真实OIDC方法，Linux精确门槛为85单元／167集成。
-3. 三条真实 Keycloak 浏览器流程仍 NOT_RUN，合成夹具不替代实际验收；不伪造 CI-owned 变量。
+3. 真实Keycloak三流程已通过：确切源 `4a135897a964c92bdb4e2fe6e3dba29e738c0ff3`，run `06caafafb42e4762b6f4b9f222265ab7`。总管独立读取 `local-evidence/local-browser/<run>/{results,run,manifest}.json`：用例/执行/缺陷三个确切方法均passed/expected passed/retry0，单worker、零重试、无skip，exit0、cleanup true、processes_stopped true，source/project/run/context/Engine相符。总管分支与4a13589的apps/tools/contracts/.github完全相同；34c19f6→4a13589无后端源码或测试差异，所以完整167后端报告适用同一后端实现。浏览器环境assets disabled，附件仍由独立Linux完整真实扫描集成验收，不把三UI流程扩称附件浏览器验收。
 4. 性能建议（非本阶段阻塞）：用例历史按修订缓存，相邻修订仍逐版读取，最坏请求数随页大小增长；演示数据少且页大小有上限，数据量增大时再测量并批量读取，不提前扩大本轮改动。
 
-后续以精确提交、实际报告和这份检查点补充结论；不把“未发现问题”改写为完整验收。
+本次仅验收审计历史及其已审测试设施。复核/签署/报告/A03完整业务闭环仍按独立清单推进。原功能交接归档为 `audit-history-worker-handoff.md`，删除功能handoff入口；后续非阻塞设施改进独立复核，不混入已测源。
 
 ## 经验导入冲突
 
@@ -32,7 +32,7 @@
 
 ## 浏览器资源守卫前置修复
 
-总管复核 `c8724e4`：`verify_manifest` 的标签判断错误位于内层循环之外，只有同类最后一个资源被判断；现在对每个container/network/volume都检查项目及run标签。回归以首个foreign/最后owned容器证明旧实现错误接受。保留context/Engine和所有权失败拒绝路径，未放宽CI识别。总管组合该提交后实际跑Python156项通过。浏览器local-owned设施仍在worker开发中，不提前批准其实现或宣称真实UI通过。
+总管复核 `c8724e4`：`verify_manifest` 的标签判断错误位于内层循环之外，只有同类最后一个资源被判断；现在对每个container/network/volume都检查项目及run标签。回归以首个foreign/最后owned容器证明旧实现错误接受。保留context/Engine和所有权失败拒绝路径，未放宽CI识别。总管组合该提交后实际跑Python156项通过。该检查点当时浏览器local-owned设施尚未完成；后续审查和通过事实见下文及验收结论。
 
 ## 明确本地模式设施审查（4a13589）
 
@@ -40,4 +40,4 @@
 
 未发现阻塞当前三个流程的设施问题。worker报告Python161、前端248、lint/build、E2E配置独立tsc和trail check通过；这些为worker实际执行的检查，总管已审相关实现/断言，没有重复宣称自己重跑。新增负例现覆盖container/network/volume首foreign末owned、本地身份变化、既有凭据保护与三条确切pass且零retry/skip报告验证。
 
-两项非阻塞建议已发worker：reporter应从FullConfig读取实际workers/retries，避免将来参数变化而报告仍硬编码1/0；fresh_config和首次daemon检查处于主try之前，早期失败也宜统一清理已生成秘密。当前命令与配置均固定单worker/零retry，先完成确切4a13589真实运行，再独立改进，不混淆被测源。真实UI结果与资源清理尚待报告，A2仍未完成，dev不前移。
+两项非阻塞建议已发worker：reporter应从FullConfig读取实际workers/retries，避免将来参数变化而报告仍硬编码1/0；fresh_config和首次daemon检查处于主try之前，早期失败也宜统一清理已生成秘密。当前命令与配置均固定单worker/零retry，确切4a13589真实运行已完成；两项改进独立提交复核，不混淆被测源，不要求对未改业务重复验收。
