@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { isOwnedCiRun, seedProjectAccessScope } from './ownedR03'
+import { isOwnedCiRun, isOwnedRun, seedProjectAccessScope } from './ownedR03'
 import { safeHttpEvent, safeLocation, type SafeHttpEvent } from './safeHttpDiagnostics'
 
 type Page = import('@playwright/test').Page
@@ -524,7 +524,7 @@ test('real Keycloak UI requirement flow creates edits and keeps viewer read-only
 })
 
 test('real Keycloak UI manual test case flow creates steps, edits order, and keeps viewer read-only', async ({ page, browser }) => {
-  test.skip(!isOwnedCiRun(), 'destructive manual test case flow requires the current CI-owned R03 stack')
+  test.skip(!isOwnedRun(), 'manual test case flow requires an explicitly owned R03 stack')
   test.setTimeout(180_000)
   const adminUser = process.env.R03_TEST_USER
   const adminPassword = process.env.R03_TEST_USER_PASSWORD

@@ -2,6 +2,9 @@ import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { readFileSync } from 'node:fs'
+import { assertLocalContainer, localManifestMatches } from './localOwnership'
+import type { LocalManifest } from './localOwnership'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..')
 const project = process.env.R03_COMPOSE_PROJECT || ''
@@ -16,18 +19,43 @@ export function isOwnedCiRun(): boolean {
     && /^r03-[0-9]+-[0-9]+-[0-9]+$/.test(runId))
 }
 
+function localManifest(): LocalManifest | null {
+  if(!process.env.R03_LOCAL_MANIFEST)return null
+  const m=JSON.parse(readFileSync(process.env.R03_LOCAL_MANIFEST,'utf8')) as LocalManifest
+  if(!localManifestMatches(m,process.env) || resolve(m.root)!==root
+    || resolve(m.envFile)!==resolve(root,'.env.r03')
+    || resolve(m.composeFile)!==resolve(root,'local-evidence/local-browser-compose.json'))
+    throw new Error('Invalid explicitly local browser manifest')
+  return m
+}
+
+export function isOwnedRun(): boolean {
+  if(isOwnedCiRun())return true
+  try{return localManifest()!==null}catch{return false}
+}
+
 function docker(args: string[]): string {
-  return execFileSync('docker', args, { cwd: root, encoding: 'utf8', timeout: 20_000, maxBuffer: 1024 * 1024 }).trim()
+  const local=localManifest()
+  return execFileSync('docker', [...(local?['--context',local.context]:[]),...args], { cwd: root, encoding: 'utf8', timeout: 20_000, maxBuffer: 1024 * 1024 }).trim()
 }
 
 function compose(args: string[]): string {
+  const local=localManifest()
+  if(local)return docker(['compose','--env-file',local.envFile,'-f',local.composeFile,'-p',project,...args])
   return docker(['compose', '--env-file', '.env.r03', '-f', 'compose.r03.yaml', '-p', project, ...args])
 }
 
 let initialEngine: string | undefined
 
 function ownedContainer(service: 'postgres' | 'keycloak'): string {
-  if (!isOwnedCiRun()) throw new Error('Only this CI run may fault-inject its R03 stack')
+  const local=localManifest()
+  if(local){
+    const id=local.services[service].id
+    const actual=JSON.parse(docker(['inspect',id]))[0]
+    assertLocalContainer(local,service,actual,docker(['context','show']),docker(['info','--format','{{.ID}}']))
+    return id
+  }
+  if (!isOwnedCiRun()) throw new Error('Only an explicitly owned run may access its R03 stack')
   const engine = docker(['info', '--format', '{{.ID}}'])
   if (initialEngine && initialEngine !== engine) throw new Error('Docker engine changed during R03 test')
   initialEngine = engine
@@ -40,16 +68,19 @@ function ownedContainer(service: 'postgres' | 'keycloak'): string {
 }
 
 export function stopKeycloak(): void {
+  if(!isOwnedCiRun())throw new Error('Identity fault injection remains CI-only')
   ownedContainer('keycloak')
   compose(['stop', '--timeout', '10', 'keycloak'])
 }
 
 export function startKeycloak(): void {
+  if(!isOwnedCiRun())throw new Error('Identity fault injection remains CI-only')
   ownedContainer('keycloak')
   compose(['start', 'keycloak'])
 }
 
 export function setPrincipalDisabled(id: string, disabled: boolean): void {
+  if(!isOwnedCiRun())throw new Error('Identity fault injection remains CI-only')
   if (!/^[0-9a-f-]{36}$/.test(id)) throw new Error('Invalid principal ID')
   ownedContainer('postgres')
   const db = process.env.R03_DB_NAME || ''
@@ -73,11 +104,11 @@ export function setPrincipalDisabled(id: string, disabled: boolean): void {
 // PROJECT_MEMBER UI coverage; existing two-principal project-access cases keep
 // their original seed shape.
 export function seedProjectAccessScope(adminId: string, viewerId: string, memberId?: string): { tenantId: string, domainId: string } {
-  if (!isOwnedCiRun()) throw new Error('Only this CI run may seed its R03 project access scope')
+  if (!isOwnedRun()) throw new Error('Only an explicitly owned run may seed its R03 project access scope')
   for (const id of [adminId, viewerId, memberId].filter((value): value is string => Boolean(value))) {
     if (!/^[0-9a-f-]{36}$/.test(id)) throw new Error('Invalid disposable principal ID')
   }
-  ownedContainer('postgres')
+  const container=ownedContainer('postgres')
   const db = process.env.R03_DB_NAME || ''
   const user = process.env.R03_MIGRATION_USER || ''
   if (!/^[a-z][a-z0-9_]*$/.test(db) || !/^[a-z][a-z0-9_]*$/.test(user)) {
@@ -105,8 +136,8 @@ export function seedProjectAccessScope(adminId: string, viewerId: string, member
     )
     SELECT '${tenantId}:${domainId}' FROM tenant_row, domain_row
     WHERE (SELECT COUNT(*) FROM member_rows) = ${memberId ? 3 : 2}`
-  const result = compose(['exec', '-T', 'postgres', 'psql', '-X', '-v', 'ON_ERROR_STOP=1',
-    '-U', user, '-d', db, '-At', '-c', sql])
+  const query=['psql','-X','-v','ON_ERROR_STOP=1','-U',user,'-d',db,'-At','-c',sql]
+  const result=localManifest()?docker(['exec','-i',container,...query]):compose(['exec','-T','postgres',...query])
   if (result !== `${tenantId}:${domainId}`) throw new Error(`Unexpected project access seed output: ${result}`)
   return { tenantId, domainId }
 }

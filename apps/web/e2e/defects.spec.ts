@@ -3,7 +3,7 @@ import type { Page } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { mkdir,writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { isOwnedCiRun,seedProjectAccessScope } from './ownedR03'
+import { isOwnedRun,seedProjectAccessScope } from './ownedR03'
 
 async function login(page:Page,user:string,password:string){
  await page.goto('/');await page.getByRole('link',{name:'登录 Test365Alm'}).click()
@@ -20,7 +20,7 @@ async function select(page:Page,tenant:string,project:string){
 }
 
 test('real Keycloak UI member creates defect from FAIL retests PASS closes and preserves history',async({page,browser})=>{
- test.skip(!isOwnedCiRun(),'Requires current CI-owned identity and database resources');test.setTimeout(180_000)
+ test.skip(!isOwnedRun(),'Requires current CI-owned identity and database resources');test.setTimeout(180_000)
  const credentials=['R03_TEST_USER','R03_TEST_USER_PASSWORD','R03_MEMBER_USER','R03_MEMBER_PASSWORD','R03_VIEWER_USER','R03_VIEWER_PASSWORD'].map(k=>process.env[k]);if(credentials.some(v=>!v))throw new Error('Ephemeral credentials missing')
  const [au,ap,mu,mp,vu,vp]=credentials as string[],memberContext=await browser.newContext(),viewerContext=await browser.newContext(),member=await memberContext.newPage(),viewer=await viewerContext.newPage()
  const timeline:object[]=[],http:object[]=[];let businessError:unknown,cleanupError:unknown,evidenceError:unknown

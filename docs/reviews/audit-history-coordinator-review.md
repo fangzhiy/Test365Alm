@@ -33,3 +33,11 @@
 ## 浏览器资源守卫前置修复
 
 总管复核 `c8724e4`：`verify_manifest` 的标签判断错误位于内层循环之外，只有同类最后一个资源被判断；现在对每个container/network/volume都检查项目及run标签。回归以首个foreign/最后owned容器证明旧实现错误接受。保留context/Engine和所有权失败拒绝路径，未放宽CI识别。总管组合该提交后实际跑Python156项通过。浏览器local-owned设施仍在worker开发中，不提前批准其实现或宣称真实UI通过。
+
+## 明确本地模式设施审查（4a13589）
+
+已读 `local_browser_runner.py` 的完整资源创建/核验/异常清理路径、`localOwnership.ts`、`ownedR03.ts`、本地配置和脱敏reporter及新增负例。首次创建前拒绝预存项目；归档固定受控SHA，临时随机凭据和端口，读取隔离环境；Keycloak realm不绑Windows，复制后UID1000/0400。容器操作与清理核验project/run/source、context/Engine和ID/Created/Image。仅三个业务流程可使用local-owned门禁，身份故障注入仍需原CI识别；本地PG播种使用核验后的精确ID。
+
+未发现阻塞当前三个流程的设施问题。worker报告Python161、前端248、lint/build、E2E配置独立tsc和trail check通过；这些为worker实际执行的检查，总管已审相关实现/断言，没有重复宣称自己重跑。新增负例现覆盖container/network/volume首foreign末owned、本地身份变化、既有凭据保护与三条确切pass且零retry/skip报告验证。
+
+两项非阻塞建议已发worker：reporter应从FullConfig读取实际workers/retries，避免将来参数变化而报告仍硬编码1/0；fresh_config和首次daemon检查处于主try之前，早期失败也宜统一清理已生成秘密。当前命令与配置均固定单worker/零retry，先完成确切4a13589真实运行，再独立改进，不混淆被测源。真实UI结果与资源清理尚待报告，A2仍未完成，dev不前移。
