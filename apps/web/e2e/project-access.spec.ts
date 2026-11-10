@@ -665,6 +665,7 @@ test('real Keycloak UI manual test case flow creates steps, edits order, and kee
       await expect(changedDescription).toContainText('A browser-driven manual test definition.')
       await expect(changedDescription).toContainText('修改用例')
       await expect(changedDescription).toContainText('R03 Member')
+      await expect(audit).toContainText('R03 Member（当前成员姓名）')
       await expect(panel.locator('.test-step code')).toHaveText([initialStepKeys[1], initialStepKeys[0]])
       await expect(panel.getByRole('region', { name: '测试用例修订历史' }).getByRole('button', { name: /修订 1/ })).toBeVisible()
       await panel.getByRole('region', { name: '测试用例修订历史' }).getByRole('button', { name: /修订 1/ }).click()

@@ -1,6 +1,7 @@
 import { businessLabels } from './businessFields'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { historyApi } from './historyApi'
+import ReviewerPicker from './ReviewerPicker'
 import type { HistoryEntry, HistoryObjectType } from './historyApi'
 import './HistoryPanel.css'
 
@@ -69,7 +70,7 @@ function HistorySession({ projectId, objectType, objectId }: Props) {
           <td>{item.actor.displayName || item.actor.id}</td>
           <td>{actions[item.action] ?? item.action}</td>
           <td>{change ? fieldLabel(change.field) : '—'}</td>
-          <td>{change ? <><span>{change.before ?? '—'}</span><span aria-hidden="true"> → </span><span className="history-sr-only">变为</span><span>{change.after ?? '—'}</span></> : '—'}</td>
+          <td>{change ? <><span>{change.field==='businessFields.reviewer'?<ReviewerPicker projectId={projectId} value={change.before}/>:change.before ?? '—'}</span><span aria-hidden="true"> → </span><span className="history-sr-only">变为</span><span>{change.field==='businessFields.reviewer'?<ReviewerPicker projectId={projectId} value={change.after}/>:change.after ?? '—'}</span></> : '—'}</td>
         </tr>))}</tbody>
       </table>
     </div>}
