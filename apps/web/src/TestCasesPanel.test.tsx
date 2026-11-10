@@ -5,8 +5,10 @@ import TestCasesPanel from './TestCasesPanel'
 import { testsApi } from './tests'
 import type { TestCase, TestRevision } from './tests'
 import { historyApi } from './historyApi'
+import { reviewApi } from './reviewApi'
 
 vi.mock('./historyApi', () => ({ historyApi: { list: vi.fn() } }))
+vi.mock('./reviewApi', () => ({ reviewApi: { get: vi.fn(), act: vi.fn() } }))
 
 vi.mock('./tests', async () => {
   const actual = await vi.importActual<typeof import('./tests')>('./tests')
@@ -25,10 +27,34 @@ const deferred = <T,>() => {
   return { promise, resolve, reject }
 }
 
-beforeEach(() => { vi.mocked(historyApi.list).mockReset().mockResolvedValue({ items: [], nextCursor: null }) })
+beforeEach(() => {
+  vi.mocked(historyApi.list).mockReset().mockResolvedValue({ items: [], nextCursor: null })
+  vi.mocked(reviewApi.get).mockReset().mockImplementation(async(_p,t,r)=>({testCaseId:t,revisionId:r,revisionNo:1,currentRevisionId:r,rowVersion:1,contentDigest:'a'.repeat(64),reviewerId:null,state:'DRAFT',canSubmit:false,canDecide:false,latest:null,items:[],nextCursor:null}))
+})
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 
 describe('TestCasesPanel', () => {
+  it('reviews an exact revision without discarding content drafts and then saves against the updated shared version', async () => {
+    const draft={testCaseId:testCase.id,revisionId:testCase.currentRevisionId,revisionNo:1,currentRevisionId:testCase.currentRevisionId,rowVersion:1,contentDigest:'a'.repeat(64),reviewerId:'reviewer',state:'DRAFT' as const,canSubmit:true,canDecide:false,latest:null,items:[],nextCursor:null}
+    const submitted={...draft,rowVersion:2,state:'SUBMITTED' as const,canSubmit:false}
+    vi.mocked(reviewApi.get).mockResolvedValueOnce(draft).mockResolvedValue(submitted)
+    vi.mocked(reviewApi.act).mockResolvedValue(submitted)
+    vi.mocked(testsApi.list).mockResolvedValue({items:[testCase],nextCursor:null})
+    vi.mocked(testsApi.get).mockResolvedValue(testCase)
+    vi.mocked(testsApi.revisions).mockResolvedValue([revision])
+    vi.mocked(testsApi.appendRevision).mockResolvedValue({...testCase,rowVersion:3,currentRevisionId:'next-revision'})
+    render(<TestCasesPanel projectId="project-1" access={access}/>)
+    fireEvent.click(await screen.findByRole('button',{name:/TC-1/}))
+    fireEvent.change(await screen.findByLabelText('编辑测试用例标题'),{target:{value:'Unsaved draft'}})
+    fireEvent.click(await screen.findByRole('button',{name:'提交复核'}))
+    await waitFor(()=>expect(reviewApi.act).toHaveBeenCalledTimes(1))
+    await waitFor(()=>expect(screen.getByRole('button',{name:'保存为新修订'})).toBeEnabled())
+    expect(screen.getByLabelText('编辑测试用例标题')).toHaveValue('Unsaved draft')
+    fireEvent.click(screen.getByRole('button',{name:'保存为新修订'}))
+    await waitFor(()=>expect(testsApi.appendRevision).toHaveBeenCalledWith('project-1',expect.objectContaining({id:'test-1',rowVersion:2,etag:'"2"'}),expect.objectContaining({title:'Unsaved draft'}),expect.any(Object)))
+    expect(vi.mocked(historyApi.list).mock.calls.length).toBeGreaterThanOrEqual(2)
+  })
+
   it('loads case audit history by stable identity and reloads after saving a revision', async () => {
     const updated = { ...testCase, rowVersion: 2, revisionNumber: 2, currentRevisionId: 'test-rev-2', etag: '"2"', title: 'Updated' }
     vi.mocked(testsApi.list).mockResolvedValue({ items: [testCase], nextCursor: null })
