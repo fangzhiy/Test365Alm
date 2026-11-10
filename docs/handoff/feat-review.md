@@ -1,5 +1,24 @@
 # D 用例复核离线检查点
 
+## 最新四UI真实通过与完整身份清理（2026-11-11，优先于下文）
+
+总管明确放行后，仅运行确切 `afa0f4aa9915b4f2a0701ca1c10906befc1b968b` 的 `python -u tools/local_browser_runner.py --source afa0f4aa9915b4f2a0701ca1c10906befc1b968b --with-assets` 一次，未重跑后端。run `r03-local-77c0d60cbc1e448e9c13ea8ee57a1bb8`，project `test365alm-r03-local-77c0d60cbc1e448e9c13ea8ee57a1bb8`，固定 `desktop-linux` / Engine `a6f010ac-61a2-4544-b133-c2b0d92d11d3`；提交archive、随机回环端口及凭据。真实私有S3/ClamAV/clean-EICAR预检和正式scanner两连接SCRAM均PASSED，runner exit0。
+
+四确切身份逐名均 `passed / expected passed / retry 0`，workers=1、retries=0、没有skip：
+
+| 实际测试名 | 结果 | 时长ms |
+| --- | --- | --- |
+| real Keycloak UI member creates defect from FAIL retests PASS closes and preserves history | passed | 8652 |
+| real Keycloak UI manual execution creates, resumes, finishes and reruns a two-step run | passed | 9202 |
+| real Keycloak UI designated reviewer rejects approves and new revision requires fresh review | passed | 13950 |
+| real Keycloak UI manual test case flow creates steps, edits order, and keeps viewer read-only | passed | 16311 |
+
+本轮create核验后、start和业务前的 `ownership-start.json` 捕获4个完整64位容器ID与Created/Image、1个完整64位网络ID与实际Created/Name/Driver、3个确切卷名，全部run/source/project归属标签匹配，独立起点检查 `independent-ownership-start.json` 通过。runner cleanup=true、processes_stopped=true；独立按这4+1完整ID及3卷名逐项检查精确daemon不存在响应，全部不存在，同project/run的容器/网络/卷标签集合均为空，3秘密文件删除，同snapshot所属Java/Node=0，前后Engine一致。独立只读清理探针最初两次因网络/卷使用不同的精确not-found格式而拒绝；核对原始响应后按确切ID和确切错误格式完成全部检查，无资源操作、无业务重跑，限制与过程写入独立摘要。
+
+脱敏证据在忽略目录 `local-evidence/local-browser/77c0d60cbc1e448e9c13ea8ee57a1bb8/`：`run.json`、`results.json`、`manifest.json`、`ownership-start.json`、`independent-ownership-start.json`、`independent-cleanup.json`、`independent-processes.json`及snapshot内既有白名单UI诊断；启动输出 `local-evidence/review/authorized-browser-afa0f4a.log`。runner原始结果未覆盖，旧6fa浏览器3P1skip及12位网络限制也永久保留。
+
+后端证据按总管授权沿用**6fa15ce** / run `5222fc820d024cc49cbc63f285a1ae67` 的scan95/1→unit95→focused95/66→唯一full95/202及57完整容器ID清理，不冒称afa0f4a重跑后端；后端源码/固定库存对6fa逐字不变。本段仅文档增补，不改变已测业务或设施。D1/D2仍等总管最终验收，不自行勾选；独立V26故障探针与完整15UI全集继续NOT_RUN。没有push/PR/merge dev，未触碰日常env/W1/未知资源/Defender，两份自动dirty保留。
+
 ## 最新真实验证与浏览器准入修复（2026-11-11，优先于下文）
 
 D1/D2仍未验收，不可worker_done。总管放行的确切源 `6fa15ce79a91158e5a61dc2258be3366d1998a33` 已完成真实后端，首次四UI验收失败关闭；当前仅修复浏览器准入与归属证据设施，等待总管审查新源后明确放行四UI，不自行启动资源或机械重跑未变后端。
