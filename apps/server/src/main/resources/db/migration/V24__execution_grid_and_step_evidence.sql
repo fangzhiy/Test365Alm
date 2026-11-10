@@ -31,7 +31,11 @@ BEGIN
  END IF;
 END $$;
 REVOKE ALL ON FUNCTION app_execution_people(UUID,UUID,UUID,UUID,INTEGER,BOOLEAN) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION app_execution_people(UUID,UUID,UUID,UUID,INTEGER,BOOLEAN) TO test365alm_runtime;
+DO $$ BEGIN
+ IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname='test365alm_runtime') THEN
+  GRANT EXECUTE ON FUNCTION app_execution_people(UUID,UUID,UUID,UUID,INTEGER,BOOLEAN) TO test365alm_runtime;
+ END IF;
+END $$;
 
 CREATE FUNCTION execution_assignment_guard() RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE actual_name TEXT;
@@ -57,7 +61,13 @@ BEGIN
 END $$;
 CREATE TRIGGER execution_assignment_rules BEFORE INSERT OR UPDATE ON test_instance
  FOR EACH ROW EXECUTE FUNCTION execution_assignment_guard();
-GRANT UPDATE(assignee_id,assignee_name,assignment_version) ON test_instance TO test365alm_runtime;
+-- Schema-only upgrades can precede operator role provisioning, as in V22/V23.
+-- Never create a LOGIN, broaden PUBLIC privileges, or provision credentials here.
+DO $$ BEGIN
+ IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname='test365alm_runtime') THEN
+  GRANT UPDATE(assignee_id,assignee_name,assignment_version) ON test_instance TO test365alm_runtime;
+ END IF;
+END $$;
 CREATE INDEX execution_grid_assignment ON test_instance(tenant_id,project_id,test_set_id,assignee_id,display_order,id);
 CREATE INDEX execution_grid_instance_runs ON execution_run(tenant_id,project_id,test_instance_id,id);
 
