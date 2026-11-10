@@ -1030,6 +1030,50 @@ class ManualExecutionDatabaseIT {
         assertEquals(corrected,executions.attempt(f.member(),f.project(),run.run().id(),a.id()));
     }
 
+    @Test
+    void assignmentDirectoryPagesOnlyActiveWritersAndPreservesOpaqueCursor() throws Exception {
+        Fixture f=fixture(); UUID first=gridPerson(f,"PROJECT_MEMBER"),second=gridPerson(f,"PROJECT_ADMIN");
+        gridPerson(f,"PROJECT_VIEWER"); UUID revoked=gridPerson(f,"PROJECT_MEMBER");
+        ownerExecute("UPDATE project_member SET revoked_at=CURRENT_TIMESTAMP WHERE project_id=? AND principal_id=?",f.project(),revoked);
+        List<UUID> seen=new java.util.ArrayList<>(); String cursor=null;
+        do {
+            var page=executions.executionAssignees(f.member(),f.project(),cursor,1);
+            assertEquals(1,page.items().size()); seen.add(page.items().get(0).id());
+            if(page.nextCursor()!=null) assertTrue(!page.nextCursor().equals(cursor));
+            cursor=page.nextCursor();
+        } while(cursor!=null && seen.size()<5);
+        assertEquals(3,seen.size()); assertEquals(java.util.Set.of(f.member(),first,second),new java.util.HashSet<>(seen));
+        assertThrows(ProjectAccessException.class,()->executions.executionAssignees(f.member(),f.project(),"broken cursor",1));
+    }
+
+    @Test
+    void runtimeCannotForgeAssignmentIdentityVersionScopeOrFrozenEvidenceIdentity() throws Exception {
+        var prepared=preparedRun("grid-sql","grid-sql-case"); var f=prepared.fixture(); UUID id=prepared.instance().id();
+        UUID viewer=gridPerson(f,"PROJECT_VIEWER");
+        try(Connection c=runtimeConnection(new Fixture(f.tenant(),f.project(),viewer))) {
+            var error=assertThrows(java.sql.SQLException.class,()->execute(c,"UPDATE test_instance SET assignee_id=NULL,assignee_name=NULL,assignment_version=2 WHERE id=?",id));
+            assertEquals("42501",error.getSQLState()); c.rollback();
+        }
+        for(String sql:List.of(
+                "UPDATE test_instance SET assignee_id='"+f.member()+"',assignee_name='Forged',assignment_version=2 WHERE id='"+id+"'",
+                "UPDATE test_instance SET assignee_id='"+viewer+"',assignee_name='Grid person',assignment_version=2 WHERE id='"+id+"'")) {
+            try(Connection c=runtimeConnection(f)) { assertEquals("23514",assertThrows(java.sql.SQLException.class,()->execute(c,sql)).getSQLState()); c.rollback(); }
+        }
+        try(Connection c=runtimeConnection(f)) {
+            assertEquals("55006",assertThrows(java.sql.SQLException.class,()->execute(c,"UPDATE test_instance SET assignment_version=3 WHERE id=?",id)).getSQLState()); c.rollback();
+        }
+        var foreign=preparedRun("grid-sql-foreign","grid-sql-foreign-case");
+        try(Connection c=runtimeConnection(f); var q=c.prepareStatement("UPDATE test_instance SET assignment_version=2 WHERE id=?")) {
+            q.setObject(1,foreign.instance().id()); assertEquals(0,q.executeUpdate()); c.rollback();
+        }
+        for(String sql:List.of("UPDATE execution_manifest SET assignee_id=NULL WHERE id='"+prepared.run().manifest().id()+"'",
+                "UPDATE run_step SET id=gen_random_uuid(),row_version=row_version+1 WHERE attempt_id='"+prepared.run().currentAttempt().id()+"'",
+                "UPDATE run_step SET executed_at=CURRENT_TIMESTAMP,row_version=row_version+1 WHERE attempt_id='"+prepared.run().currentAttempt().id()+"'")) {
+            try(Connection c=runtimeConnection(f)) { assertEquals("42501",assertThrows(java.sql.SQLException.class,()->execute(c,sql)).getSQLState()); c.rollback(); }
+        }
+        assertEquals(prepared.run().manifest(),executions.run(f.member(),f.project(),prepared.run().run().id()).manifest());
+    }
+
     private UUID gridPerson(Fixture f,String role) throws Exception {
         UUID id=UUID.randomUUID();
         ownerExecute("INSERT INTO principal(id,issuer,subject,display_name) VALUES(?,'https://grid.invalid',?,'Grid person')",id,id.toString());

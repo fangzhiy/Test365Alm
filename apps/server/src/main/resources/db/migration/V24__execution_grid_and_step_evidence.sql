@@ -115,8 +115,9 @@ BEGIN
  IF TG_OP='INSERT' THEN
   IF NEW.executed_at IS NOT NULL THEN RAISE EXCEPTION 'new step has no execution time' USING ERRCODE='23514'; END IF;
  ELSE
+  IF NEW.id IS DISTINCT FROM OLD.id THEN RAISE EXCEPTION 'run step evidence identity is immutable' USING ERRCODE='55006'; END IF;
   NEW.executed_at:=OLD.executed_at;
-  IF NEW.executed_at IS NULL AND NEW.conclusion<>'NOT_RUN' THEN NEW.executed_at:=CURRENT_TIMESTAMP; END IF;
+  IF NEW.executed_at IS NULL AND OLD.conclusion='NOT_RUN' AND NEW.conclusion<>'NOT_RUN' THEN NEW.executed_at:=CURRENT_TIMESTAMP; END IF;
   NEW.updated_at:=CURRENT_TIMESTAMP;
  END IF;
  RETURN NEW;

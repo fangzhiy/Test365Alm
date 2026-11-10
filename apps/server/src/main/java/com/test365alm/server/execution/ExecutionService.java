@@ -761,7 +761,8 @@ public class ExecutionService {
 
     private List<RunStepView> steps(ProjectService.ProjectView project, UUID projectId, UUID attemptId) {
         return jdbc.query("""
-                SELECT id, step_key, ordinal, action, expected, actual_result, conclusion, row_version, updated_by, updated_at, executed_at
+                SELECT id, step_key, ordinal, action, expected, actual_result, conclusion, row_version, updated_by,
+                       CASE WHEN updated_by IS NULL THEN NULL ELSE updated_at END AS updated_at, executed_at
                 FROM run_step WHERE tenant_id=? AND project_id=? AND attempt_id=? ORDER BY ordinal
                 """, (rs, row) -> new RunStepView(rs.getObject("step_key", UUID.class), rs.getInt("ordinal"), rs.getString("action"),
                         rs.getString("expected"), rs.getString("actual_result"), rs.getString("conclusion"), rs.getLong("row_version"),

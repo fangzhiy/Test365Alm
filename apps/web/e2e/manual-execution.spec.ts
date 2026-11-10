@@ -102,6 +102,8 @@ test('real Keycloak UI manual execution creates, resumes, finishes and reruns a 
     expect(testItem).toBeTruthy()
 
     const execution = memberPage.locator('section.execution-panel')
+    let evidenceStepId=''
+    const evidenceName='oq-step-evidence.txt'
     const setName = `M09 set ${Date.now()}`
     await diagnostics.step(memberPage, '创建测试集、加入实例并启动运行', async () => {
     await execution.getByLabel('测试集名称').fill(setName)
@@ -114,11 +116,46 @@ test('real Keycloak UI manual execution creates, resumes, finishes and reruns a 
     await execution.getByLabel('已保存修订').selectOption(testItem!.currentRevisionId)
     await execution.getByRole('button', { name: '加入实例' }).click()
     await expect(execution).toContainText(title)
+    const grid=execution.getByRole('table',{name:'实例执行网格'})
+    await expect(grid).toContainText('尚无执行日期')
+    await grid.getByRole('button',{name:`分配负责人 ${title}`}).click()
+    await execution.getByLabel('实例负责人').selectOption(memberId)
+    await execution.getByRole('button',{name:'保存负责人'}).click()
+    await expect(grid).toContainText('R03 Member')
+    const started=memberPage.waitForResponse(r=>new URL(r.url()).pathname===`/api/v1/projects/${projectId}/runs`&&r.request().method()==='POST')
     await execution.getByRole('button', { name: '启动手工运行' }).click()
+    const startedResponse=await started;expect(startedResponse.status()).toBe(201)
+    const created=await startedResponse.json() as {manifest:{assigneeId:string},currentAttempt:{startedAt:string,steps:Array<{runStepId:string,executedAt:string|null,updatedAt:string|null}>}}
+    evidenceStepId=created.currentAttempt.steps[0].runStepId
+    expect(created.manifest.assigneeId).toBe(memberId);expect(created.currentAttempt.steps[0].executedAt).toBeNull();expect(created.currentAttempt.steps[0].updatedAt).toBeNull()
+    await expect(grid.locator('time')).toHaveAttribute('datetime',created.currentAttempt.startedAt)
     await expect(execution).toContainText('运行中')
 
     await expect(execution.getByLabel('步骤 1 实际结果')).toBeVisible()
     await expect(execution.getByRole('region', { name: '审计历史', exact: true })).toContainText('开始运行')
+    })
+    await diagnostics.step(memberPage, '步骤真实扫描、冻结证据与独立结果文本恢复', async () => {
+    const evidence=execution.getByRole('region',{name:'步骤 1 附件',exact:true})
+    await evidence.getByRole('button',{name:'查看步骤 1 附件'}).click()
+    await evidence.getByLabel('选择附件文件').setInputFiles({name:evidenceName,mimeType:'text/plain',buffer:Buffer.from('Controlled OQ step evidence\n')})
+    await evidence.getByRole('button',{name:'创建上传会话'}).click();await expect(evidence.getByText('未上传',{exact:true})).toBeVisible()
+    await evidence.getByRole('button',{name:'上传文件内容'}).click();await expect(evidence.getByText('已上传，等待扫描',{exact:true})).toBeVisible()
+    await evidence.getByRole('button',{name:'扫描并发布'}).click();await expect(evidence.getByText('发布已确认',{exact:true})).toBeVisible()
+    await evidence.getByRole('button',{name:'读取已发布版本'}).click();await expect(evidence.getByRole('article',{name:'所选资产修订'})).toContainText('CLEAN')
+    await evidence.getByRole('button',{name:'关联所选冻结版本'}).click();await expect(evidence.getByRole('list',{name:'已关联附件'})).toContainText(evidenceName)
+    const links=await memberPage.request.get(`/api/v1/projects/${projectId}/attachments?kind=RUN_STEP&runStepId=${evidenceStepId}`)
+    expect(links.status()).toBe(200);expect((await links.json()).items).toEqual(expect.arrayContaining([expect.objectContaining({kind:'RUN_STEP',runStepId:evidenceStepId,revision:expect.objectContaining({scanStatus:'CLEAN'})})]))
+    await execution.getByLabel('步骤 1 实际结果').fill('Text before a conclusion')
+    await execution.getByRole('button',{name:'保存步骤结果'}).first().click();await expect(execution).toContainText('步骤结果已保存')
+    await execution.getByRole('button',{name:'刷新运行详情'}).click()
+    await expect(execution.getByLabel('步骤 1 实际结果')).toHaveValue('Text before a conclusion')
+    await expect(execution.getByLabel('步骤 1 结论')).toHaveValue('NOT_RUN')
+    await expect(execution.locator('.execution-step').first()).toContainText('步骤执行时间：尚未记录')
+    await expect(execution.locator('.execution-step').first().locator('time')).toHaveCount(1)
+    // Reassignment changes the live instance while the run retains its frozen identity.
+    await execution.getByRole('button',{name:`分配负责人 ${title}`}).click();await execution.getByLabel('实例负责人').selectOption('')
+    await execution.getByRole('button',{name:'保存负责人'}).click();await expect(execution.getByRole('table',{name:'实例执行网格'})).toContainText('未分配')
+    await expect(execution).toContainText('运行冻结负责人：R03 Member')
     })
     await diagnostics.step(memberPage, '保存两个步骤、暂停和继续', async () => {
     await execution.getByLabel('步骤 1 实际结果').fill('Login form is visible')
@@ -141,6 +178,9 @@ test('real Keycloak UI manual execution creates, resumes, finishes and reruns a 
     await expect(execution).toContainText('已完成 · FAIL')
     await execution.getByRole('button', { name: '重新运行' }).click()
     await expect(execution).toContainText('运行详情 · 尝试 2')
+    const retryEvidence=execution.getByRole('region',{name:'步骤 1 附件',exact:true})
+    await retryEvidence.getByRole('button',{name:'查看步骤 1 附件'}).click()
+    await expect(retryEvidence.getByRole('list',{name:'已关联附件'})).toBeEmpty()
     await execution.getByLabel('步骤 1 实际结果').fill('Login form is visible again')
     await execution.getByLabel('步骤 1 结论').selectOption('PASS')
     await execution.getByRole('button', { name: '保存步骤结果' }).first().click()
@@ -171,6 +211,11 @@ test('real Keycloak UI manual execution creates, resumes, finishes and reruns a 
     await expect(reopenedExecution.getByLabel('步骤 2 实际结果')).toHaveValue('Server rejected credentials')
     await expect(reopenedExecution.getByLabel('步骤 1 结论')).toHaveValue('PASS')
     await expect(reopenedExecution.getByLabel('步骤 2 结论')).toHaveValue('FAIL')
+    await reopenedExecution.getByRole('button',{name:'查看步骤 1 附件'}).click()
+    const historicalEvidence=reopenedExecution.getByRole('region',{name:'步骤 1 附件',exact:true})
+    await expect(historicalEvidence.getByRole('list',{name:'已关联附件'})).toContainText(evidenceName)
+    await expect(historicalEvidence.getByLabel('选择附件文件')).toHaveCount(0)
+    await expect(reopenedExecution.locator('.execution-step').first().locator('time')).toHaveCount(2)
 
     })
     await diagnostics.step(viewerPage, 'VIEWER 读取历史并拒绝直接写入', async () => {
