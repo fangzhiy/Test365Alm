@@ -20,16 +20,21 @@ export function parseReview(v:unknown):ReviewView {
   ||!['DRAFT','SUBMITTED','APPROVED','REJECTED'].includes(String(v.state))||typeof v.canSubmit!=='boolean'||typeof v.canDecide!=='boolean'
   ||!Array.isArray(v.items)||v.items.length>100||!(v.nextCursor===null||typeof v.nextCursor==='string'))return invalid()
  const items=v.items.map(event),latest=v.latest===null?null:event(v.latest)
- if(new Set(items.map(e=>e.id)).size!==items.length||[...items,...latest?[latest]:[]].some(e=>e.revisionId!==v.revisionId||e.revisionNo!==v.revisionNo||e.contentDigest!==v.contentDigest))return invalid()
+ if(new Set(items.map(e=>e.id)).size!==items.length||[...items,...(latest?[latest]:[])].some(e=>e.revisionId!==v.revisionId||e.revisionNo!==v.revisionNo||e.contentDigest!==v.contentDigest||e.reviewerId!==v.reviewerId)
+  ||(latest?latest.state!==v.state:v.state!=='DRAFT'))return invalid()
  return {...v,items,latest} as ReviewView
 }
 const path=(p:string,t:string,r:string)=>`/api/v1/projects/${encodeURIComponent(p)}/tests/${encodeURIComponent(t)}/revisions/${encodeURIComponent(r)}/review`
 export const reviewApi={
  async get(p:string,t:string,r:string,cursor:string|null=null,options?:AccessRequestOptions):Promise<ReviewView>{
   const query=new URLSearchParams({limit:'25'});if(cursor)query.set('cursor',cursor)
-  return parseReview(await requestJson(`${path(p,t,r)}?${query}`,undefined,options))
+  const result=parseReview(await requestJson(`${path(p,t,r)}?${query}`,undefined,options))
+  if(result.testCaseId!==t||result.revisionId!==r)return invalid()
+  return result
  },
  async act(p:string,t:string,r:string,command:ReviewCommand,etag:string,key:string,options?:AccessRequestOptions):Promise<ReviewView>{
-  return parseReview(await requestJson(path(p,t,r),{method:'POST',headers:{'Content-Type':'application/json','If-Match':etag},body:JSON.stringify(command)},{...options,idempotencyKey:key}))
+  const result=parseReview(await requestJson(path(p,t,r),{method:'POST',headers:{'Content-Type':'application/json','If-Match':etag},body:JSON.stringify(command)},{...options,idempotencyKey:key}))
+  if(result.testCaseId!==t||result.revisionId!==r)return invalid()
+  return result
  }
 }

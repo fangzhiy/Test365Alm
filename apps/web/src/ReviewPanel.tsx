@@ -3,7 +3,7 @@ import ReviewerPicker from './ReviewerPicker'
 import { reviewApi } from './reviewApi'
 import type { ReviewAction,ReviewCommand,ReviewView } from './reviewApi'
 import { newIdempotencyKey } from './requirements'
-type Props={projectId:string;testCaseId:string;revisionId:string;rowVersion:number;contextKey:string;readOnly?:boolean;disabled?:boolean;onChanged?:(v:ReviewView)=>void;onLock?:(locked:boolean)=>void;onDenied?:()=>void}
+type Props={projectId:string;testCaseId:string;revisionId:string;rowVersion:number;contextKey:string;readOnly?:boolean;historical?:boolean;disabled?:boolean;onChanged?:(v:ReviewView)=>void;onLock?:(locked:boolean)=>void;onDenied?:()=>void}
 type Intent={command:ReviewCommand;etag:string;key:string}
 const states={DRAFT:'未提交',SUBMITTED:'待复核',APPROVED:'已批准',REJECTED:'已拒绝'}
 const actions={SUBMIT:'提交复核',APPROVE:'批准',REJECT:'拒绝'}
@@ -11,7 +11,7 @@ const errorStatus=(error:unknown)=>(error as {status?:number}|null)?.status
 export default function ReviewPanel(props:Props){
  return <ReviewSession key={`${props.projectId}:${props.testCaseId}:${props.revisionId}:${props.contextKey}:${props.readOnly===true}`} {...props}/>
 }
-function ReviewSession({projectId,testCaseId,revisionId,rowVersion,readOnly=false,disabled=false,onChanged,onLock,onDenied}:Props){
+function ReviewSession({projectId,testCaseId,revisionId,rowVersion,readOnly=false,historical=false,disabled=false,onChanged,onLock,onDenied}:Props){
  const [view,setView]=useState<ReviewView|null>(null),[reason,setReason]=useState(''),[error,setError]=useState(''),[busy,setBusy]=useState(false),[pending,setPending]=useState<Intent|null>(null),[blocked,setBlocked]=useState(false)
  const controller=useRef<AbortController|null>(null),mounted=useRef(false),callbacks=useRef({onChanged,onLock,onDenied}),intent=useRef<Intent|null>(null)
  useEffect(()=>{callbacks.current={onChanged,onLock,onDenied}},[onChanged,onLock,onDenied])
@@ -52,8 +52,8 @@ function ReviewSession({projectId,testCaseId,revisionId,rowVersion,readOnly=fals
   if(action==='REJECT'&&!reason.trim()){setError('请填写拒绝理由');return}
   void execute({command:{action,reason:reason.trim()},etag:`"${view.rowVersion}"`,key:newIdempotencyKey()})
  }
- return <section aria-label={readOnly?'历史修订复核':'用例复核'} aria-busy={busy}>
-  <h4>{readOnly?'历史修订复核':'用例复核'}</h4>
+ return <section aria-label={historical?'历史修订复核':'用例复核'} aria-busy={busy}>
+  <h4>{historical?'历史修订复核':'用例复核'}</h4>
   {view&&<>
    <p>修订 {view.revisionNo}：<strong>{states[view.state]}</strong> · 指定复核人：<ReviewerPicker projectId={projectId} value={view.reviewerId??undefined}/></p>
    {view.state==='APPROVED'&&<p>本修订已批准；编辑保存会生成需要重新复核的新修订。</p>}

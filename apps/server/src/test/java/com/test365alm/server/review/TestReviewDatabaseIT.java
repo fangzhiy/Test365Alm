@@ -90,6 +90,8 @@ class TestReviewDatabaseIT {
         for(String mutation:List.of("UPDATE principal SET disabled_at=CURRENT_TIMESTAMP WHERE id=?",
                 "UPDATE project_member SET revoked_at=CURRENT_TIMESTAMP WHERE principal_id=?",
                 "UPDATE project_member SET valid_until=CURRENT_TIMESTAMP-INTERVAL '1 second' WHERE principal_id=?",
+                "UPDATE tenant_member SET revoked_at=CURRENT_TIMESTAMP WHERE principal_id=?",
+                "UPDATE tenant_member SET valid_until=CURRENT_TIMESTAMP-INTERVAL '1 second' WHERE principal_id=?",
                 "UPDATE project_member SET roles=ARRAY['PROJECT_VIEWER'] WHERE principal_id=?")) {
             var f=fixture();var t=create(f);String key=key();var s=act(f,f.member,t,"SUBMIT",t.rowVersion(),key);
             try(var c=owner()){sql(c,mutation,f.reviewer);}
@@ -125,6 +127,34 @@ class TestReviewDatabaseIT {
             code("STALE_VERSION",()->revise(f,t,s.rowVersion(),"stale"));
             assertEquals(2,count("test_review_event",f));
         } finally {pool.shutdownNow();}
+    }
+
+    @Test void sameIntentConcurrentSubmissionsReturnOneFrozenEventAndNoDuplicateAudit()throws Exception {
+        var f=fixture();var t=create(f);String key=key();int audits=count("audit_event",f);
+        var gate=new CountDownLatch(1);var pool=Executors.newFixedThreadPool(2);
+        try {
+            Callable<TestReviewService.ReviewView> submit=()->{gate.await();return act(f,f.member,t,"SUBMIT",t.rowVersion(),key);};
+            var a=pool.submit(submit);var b=pool.submit(submit);gate.countDown();
+            assertEquals(a.get(30,TimeUnit.SECONDS),b.get(30,TimeUnit.SECONDS));
+            assertEquals(1,count("test_review_event",f));assertEquals(1,count("core_command_idempotency",f));
+            assertEquals(1,count("test_review_outbox_event",f));assertEquals(audits+1,count("audit_event",f));
+        } finally {pool.shutdownNow();}
+    }
+
+    @Test void missingReviewerInvalidTransitionsAndForeignRevisionNeverWrite()throws Exception {
+        var f=fixture();var t=create(f);var before=snapshot(f);
+        code("REVIEW_STATE_CONFLICT",()->act(f,f.reviewer,t,"APPROVE",t.rowVersion(),key()));
+        code("NOT_FOUND",()->reviews.get(f.member,f.project,t.id(),UUID.randomUUID(),null,null));
+        try(var c=runtime(f,f.reviewer)) {
+            c.setAutoCommit(false);sql(c,"UPDATE test_case SET row_version=row_version+1 WHERE id=?",t.id());
+            assertEquals("23514",assertThrows(SQLException.class,()->insert(c,f,t,2,"APPROVE","APPROVED",f.reviewer,f.reviewer,get(f,f.member,t).contentDigest())).getSQLState());
+            c.rollback();
+        }
+        assertEquals(before,snapshot(f));
+        var missing=tests.create(f.member,f.project,new TestCaseService.CreateCommand("MANUAL","No reviewer","","",List.of()),key());
+        before=snapshot(f);
+        code("VALIDATION_FAILED",()->act(f,f.member,missing,"SUBMIT",missing.rowVersion(),key()));
+        assertEquals(before,snapshot(f));
     }
 
     @Test void auditAndOutboxFailureRollbackEventVersionAndIdempotencyAndSameIntentCanRecover() throws Exception {
