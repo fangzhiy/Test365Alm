@@ -4,8 +4,8 @@
 
 - [x] A1 组合85单元／167集成全绿及精确清理（确切源34c19f6；总管核对scan/unit/integration/run脱敏JSON，均0F/E/S、退出0、cleanup true）。
 - [x] A2 三入口真实Keycloak UI验收（确切源4a13589，run06caafafb42e4762b6f4b9f222265ab7；三条passed、1worker/0retry/0skip、exit0、cleanup/processes_stopped均true）；审查批准本地dev集成。
-- [ ] B1 业务字段保存/读取与不可变历史、权限、版本、事务回归。
-- [ ] B2 用例/缺陷/需求UI字段和真实持久化验证。
+- [x] B1 业务字段保存/读取与不可变历史、权限、版本、事务回归（业务源da9906c，真实Linux89单元/175集成、专项8项零F/E/S；总管核对及清理确认）。
+- [x] B2 用例/缺陷/需求UI字段和真实持久化验证（浏览器源b5cc1b2、run41223325ed4b445fa8afd6da363faf95；三条passed/单worker/0retry/0skip，清理及进程停止确认，详见业务字段总管复核）。
 - [ ] C1 实例网格负责人/状态/执行日期与权限版本回归。
 - [ ] C2 独立实际结果/结论、步骤时间和附件实际交互。
 - [ ] D1 复核状态机、指定身份和不可变修订绑定。
