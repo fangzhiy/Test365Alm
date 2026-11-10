@@ -156,6 +156,19 @@
     "com.test365alm.server.testcase.TestCaseServiceTest": [
       "ifMatchAcceptsOnlyOneStrongQuotedPositiveTag",
       "ifMatchRejectsBareWeakWildcardAndMalformedValues"
+    ],
+    "com.test365alm.server.signature.SignatureLoginFlowTest": [
+      "onlyServerPreparedSessionChallengesForceFreshOidcAuthorizationAndBindState",
+      "stableSecretSessionBindingSurvivesSessionIdRotationAndDiffersAcrossSessions",
+      "wrongSubjectStateOldTimeAndCrossSessionCannotCreateProof"
+    ],
+    "com.test365alm.server.signature.SignatureRulesTest": [
+      "commandsRejectIdentityCredentialsDigestsAndExtraChallengeFields",
+      "onlyThreeServerDefinedMeaningsAndTerminalStatesAreSignable",
+      "reauthenticationRequiresSameIssuerSubjectAndFreshVerifiedAuthenticationTime"
+    ],
+    "com.test365alm.server.signature.SimulatedSignatureProviderTest": [
+      "evidenceIsExplicitlySimulatedAndBindsEveryServerVerifiedMaterialField"
     ]
   },
   "integration": {
@@ -309,6 +322,9 @@
       "realOidcReviewHttpDesignatedIdentityCsrfVersionsReplayAndImmutableRevision",
       "realOidcReviewHttpOldSessionsReauthorizeReviewerAndActorAfterRevocation",
       "realOidcSessionCanUseProjectHttpEndpointsThroughRuntimeDatasource",
+      "realOidcSignatureHttpCrossSessionRevocationAndLogoutRejectPendingOrReplayedWrites",
+      "realOidcSignatureHttpRejectsOtherSubjectMissingOrStaleAuthenticationAndInvalidNonce",
+      "realOidcSignatureHttpSameSubjectFreshLoginCsrfStrongVersionAndFrozenReplay",
       "realOidcTestCaseHttpEnforcesStrongEtagsCsrfAndInputBoundary",
       "realOidcTestCaseHttpScopesReferencesAndRefreshesOldSessionPermissions",
       "realOidcTraceHttpTypedEndpointsViewerCsrfRevokeAndNoIllegalEffects",
@@ -414,6 +430,23 @@
     ],
     "com.test365alm.server.testcase.TestCaseMigrationUpgradeIT": [
       "v9DataSurvivesV11Upgrade"
+    ],
+    "com.test365alm.server.signature.SignatureDatabaseIT": [
+      "approvedRevisionFreezesVerifiedIdentityMeaningContentAndSimulatedEvidenceAtomically",
+      "concurrentContentRevisionAndSigningSerializeWithoutSigningChangedContent",
+      "concurrentDistinctChallengesProduceExactlyOneSignatureAndOneConflict",
+      "concurrentSameIntentReturnsOneRecordAndDistinctIntentCannotDoubleSign",
+      "draftSubmittedForeignReviewerViewerAndCrossProjectNeverCreateChallenges",
+      "editsInvalidatePendingChallengeAndNewRevisionNeedsReviewWhileOldSignatureRemainsFrozen",
+      "forgedCrossSessionOtherSubjectMissingOrStaleProofCannotSign",
+      "outboxFailureRollsBackSignatureAuditAndIdempotencyAndOriginalIntentRecovers",
+      "revokedDisabledAndExpiredMembershipCannotSignReplayOrRead",
+      "runtimeCannotMutateSignedEvidenceTruncateOrWriteAsViewerAndRlsHidesForeignRecords",
+      "sameIntentReplayIsFrozenAndNewKeyOrReusedKeyCannotCreateSecondSignature",
+      "terminalRunAndClosedDeviationSignExactSnapshotsWithoutMutatingTheirVersions"
+    ],
+    "com.test365alm.server.signature.SignatureMigrationUpgradeIT": [
+      "nonemptyV25UpgradePreservesEveryOldColumnFrozenReplayReviewAndExecutionThenSignsThroughRuntime"
     ]
   }
 }

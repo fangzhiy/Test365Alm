@@ -10,7 +10,7 @@ from pathlib import Path
 PHASES = {
     "scan": ["-Pintegration", "verify", "-Dit.test=AssetDatabaseIT#realClamdCleanAndEicarProduceSafeTerminalStates"],
     "unit": ["test"],
-    "focused": ["-Pintegration", "verify", "-Dit.test=BusinessFieldsDatabaseIT,BusinessFieldsMigrationUpgradeIT,ManualExecutionDatabaseIT,ManualExecutionMigrationUpgradeIT,AssetDatabaseIT#stepEvidence*,OidcCallbackSecurityIT#realOidcManualExecutionHttpRunsAndRejectsViewerWrites+realOidcReviewHttpDesignatedIdentityCsrfVersionsReplayAndImmutableRevision+realOidcReviewHttpOldSessionsReauthorizeReviewerAndActorAfterRevocation,TestReviewDatabaseIT,TestReviewMigrationUpgradeIT,AssetMigrationUpgradeIT,DefectMigrationUpgradeIT,ReleaseMigrationUpgradeIT,AssetProvisioningUpgradeIT#upgradedDatabaseUsesProvisionedRestrictedScannerLogin"],
+    "focused": ["-Pintegration", "verify", "-Dit.test=BusinessFieldsDatabaseIT,BusinessFieldsMigrationUpgradeIT,ManualExecutionDatabaseIT,ManualExecutionMigrationUpgradeIT,AssetDatabaseIT#stepEvidence*,OidcCallbackSecurityIT#realOidcManualExecutionHttpRunsAndRejectsViewerWrites+realOidcReviewHttpDesignatedIdentityCsrfVersionsReplayAndImmutableRevision+realOidcReviewHttpOldSessionsReauthorizeReviewerAndActorAfterRevocation+realOidcSignatureHttpCrossSessionRevocationAndLogoutRejectPendingOrReplayedWrites+realOidcSignatureHttpRejectsOtherSubjectMissingOrStaleAuthenticationAndInvalidNonce+realOidcSignatureHttpSameSubjectFreshLoginCsrfStrongVersionAndFrozenReplay,SignatureDatabaseIT,SignatureMigrationUpgradeIT,TestReviewDatabaseIT,TestReviewMigrationUpgradeIT,AssetMigrationUpgradeIT,DefectMigrationUpgradeIT,ReleaseMigrationUpgradeIT,AssetProvisioningUpgradeIT#upgradedDatabaseUsesProvisionedRestrictedScannerLogin"],
     "integration": ["-Pintegration", "verify"],
 }
 
@@ -91,17 +91,35 @@ REVIEW_METHODS = {
     ('com.test365alm.server.review.TestReviewDatabaseIT', 'submitRejectResubmitApproveBindsExactContentAndPreservesEveryDecision'),
     ('com.test365alm.server.review.TestReviewMigrationUpgradeIT', 'nonemptyPreReviewUpgradePreservesFrozenContentAndRuntimeReviewsExactRevision'),
 }
-FOCUSED_METHODS = BUSINESS_METHODS | EXECUTION_METHODS | REVIEW_METHODS
+SIGNATURE_METHODS = {
+    ('com.test365alm.server.signature.SignatureDatabaseIT', 'approvedRevisionFreezesVerifiedIdentityMeaningContentAndSimulatedEvidenceAtomically'),
+    ('com.test365alm.server.signature.SignatureDatabaseIT', 'concurrentContentRevisionAndSigningSerializeWithoutSigningChangedContent'),
+    ('com.test365alm.server.signature.SignatureDatabaseIT', 'concurrentDistinctChallengesProduceExactlyOneSignatureAndOneConflict'),
+    ('com.test365alm.server.signature.SignatureDatabaseIT', 'concurrentSameIntentReturnsOneRecordAndDistinctIntentCannotDoubleSign'),
+    ('com.test365alm.server.signature.SignatureDatabaseIT', 'draftSubmittedForeignReviewerViewerAndCrossProjectNeverCreateChallenges'),
+    ('com.test365alm.server.signature.SignatureDatabaseIT', 'editsInvalidatePendingChallengeAndNewRevisionNeedsReviewWhileOldSignatureRemainsFrozen'),
+    ('com.test365alm.server.signature.SignatureDatabaseIT', 'forgedCrossSessionOtherSubjectMissingOrStaleProofCannotSign'),
+    ('com.test365alm.server.signature.SignatureDatabaseIT', 'outboxFailureRollsBackSignatureAuditAndIdempotencyAndOriginalIntentRecovers'),
+    ('com.test365alm.server.signature.SignatureDatabaseIT', 'revokedDisabledAndExpiredMembershipCannotSignReplayOrRead'),
+    ('com.test365alm.server.signature.SignatureDatabaseIT', 'runtimeCannotMutateSignedEvidenceTruncateOrWriteAsViewerAndRlsHidesForeignRecords'),
+    ('com.test365alm.server.signature.SignatureDatabaseIT', 'sameIntentReplayIsFrozenAndNewKeyOrReusedKeyCannotCreateSecondSignature'),
+    ('com.test365alm.server.signature.SignatureDatabaseIT', 'terminalRunAndClosedDeviationSignExactSnapshotsWithoutMutatingTheirVersions'),
+    ('com.test365alm.server.signature.SignatureMigrationUpgradeIT', 'nonemptyV25UpgradePreservesEveryOldColumnFrozenReplayReviewAndExecutionThenSignsThroughRuntime'),
+    ('com.test365alm.server.identity.OidcCallbackSecurityIT', 'realOidcSignatureHttpCrossSessionRevocationAndLogoutRejectPendingOrReplayedWrites'),
+    ('com.test365alm.server.identity.OidcCallbackSecurityIT', 'realOidcSignatureHttpRejectsOtherSubjectMissingOrStaleAuthenticationAndInvalidNonce'),
+    ('com.test365alm.server.identity.OidcCallbackSecurityIT', 'realOidcSignatureHttpSameSubjectFreshLoginCsrfStrongVersionAndFrozenReplay'),
+}
+FOCUSED_METHODS = BUSINESS_METHODS | EXECUTION_METHODS | REVIEW_METHODS | SIGNATURE_METHODS
 INVENTORY = json.loads((Path(__file__).with_name("linux-test") / "combined-methods.json").read_text(encoding="utf-8"))
 UNIT_METHODS = {(suite,name) for suite,names in INVENTORY["unit"].items() for name in names}
 INTEGRATION_METHODS = {(suite,name) for suite,names in INVENTORY["integration"].items() for name in names}
-if len(UNIT_METHODS) != 95 or len(INTEGRATION_METHODS) != 202 or not FOCUSED_METHODS <= INTEGRATION_METHODS:
+if len(UNIT_METHODS) != 102 or len(INTEGRATION_METHODS) != 218 or not FOCUSED_METHODS <= INTEGRATION_METHODS:
     raise ValueError("Frozen combined method inventory does not match the reviewed gate")
 
 
 def valid_report(phase: str, report: dict) -> bool:
     # The merged source inventory is frozen by identity, not a caller-selected total.
-    expected = {"scan": (95, 1), "unit": (95, None), "focused": (95, 66), "integration": (95, 202)}[phase]
+    expected = {"scan": (102, 1), "unit": (102, None), "focused": (102, 82), "integration": (102, 218)}[phase]
     if report["unit"]["tests"] != expected[0]:
         return False
     if expected[1] is not None and report["integration"]["tests"] != expected[1]:

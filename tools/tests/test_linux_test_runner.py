@@ -1,4 +1,6 @@
 import copy
+import hashlib
+import json
 import subprocess
 import tempfile
 import unittest
@@ -6,7 +8,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 from tools.linux_test_runner import Guard, Identity, RUN, SOURCE, committed_archive, main, validate, run_phases
-from tools.linux_test_inside import summarize, valid_report, FOCUSED_METHODS, UNIT_METHODS, PHASES
+from tools.linux_test_inside import summarize, valid_report, FOCUSED_METHODS, SIGNATURE_METHODS, UNIT_METHODS, INTEGRATION_METHODS, PHASES
 from tools.r02_resource_guard import ResourceOwnershipError
 from tools import linux_test_runner as runner
 
@@ -21,11 +23,22 @@ def container():
 
 
 class LinuxRunnerGuardTests(unittest.TestCase):
+    def test_fixed_inventory_preserves_every_accepted_baseline_method(self):
+        # Hashes freeze all 95/202 accepted identities at 58efd478, independently of E additions.
+        for methods, count, digest in (
+            (UNIT_METHODS, 95, "cea2966c555db0f58143755121a4515f60f471c72e3c7adfec97554c0f4f6718"),
+            (INTEGRATION_METHODS, 202, "906d9e17304a8d69f69c4803115840ee15380aea241b72c3dac42c4a0a53cfb6"),
+            (FOCUSED_METHODS - SIGNATURE_METHODS, 66, "f5fa4502015f078c7324589be92d20284c0fcf82ab9612c1bbb122920ad72f20"),
+        ):
+            baseline = sorted((c,n) for c,n in methods if ".signature." not in c and not n.startswith("realOidcSignature"))
+            self.assertEqual(count, len(baseline))
+            self.assertEqual(digest, hashlib.sha256(json.dumps(baseline,separators=(",",":")).encode()).hexdigest())
+
     def test_focused_command_and_successful_phase_order(self):
         with patch("tools.linux_test_runner.phase", return_value=0) as phase:
             self.assertEqual(0, run_phases(Mock(), "runner", Path("evidence")))
             self.assertEqual(["scan", "unit", "focused", "integration"], [call.args[2] for call in phase.call_args_list])
-        self.assertEqual(["-Pintegration", "verify", "-Dit.test=BusinessFieldsDatabaseIT,BusinessFieldsMigrationUpgradeIT,ManualExecutionDatabaseIT,ManualExecutionMigrationUpgradeIT,AssetDatabaseIT#stepEvidence*,OidcCallbackSecurityIT#realOidcManualExecutionHttpRunsAndRejectsViewerWrites+realOidcReviewHttpDesignatedIdentityCsrfVersionsReplayAndImmutableRevision+realOidcReviewHttpOldSessionsReauthorizeReviewerAndActorAfterRevocation,TestReviewDatabaseIT,TestReviewMigrationUpgradeIT,AssetMigrationUpgradeIT,DefectMigrationUpgradeIT,ReleaseMigrationUpgradeIT,AssetProvisioningUpgradeIT#upgradedDatabaseUsesProvisionedRestrictedScannerLogin"], PHASES["focused"])
+        self.assertEqual(["-Pintegration", "verify", "-Dit.test=BusinessFieldsDatabaseIT,BusinessFieldsMigrationUpgradeIT,ManualExecutionDatabaseIT,ManualExecutionMigrationUpgradeIT,AssetDatabaseIT#stepEvidence*,OidcCallbackSecurityIT#realOidcManualExecutionHttpRunsAndRejectsViewerWrites+realOidcReviewHttpDesignatedIdentityCsrfVersionsReplayAndImmutableRevision+realOidcReviewHttpOldSessionsReauthorizeReviewerAndActorAfterRevocation+realOidcSignatureHttpCrossSessionRevocationAndLogoutRejectPendingOrReplayedWrites+realOidcSignatureHttpRejectsOtherSubjectMissingOrStaleAuthenticationAndInvalidNonce+realOidcSignatureHttpSameSubjectFreshLoginCsrfStrongVersionAndFrozenReplay,SignatureDatabaseIT,SignatureMigrationUpgradeIT,TestReviewDatabaseIT,TestReviewMigrationUpgradeIT,AssetMigrationUpgradeIT,DefectMigrationUpgradeIT,ReleaseMigrationUpgradeIT,AssetProvisioningUpgradeIT#upgradedDatabaseUsesProvisionedRestrictedScannerLogin"], PHASES["focused"])
 
     def test_every_failed_phase_stops_before_later_phases(self):
         for failure_index in range(4):

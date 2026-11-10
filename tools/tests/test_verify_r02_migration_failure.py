@@ -15,7 +15,7 @@ class FinishedProcess:
 
     def __init__(self, *args, **kwargs):
         stdout = kwargs["stdout"]
-        stdout.write(b"Flyway V26__intentional_failure R03_INTENTIONAL_MIGRATION_FAILURE\n")
+        stdout.write(b"Flyway V27__intentional_failure R03_INTENTIONAL_MIGRATION_FAILURE\n")
         stdout.flush()
 
     def poll(self):
@@ -70,7 +70,7 @@ class MigrationIsolationTests(unittest.TestCase):
                     patch.object(migration, "assert_project_available", return_value=("desktop-linux", "test-engine")), \
                     patch.object(migration, "run_compose", side_effect=[
                         None,
-                        SimpleNamespace(stdout="25\n"),
+                        SimpleNamespace(stdout="26\n"),
                     ]) as compose, \
                     patch.object(migration, "capture_manifest", return_value=manifest), \
                     patch.object(migration, "manifest_path"), \
@@ -95,7 +95,7 @@ class MigrationIsolationTests(unittest.TestCase):
             formal_review_check = compose.call_args_list[1].args
             self.assertEqual("exec", formal_review_check[1])
             self.assertIn("flyway_schema_history", formal_review_check[-1])
-            self.assertIn("version = '25'", formal_review_check[-1])
+            self.assertIn("version = '26'", formal_review_check[-1])
 
 
 if __name__ == "__main__":

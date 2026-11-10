@@ -8,6 +8,9 @@ from pathlib import Path
 
 
 REQUIRED_TESTS = {
+    "realOidcSignatureHttpCrossSessionRevocationAndLogoutRejectPendingOrReplayedWrites",
+    "realOidcSignatureHttpRejectsOtherSubjectMissingOrStaleAuthenticationAndInvalidNonce",
+    "realOidcSignatureHttpSameSubjectFreshLoginCsrfStrongVersionAndFrozenReplay",
     "realOidcReviewHttpDesignatedIdentityCsrfVersionsReplayAndImmutableRevision",
     "realOidcReviewHttpOldSessionsReauthorizeReviewerAndActorAfterRevocation",
     "realOidcFolderHttpCsrfVersionsPlacementsAndViewerBoundary",

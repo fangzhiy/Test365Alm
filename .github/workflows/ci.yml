@@ -233,6 +233,11 @@ jobs:
         run: |
           set -o pipefail
           python ../../tools/verify_test_review_report.py target/failsafe-reports 2>&1 | tee test-review-report.txt
+      - name: Require simulated signature database upgrade and real OIDC evidence
+        if: always()
+        run: |
+          set -o pipefail
+          python ../../tools/verify_signature_report.py target/failsafe-reports 2>&1 | tee signature-report.txt
       - name: Upload backend evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -257,6 +262,7 @@ jobs:
             apps/server/release-r10-report.txt
             apps/server/asset-r11-report.txt
             apps/server/test-review-report.txt
+            apps/server/signature-report.txt
             apps/server/target/surefire-reports/**
             apps/server/target/failsafe-reports/**
           if-no-files-found: error
@@ -356,7 +362,7 @@ jobs:
         run: |
           set -o pipefail
           ./mvnw -B -ntp package -DskipTests "-Dbuild.commit=${GITHUB_SHA}" 2>&1 | tee migration-build.txt
-      - name: Verify formal V25 then intentional V26 migration startup failure
+      - name: Verify formal V26 then intentional V27 migration startup failure
         run: |
           set +e
           python -u tools/verify_r02_migration_failure.py --env-file .env.r02-test --compose-project "test365alm-r02-migration-${GITHUB_RUN_ID}" --server-port 18082 --wait-seconds 90 2>&1 | tee migration-failure.txt
@@ -369,7 +375,7 @@ jobs:
             summary=$(tr '\n' ' ' < migration-failure.txt | cut -c1-4000)
             echo "::error title=migration-failure::${summary:-no output captured}"
           else
-            echo "Formal V25 migration and intentional V26 failure were detected for ${GITHUB_SHA}"
+            echo "Formal V26 migration and intentional V27 failure were detected for ${GITHUB_SHA}"
           fi
           exit "$status"
       - name: Upload migration evidence
