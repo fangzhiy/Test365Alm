@@ -41,3 +41,7 @@
 未发现阻塞当前三个流程的设施问题。worker报告Python161、前端248、lint/build、E2E配置独立tsc和trail check通过；这些为worker实际执行的检查，总管已审相关实现/断言，没有重复宣称自己重跑。新增负例现覆盖container/network/volume首foreign末owned、本地身份变化、既有凭据保护与三条确切pass且零retry/skip报告验证。
 
 两项非阻塞建议已发worker：reporter应从FullConfig读取实际workers/retries，避免将来参数变化而报告仍硬编码1/0；fresh_config和首次daemon检查处于主try之前，早期失败也宜统一清理已生成秘密。当前命令与配置均固定单worker/零retry，确切4a13589真实运行已完成；两项改进独立提交复核，不混淆被测源，不要求对未改业务重复验收。
+
+## 两项设施建议已关闭（e8dfdf8）
+
+总管已复核独立补丁 `e8dfdf86da92cc037757f267d7f487c2ed782ced`：FullConfig实际workers与各project retries用于报告，缺失/不一致拒绝；fresh_config/daemon预检进入finally，create之前拒绝不调用资源capture/cleanup，部分生成的新env/realm/Compose秘密删除而预存文件保持原样。五条主入口失败路径以参数化负例验证。总管应用后实际通过守卫7项及前端250项，运行树与worker补丁完全相同；`trail check --base dev`只含本补丁6个文件，未遇到累计400KB截断、无冲突。批准该设施补丁本地集成，不更改上文业务验收的确切被测源，不重跑真实业务。补充说明见 `audit-history-browser-follow-up.md`。
