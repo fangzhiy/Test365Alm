@@ -117,8 +117,10 @@ class BusinessFieldsDatabaseIT {
         assertCode("VALIDATION_FAILED",()->tests.create(f.member,f.project,reviewer(f.reviewer),key()));
         try(var c=owner()){sql(c,"UPDATE project_member SET valid_until=NULL,revoked_at=CURRENT_TIMESTAMP WHERE project_id=? AND principal_id=?",f.project,f.reviewer);}
         assertCode("VALIDATION_FAILED",()->tests.create(f.member,f.project,reviewer(f.reviewer),key()));
-        String replayKey=key();var input=create(f,"replay");tests.create(f.member,f.project,input,replayKey);
+        // The prior assertions deliberately revoked f.reviewer; this separate replay intent needs a valid assignee.
+        String replayKey=key();var input=reviewer(f.admin);tests.create(f.member,f.project,input,replayKey);
         projects.revokeMember(f.admin,f.project,f.member,1L);
+        assertEquals(1,reviewers.list(f.admin,f.project,null,null,25,f.admin).items().size(),"the assignee stays eligible when only the command actor is revoked");
         assertThrows(ProjectAccessException.class,()->tests.create(f.member,f.project,input,replayKey));
         assertThrows(ProjectAccessException.class,()->tests.getAuthorized(other.member,f.project,saved.id()));
     }
