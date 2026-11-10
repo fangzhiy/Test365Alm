@@ -2,7 +2,7 @@ import type { FieldDefinition } from './coreApi'
 export type BusinessFieldValue = { value: string | null; fieldId?: string; revision?: number; kind?: 'SYSTEM' | 'CUSTOM'; definition?: FieldDefinition }
 export type BusinessFieldValues = Record<string, BusinessFieldValue>
 export type BusinessKind = 'test_case' | 'requirement' | 'defect'
-export const businessLabels: Record<string,string> = {test_purpose:'测试目的',reviewer:'指定复核人（主体 UUID）',occurrence_department:'发生部门',occurrence_location:'发生地点或系统',equipment_system_id:'设备或系统编号',owning_department:'所属部门'}
+export const businessLabels: Record<string,string> = {test_purpose:'测试目的',reviewer:'指定复核人',occurrence_department:'发生部门',occurrence_location:'发生地点或系统',equipment_system_id:'设备或系统编号',owning_department:'所属部门'}
 export const businessKeys: Record<BusinessKind,string[]> = {test_case:['test_purpose','reviewer'],defect:['occurrence_department','occurrence_location','reviewer'],requirement:['equipment_system_id','owning_department']}
 export function parseBusinessFields(value: unknown): BusinessFieldValues | undefined {
  if(value===undefined)return undefined

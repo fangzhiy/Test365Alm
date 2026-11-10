@@ -27,3 +27,9 @@
 正式迁移只新增V23，旧V1—V22未改；V24保留执行工作线；故意失败探针改V25，正式版本数当前23。Linux runner未改。共享旧升级测试中latest迁移数量断言／旧target下服务验证可能需要总管合流处理，不静默放宽；先实际跑全套定位并报告。
 
 在串行时段先取得新增真实DB／非空升级证据，再全量；真实ClamAV/EICAR与资源Engine/标签/精确ID守卫保持，最后清理确认并释放时段。禁止日常.env、W1演示、5173/8080、Defender修改、假GITHUB变量。后端JDK21路径见AGENTS.md。
+
+## 复核人选择检查点
+
+总管要求正常流程按姓名选择同事。新增 reviewer-candidates 同项目只读有限目录（不复用管理员 member-candidates），排除失效身份，SQL再次核对actor/scope；当前/历史从目录解析当前姓名并标注，失效明确不可用，不显示内部UUID。业务快照仍仅保存稳定ID，不冒充历史姓名。新增DB边界方法 reviewerDirectoryIsReadableByMembersBoundedSearchableAndRejectsForeignOrInactiveScope，BusinessFieldsDatabaseIT现7方法，加原升级1方法：预期89单元/175集成；逐名计数待同步独立设施提交。Windows Java21单元89、前端261、lint及build通过；Docker与真实浏览器仍NOT_RUN。
+
+3307c7f按总管受限授权独立更新原89/174计数；ef2e083已合dev@8bd7408。当前审查确认旧target升级测试在旧schema调用当前内容服务不再成立；修复将保留旧target快照断言，先用明确冻结的旧服务测试夹具构造真实非空旧数据，再在旧目标迁移核验后升级latest，才调用当前服务。不得修改旧迁移、删断言或在生产服务动态探测schema。

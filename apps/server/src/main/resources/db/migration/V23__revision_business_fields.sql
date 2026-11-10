@@ -1,4 +1,25 @@
 -- Business values belong to exact immutable content revisions, not entity identity.
+-- Narrow directory projection: does not grant member administration or expose tenant candidates.
+CREATE FUNCTION app_business_reviewers(t UUID,p UUID,q TEXT,c UUID,n INTEGER,selected UUID,actor UUID)
+RETURNS TABLE(principal_id UUID,display_name TEXT) LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path=pg_catalog,public AS $$
+ SELECT m.principal_id,u.display_name FROM public.project_member m JOIN public.principal u ON u.id=m.principal_id
+ WHERE public.app_core_scope(t,p)
+ AND actor=NULLIF(current_setting('test365alm.principal_id',true),'')::UUID
+ AND n BETWEEN 1 AND 101 AND length(q)<=200
+ AND m.tenant_id=t AND m.project_id=p AND m.principal_id>c
+ AND EXISTS(SELECT 1 FROM public.project pr JOIN public.domain d ON d.id=pr.domain_id AND d.tenant_id=pr.tenant_id
+   JOIN public.tenant te ON te.id=pr.tenant_id WHERE pr.id=p AND pr.tenant_id=t
+   AND pr.state='ACTIVE' AND d.status='ACTIVE' AND te.status='ACTIVE')
+ AND (selected IS NULL OR m.principal_id=selected)
+ AND public.app_has_active_project_member(t,p,m.principal_id)
+ AND strpos(lower(u.display_name),lower(q))>0
+ ORDER BY m.principal_id LIMIT LEAST(GREATEST(n,0),101)
+$$;
+REVOKE ALL ON FUNCTION app_business_reviewers(UUID,UUID,TEXT,UUID,INTEGER,UUID,UUID) FROM PUBLIC;
+DO $$ BEGIN IF EXISTS(SELECT 1 FROM pg_roles WHERE rolname='test365alm_runtime') THEN
+ GRANT EXECUTE ON FUNCTION app_business_reviewers(UUID,UUID,TEXT,UUID,INTEGER,UUID,UUID) TO test365alm_runtime;
+END IF; END $$;
 ALTER TABLE test_revision ADD COLUMN business_fields JSONB NOT NULL DEFAULT '{}'::jsonb CHECK(jsonb_typeof(business_fields)='object');
 ALTER TABLE requirement_revision ADD COLUMN business_fields JSONB NOT NULL DEFAULT '{}'::jsonb CHECK(jsonb_typeof(business_fields)='object');
 ALTER TABLE defect_revision ADD COLUMN business_fields JSONB NOT NULL DEFAULT '{}'::jsonb CHECK(jsonb_typeof(business_fields)='object');

@@ -52,7 +52,7 @@ export default function DefectDetail({projectId,id,access,onLockChange,onDenied}
   <HistoryPanel key={`${current.rowVersion}:${auditRefresh}`} projectId={projectId} objectType="defect" objectId={id}/>
   <h4>不可变状态/内容历史</h4>{history.map(r=><button disabled={locked} key={r.id} onClick={()=>void run(signal=>defectsApi.revision(projectId,id,r.id,{signal}),setViewed)}>修订 {r.revisionNo} · {r.status}</button>)}
   {historyCursor&&<button disabled={locked} onClick={()=>void run(signal=>defectsApi.history(projectId,id,historyCursor,{signal}),p=>{setHistory(old=>[...old,...p.items]);setHistoryCursor(p.nextCursor)})}>更多缺陷历史</button>}
-  {viewed&&<article aria-label="缺陷历史快照"><h4>历史 v{viewed.revisionNo} · {viewed.status}</h4><p>{viewed.title}</p><p>{viewed.description}</p><p>{viewed.reason}</p><BusinessFieldsForm kind="defect" value={viewed.businessFields}/></article>}
+  {viewed&&<article aria-label="缺陷历史快照"><h4>历史 v{viewed.revisionNo} · {viewed.status}</h4><p>{viewed.title}</p><p>{viewed.description}</p><p>{viewed.reason}</p><BusinessFieldsForm kind="defect" projectId={projectId} value={viewed.businessFields}/></article>}
   <h4>明确复测记录</h4>{retests.map(r=><button disabled={locked} key={r.id} onClick={()=>setAttempt({runId:r.runId,attemptId:r.attemptId})}>打开复测尝试 {r.attemptNo} · {r.conclusion??r.status}</button>)}
   {retestCursor&&<button disabled={locked} onClick={()=>void run(signal=>defectsApi.retests(projectId,id,retestCursor,{signal}),p=>{setRetests(old=>[...old,...p.items]);setRetestCursor(p.nextCursor)})}>更多复测记录</button>}
   <AttachmentsPanel projectId={projectId} target={{kind:'DEFECT',id}} access={access} onDenied={onDenied}/>

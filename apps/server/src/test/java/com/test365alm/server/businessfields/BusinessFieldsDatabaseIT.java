@@ -43,6 +43,34 @@ class BusinessFieldsDatabaseIT {
     @Autowired ProjectService projects;
     @Autowired TestCaseService tests;
     @Autowired ExecutionService executions;
+    @Autowired ReviewerService reviewers;
+
+    @Test void reviewerDirectoryIsReadableByMembersBoundedSearchableAndRejectsForeignOrInactiveScope() throws Exception {
+        var f=fixture();var other=fixture();
+        try(var c=owner()){sql(c,"UPDATE principal SET display_name='Reviewer Zhang' WHERE id=?",f.viewer);}
+        var page=reviewers.list(f.member,f.project,"Reviewer",null,1,null);
+        assertEquals(List.of(new ReviewerService.Candidate(f.viewer,"Reviewer Zhang")),page.items());
+        assertNull(page.nextCursor());
+        assertEquals(1,reviewers.list(f.viewer,f.project,null,null,1,null).items().size());
+        assertNotNull(reviewers.list(f.member,f.project,null,null,1,null).nextCursor());
+        assertTrue(reviewers.list(f.member,f.project,"%",null,25,null).items().isEmpty());
+        assertTrue(reviewers.list(f.member,f.project,null,null,25,other.member).items().isEmpty());
+        assertThrows(ProjectAccessException.class,()->reviewers.list(other.member,f.project,null,null,25,null));
+        assertThrows(ProjectAccessException.class,()->reviewers.list(f.member,f.project,null,null,101,null));
+        assertThrows(ProjectAccessException.class,()->reviewers.list(f.member,f.project,"x".repeat(201),null,25,null));
+        try(var c=runtime(f,f.member);var s=c.prepareStatement("SELECT count(*) FROM app_business_reviewers(?,?,'',?::uuid,25,NULL,?)")){
+            s.setObject(1,other.tenant);s.setObject(2,other.project);s.setString(3,"00000000-0000-0000-0000-000000000000");s.setObject(4,f.member);
+            try(var r=s.executeQuery()){r.next();assertEquals(0,r.getInt(1));}
+        }
+        try(var c=owner()){sql(c,"UPDATE principal SET disabled_at=CURRENT_TIMESTAMP WHERE id=?",f.viewer);}
+        assertTrue(reviewers.list(f.member,f.project,null,null,25,f.viewer).items().isEmpty());
+        try(var c=owner()){sql(c,"UPDATE principal SET disabled_at=NULL WHERE id=?",f.viewer);sql(c,"UPDATE project_member SET valid_until=CURRENT_TIMESTAMP-INTERVAL '1 second' WHERE project_id=? AND principal_id=?",f.project,f.viewer);}
+        assertTrue(reviewers.list(f.member,f.project,null,null,25,f.viewer).items().isEmpty());
+        try(var c=owner()){sql(c,"UPDATE project_member SET valid_until=NULL,revoked_at=CURRENT_TIMESTAMP WHERE project_id=? AND principal_id=?",f.project,f.viewer);}
+        assertTrue(reviewers.list(f.member,f.project,null,null,25,f.viewer).items().isEmpty());
+        projects.revokeMember(f.admin,f.project,f.member,1L);
+        assertThrows(ProjectAccessException.class,()->reviewers.list(f.member,f.project,null,null,25,null));
+    }
 
     @Test void fieldsPersistOnExactRevisionReplayAndHistory() throws Exception {
         var f=fixture();String key=key();var input=create(f,"original");
