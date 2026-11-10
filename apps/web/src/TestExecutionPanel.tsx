@@ -156,6 +156,11 @@ export default function TestExecutionPanel({ projectId, access, resetSignal = 0 
     catch (error) { if (!current(round, controller)) return; if (isScopeAccessError(error)) { invalidateScope(); return }; setState('error'); setNotice(isAbort(error) ? '测试集请求超时，请稍后重试' : messageFor(error)) }
     finally { finish(round, controller) }
   }
+  const refreshFolder = (id?: string) => {
+    if (signaturePendingInScope()) return
+    if (id !== undefined) { folderRef.current = id; setFolderId(id) }
+    reset(); void loadSets()
+  }
   const loadMoreSets = async () => {
     if (signaturePendingInScope()) return
     if (!setsCursor || pending !== null) return
@@ -317,7 +322,7 @@ export default function TestExecutionPanel({ projectId, access, resetSignal = 0 
   const editable = canWrite(access) && selectedState === 'RUNNING' && state === 'ready' && conflict === null
   return <section className="execution-panel" aria-labelledby="execution-heading">
     <div className="access-panel-header"><div><span className="panel-label">M09 · 测试集与手工运行</span><h2 id="execution-heading">测试集与运行</h2></div><button className="secondary-button" type="button" onClick={() => void loadSets()} disabled={state === 'loading' || interactionLocked}>刷新测试集</button></div>
-    <div className="folder-workspace"><FolderTree key={`${projectId}:${accessKey}:${resetSignal}`} projectId={projectId} kind="TEST_LAB" writable={canWrite(access)} selected={folderId} objectId={selectedSet?.id} disabled={interactionLocked} onSelect={id => { folderRef.current = id; setFolderId(id); reset(); void loadSets() }} onMoved={() => { reset(); void loadSets() }} /><div className="folder-content">
+    <div className="folder-workspace"><FolderTree key={`${projectId}:${accessKey}:${resetSignal}`} projectId={projectId} kind="TEST_LAB" writable={canWrite(access)} selected={folderId} objectId={selectedSet?.id} disabled={interactionLocked} onSelect={refreshFolder} onMoved={refreshFolder} /><div className="folder-content">
     {state === 'loading' && <p role="status">加载中…</p>}{state === 'error' && <div className="access-error" role="alert"><p>{notice}</p><button className="secondary-button" type="button" onClick={() => void loadSets()}>重试</button></div>}{notice && state !== 'error' && <p className="access-notice" role="status">{notice}</p>}
     {conflict && <div className="access-error" aria-live="polite"><p>运行版本已变化，草稿仍保留。请读取最新状态后确认继续编辑。</p><button className="secondary-button" type="button" onClick={rebaseConflict} disabled={interactionLocked}>采用最新版本继续编辑</button></div>}
     {canWrite(access) && <form className="execution-create-form" onSubmit={createSet}><strong>创建测试集</strong><label>名称<input aria-label="测试集名称" value={setName} onChange={(event) => setSetName(event.target.value)} required disabled={interactionLocked} /></label><label>说明<input aria-label="测试集说明" value={setDescription} onChange={(event) => setSetDescription(event.target.value)} disabled={interactionLocked} /></label><button className="primary-button" type="submit" disabled={!setName.trim() || interactionLocked}>创建测试集</button></form>}
