@@ -167,7 +167,20 @@ public class ReportService {
         return result;
     }
     private List<JsonNode> rows(String sql,int max,Object... args) {
-        var rows=jdbc.query(sql,(r,i)->CoreCommands.JSON.readTree(r.getString(1)),args);ReportRules.limit(rows.size(),max);return rows;
+        // A cursor bounds driver buffering too: checking the final envelope alone is
+        // too late when thousands of rows contain long observations or snapshots.
+        return jdbc.query(connection->{
+            var statement=connection.prepareStatement(sql);statement.setFetchSize(32);
+            for(int i=0;i<args.length;i++)statement.setObject(i+1,args[i]);return statement;
+        },result->{
+            List<JsonNode> values=new ArrayList<>();long bytes=0;
+            while(result.next()) {
+                ReportRules.limit(values.size()+1,max);
+                String json=result.getString(1);bytes+=json.getBytes(StandardCharsets.UTF_8).length;
+                ReportRules.limit(bytes,8*1024*1024);values.add(CoreCommands.JSON.readTree(json));
+            }
+            return values;
+        });
     }
     private JsonNode one(String sql,Object...args) {
         var values=rows(sql,1,args);if(values.isEmpty())throw ProjectAccessException.notFound();return values.get(0);

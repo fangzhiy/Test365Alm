@@ -4,3 +4,6 @@
 @page {size:A4;margin:16mm}
 @page wide {size:A4 landscape;margin:14mm}
 @media print{body:has(.report-overlay)>*:not(.report-overlay){display:none!important}body:has(.report-overlay){margin:0;background:white}.report-overlay{position:static;overflow:visible;padding:0;background:white}.report-overlay.landscape{page:wide}.no-print{display:none!important}.report-document{padding:0;max-width:none;font-size:10pt}.report-document thead{display:table-header-group}.report-document tr{break-inside:auto}.report-document article,.report-document p,.report-document dd,.report-document pre{break-inside:auto}.report-document h1,.report-document h2,.report-document h3,.report-document h4{break-after:avoid}.report-document a{color:inherit;text-decoration:none}.report-facts{gap:6px 18px}.report-document td{font-size:9pt}}
+
+.report-facts .report-wide{grid-column:1 / -1}
+@media print{html:has(.report-overlay){background:white}.report-document header,.report-document footer{background:white}}
