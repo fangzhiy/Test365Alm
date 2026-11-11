@@ -8,6 +8,9 @@ export async function oqFixRegressions(page:Page, admin:Page, scope:{tenantId:st
  get: (page:Page,path:string)=>Promise<unknown>,
  write:(page:Page,path:string,data:unknown,method?:string,version?:number)=>Promise<unknown>,
  all:(page:Page,path:string)=>Promise<unknown[]>, choose:(page:Page,tenant:string,project:string)=>Promise<void>) {
+ let phase='create-project'
+ const diagnostics=resolve(rootDir,'local-evidence/r03/oq-demo-01');mkdirSync(diagnostics,{recursive:true})
+ try {
  // These are the actual server wire shapes, confined to the test boundary.
  type Revision={id:string;title:string;description:string;severity:string;priority:string;businessFields:unknown;status:string}
  type Defect={id:string;rowVersion:number;currentRevision:Revision}
@@ -27,15 +30,18 @@ export async function oqFixRegressions(page:Page, admin:Page, scope:{tenantId:st
   return put<Attempt>(path(a.id)+'/finish',{},'POST',a.rowVersion)
  }
  const original=await finish(run.currentAttempt,'FAIL')
+ phase='source-fail-finished'
  const proof=(id:string)=>readDefectProof(p=>get(page,p),p=>all(page,p),root,id)
  const evidence:Record<string,unknown>={classification:'SYNTHETIC',projectId:project.id,setId:set.id,instanceId:instance.id,runId:run.run.id,originalAttemptId:original.id}
  await test.step('FIX01：已完成后人工开启新周期，恢复只读拒绝且不追加业务记录',async()=>{
   let d=await put<Defect>(root+'/defects/from-step',{title:'SYNTHETIC FIX01 重开偏差',description:'正常API建立的独立冲突样本',severity:'HIGH',priority:'HIGH',runId:run.run.id,attemptId:original.id,stepKey:original.steps[0].stepKey})
   const transition=async(status:string)=>{d=await put(`${root}/defects/${d.id}/transitions`,{status,reason:'SYNTHETIC FIX01 合法流转'},'POST',d.rowVersion)}
   await transition('RESOLVED')
+  phase='first-resolution'
   const oldCycle=(await proof(d.id)).resolutionId!
   const rt=await put<{attemptId:string}>(`${root}/defects/${d.id}/retests`,{},'POST',d.rowVersion)
   await finish(await read<Attempt>(path(rt.attemptId)),'PASS');await transition('REOPENED')
+  phase='completed-reopened'
   const completed=await proof(d.id),marker=checkDefectCompletion(completed,'REOPENED',undefined,true)!
   // Lost local marker after a successful terminal response is recovered by read-only proof.
   expect(checkDefectCompletion(completed,'REOPENED')).toEqual(marker)
@@ -44,6 +50,7 @@ export async function oqFixRegressions(page:Page, admin:Page, scope:{tenantId:st
   expect(checkDefectCompletion(await proof(d.id),'REOPENED',marker,true)).toEqual(marker)
   expect(checkDefectCompletion(await proof(d.id),'REOPENED',marker,true)).toEqual(marker)
   expect(await snapshot()).toEqual(stable)
+  phase='stable-completed-resume'
   await transition('RESOLVED')
   const before=await snapshot(),current=await proof(d.id),writes:string[]=[]
   const track=(request:import('@playwright/test').Request)=>{if(request.method()!=='GET'&&request.url().includes(root))writes.push(request.method()+' '+new URL(request.url()).pathname)}
@@ -51,7 +58,9 @@ export async function oqFixRegressions(page:Page, admin:Page, scope:{tenantId:st
   let conflict=''
   try{checkDefectCompletion(await proof(d.id),'REOPENED',marker,true)}catch(e){conflict=(e as Error).message}
   page.off('request',track)
-  expect(conflict).toContain('演示恢复冲突');expect(writes).toEqual([]);expect(await snapshot()).toEqual(before)
+  const after=await snapshot()
+  expect(conflict).toContain('演示恢复冲突');expect(writes).toEqual([]);expect(after).toEqual(before)
+  phase='new-cycle-conflict-without-writes'
   expect(selectCycleRetest(current.retests,current.resolutionId!)).toBeUndefined()
   const currentRetest=await put<{attemptId:string}>(`${root}/defects/${d.id}/retests`,{},'POST',d.rowVersion)
   // An ordinary edit in RESOLVED advances the content revision, not the solution cycle.
@@ -59,8 +68,9 @@ export async function oqFixRegressions(page:Page, admin:Page, scope:{tenantId:st
   const edited=await proof(d.id),selected=selectCycleRetest(edited.retests,current.resolutionId!)!
   expect(edited.resolutionId).toBe(current.resolutionId);expect(edited.revisionId).not.toBe(edited.resolutionId)
   expect(selected.attemptId).toBe(currentRetest.attemptId);expect(selected.resolvedRevisionId).not.toBe(oldCycle)
-  evidence.recovery={defectId:d.id,marker,newCycle:current.resolutionId,editedRevision:edited.revisionId,oldCycle,selected,conflict,writes,before,after:before}
+  evidence.recovery={defectId:d.id,marker,newCycle:current.resolutionId,editedRevision:edited.revisionId,oldCycle,selected,conflict,writes,before,after}
   await finish(await read<Attempt>(path(currentRetest.attemptId)),'PASS')
+  phase='current-cycle-retest-finished'
  })
  await test.step('FIX01：导航保持打开，刷新后的进行中与完成 Attempt 使用确切报告目标',async()=>{
   await page.goto('/');await expect(page.getByRole('button',{name:'退出登录'})).toBeVisible();await choose(page,scope.tenantId,project.id)
@@ -69,11 +79,13 @@ export async function oqFixRegressions(page:Page, admin:Page, scope:{tenantId:st
   await panel.getByRole('button',{name:'查看绑定修订 SYNTHETIC FIX01 导航与恢复'}).click()
   const nav=panel.getByRole('region',{name:'实例修订与闭环导航'})
   await expect(nav).toContainText('已完成')
-  const started=await put<Attempt>(`${root}/runs/${run.run.id}/rerun`,{})
+  const started=await put<Attempt>(`${root}/runs/${run.run.id}/attempts`,{})
+  phase='navigation-new-attempt'
   const refresh=async()=>{const loaded=page.waitForResponse(r=>new URL(r.url()).pathname===`${root}/test-sets/${set.id}/execution-grid`&&r.request().method()==='GET');await panel.getByRole('button',{name:'刷新实例网格'}).click();expect((await loaded).status()).toBe(200)}
   await refresh();await expect(nav).toContainText('运行中');await expect(nav.getByRole('button',{name:'实例最新 Attempt 与关联偏差报告'})).toHaveCount(0)
   let active=await put<Attempt>(path(started.id)+'/pause',{},'POST',started.rowVersion)
   await refresh();await expect(nav).toContainText('已暂停');await expect(nav.getByRole('button',{name:'实例最新 Attempt 与关联偏差报告'})).toHaveCount(0)
+  phase='navigation-paused'
   active=await put(path(started.id)+'/resume',{},'POST',active.rowVersion);await finish(active,'PASS');await refresh()
   await expect(nav).toContainText('已完成');const reportPath=`${root}/reports/runs/${run.run.id}/attempts/${started.id}`,response=page.waitForResponse(r=>new URL(r.url()).pathname===reportPath)
   await nav.getByRole('button',{name:'实例最新 Attempt 与关联偏差报告'}).click();expect((await response).status()).toBe(200)
@@ -82,5 +94,7 @@ export async function oqFixRegressions(page:Page, admin:Page, scope:{tenantId:st
   evidence.navigation={attemptId:started.id,reportPath,status:'FINISHED',conclusion:'PASS'}
   await dialog.getByRole('button',{name:'返回业务页面'}).click()
   writeFileSync(resolve(dir,'fix01-regressions.json'),JSON.stringify(evidence,null,2))
+  phase='complete'
  })
+ }finally{writeFileSync(resolve(diagnostics,'fix01-progress.json'),JSON.stringify({phase,classification:'SYNTHETIC'},null,2))}
 }
