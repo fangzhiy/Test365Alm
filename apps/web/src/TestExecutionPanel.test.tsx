@@ -36,9 +36,38 @@ beforeEach(() => {
   vi.mocked(executionApi.executionGrid).mockImplementation(async(p,s,c,n,_f,o)=>
     await executionApi.pageInstances(p,s,c,n,o) ?? {items:await executionApi.listInstances(p,s,o) ?? [],nextCursor:null})
 })
-afterEach(() => { cleanup(); vi.resetAllMocks() })
+afterEach(() => { cleanup(); vi.resetAllMocks(); vi.unstubAllGlobals() })
 
 describe('TestExecutionPanel', () => {
+  it.each(['CSRF_REJECTED','SERVICE','NETWORK'])('retains execution list and detail after ordinary report %s failure',async code=>{
+    vi.mocked(executionApi.pageSets).mockResolvedValue({items:[set],nextCursor:null});vi.mocked(executionApi.getSet).mockResolvedValue(set)
+    vi.mocked(executionApi.pageInstances).mockResolvedValue({items:[instance],nextCursor:null});vi.mocked(executionApi.pageRuns).mockResolvedValue({items:[run],nextCursor:null})
+    vi.mocked(executionApi.getRun).mockResolvedValue(run);vi.mocked(executionApi.pageAttempts).mockResolvedValue({items:[attempt],nextCursor:null})
+    const dto={kind:'SET',version:'F-REPORT-1',generatedAt:'2026-11-11T00:00:00Z',timeZone:'UTC',projectId:'project-1',projectName:'项目',filters:{testSetId:'set-1'},facts:{testSet:{id:'set-1',project_id:'project-1',name:'统计'},totalInstances:0,counts:{matched:0,categories:{NOT_RUN:0,RUNNING:0,PAUSED:0,PASS:0,FAIL:0,BLOCKED:0},completionRate:null,passRate:null},otherActiveAttempts:0,relatedDefects:0},items:[],steps:[],attachments:[],reviews:[],signatures:[],links:[],retests:[]}
+    const reports=vi.fn().mockResolvedValueOnce(Response.json(dto))
+    if(code==='NETWORK')reports.mockRejectedValueOnce(new TypeError('offline'))
+    else reports.mockResolvedValueOnce(Response.json({code},{status:code==='CSRF_REJECTED'?403:503}))
+    vi.stubGlobal('fetch',vi.fn((url:RequestInfo|URL)=>String(url).includes('/reports/')?reports():Promise.resolve(Response.json({items:[],nextCursor:null}))))
+    render(<TestExecutionPanel projectId="project-1" access={access}/>);fireEvent.click(await screen.findByRole('button',{name:/登录冒烟/}));fireEvent.click(await screen.findByRole('button',{name:/运行 run-1/}));await screen.findByRole('heading',{name:'运行详情 · 尝试 1'})
+    fireEvent.click(screen.getByRole('button',{name:'测试集汇总报告'}));await screen.findByText(/数据完整加载/)
+    fireEvent.click(screen.getByRole('button',{name:'应用报告筛选'}));await screen.findByText(/报告未生成/)
+    expect(screen.getByRole('button',{name:'打印 / 另存为 PDF'})).toBeDisabled();fireEvent.click(screen.getByRole('button',{name:'返回业务页面'}))
+    expect(screen.getByRole('heading',{name:'运行详情 · 尝试 1'})).toBeVisible();expect(screen.getByRole('button',{name:/登录冒烟/})).toBeVisible()
+  })
+  it.each([[401,'UNAUTHENTICATED'],[403,'FORBIDDEN']] as const)('clears execution host on raw code-only %s and invalidates a late run detail',async(status,code)=>{
+    vi.mocked(executionApi.pageSets).mockResolvedValue({items:[set],nextCursor:null});vi.mocked(executionApi.getSet).mockResolvedValue(set)
+    vi.mocked(executionApi.pageInstances).mockResolvedValue({items:[instance],nextCursor:null});vi.mocked(executionApi.pageRuns).mockResolvedValue({items:[run],nextCursor:null})
+    vi.mocked(executionApi.getRun).mockResolvedValue(run);vi.mocked(executionApi.pageAttempts).mockResolvedValue({items:[attempt],nextCursor:null})
+    const dto={kind:'SET',version:'F-REPORT-1',generatedAt:'2026-11-11T00:00:00Z',timeZone:'UTC',projectId:'project-1',projectName:'项目',filters:{testSetId:'set-1'},facts:{testSet:{id:'set-1',project_id:'project-1',name:'统计'},totalInstances:0,counts:{matched:0,categories:{NOT_RUN:0,RUNNING:0,PAUSED:0,PASS:0,FAIL:0,BLOCKED:0},completionRate:null,passRate:null},otherActiveAttempts:0,relatedDefects:0},items:[],steps:[],attachments:[],reviews:[],signatures:[],links:[],retests:[]}
+    const reports=vi.fn().mockResolvedValueOnce(Response.json(dto)).mockResolvedValueOnce(Response.json({code},{status}));vi.stubGlobal('fetch',vi.fn((url:RequestInfo|URL)=>String(url).includes('/reports/')?reports():Promise.resolve(Response.json({items:[],nextCursor:null}))))
+    render(<TestExecutionPanel projectId="project-1" access={access}/>);fireEvent.click(await screen.findByRole('button',{name:/登录冒烟/}));fireEvent.click(await screen.findByRole('button',{name:/运行 run-1/}));await screen.findByRole('heading',{name:'运行详情 · 尝试 1'})
+    let late!:(v:Run)=>void;vi.mocked(executionApi.getRun).mockImplementationOnce(()=>new Promise(r=>{late=r}))
+    fireEvent.click(screen.getByRole('button',{name:'刷新运行详情'}));const signal=vi.mocked(executionApi.getRun).mock.calls.at(-1)?.[2]?.signal
+    fireEvent.click(screen.getByRole('button',{name:'测试集汇总报告'}));await screen.findByText(/数据完整加载/)
+    fireEvent.click(screen.getByRole('button',{name:'应用报告筛选'}));await screen.findByText('当前会话没有读取测试集和运行记录的权限。')
+    expect(signal?.aborted).toBe(true);expect(screen.queryByRole('dialog')).toBeNull();expect(screen.queryByRole('button',{name:'打印 / 另存为 PDF'})).toBeNull()
+    await act(async()=>late(run));expect(screen.queryByRole('heading',{name:'运行详情 · 尝试 1'})).toBeNull();expect(screen.queryByRole('button',{name:/登录冒烟/})).toBeNull()
+  })
   it('locks stale history buttons while refreshing run details so they cannot cancel the new history read',async()=>{
     const old={...attempt,state:'FINISHED' as const,outcome:'FAIL' as const},next={...old,id:'attempt-2',attemptNo:2,outcome:'PASS' as const}
     vi.mocked(executionApi.pageSets).mockResolvedValue({items:[set],nextCursor:null});vi.mocked(executionApi.getSet).mockResolvedValue(set)

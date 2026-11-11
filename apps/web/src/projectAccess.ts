@@ -59,11 +59,21 @@ const isPositiveInteger = (value: unknown): value is number => typeof value === 
 const isRole = (value: unknown): value is ProjectRole => value === 'PROJECT_ADMIN' || value === 'PROJECT_MEMBER' || value === 'PROJECT_VIEWER'
 
 const parseError = async (response: Response): Promise<AccessError> => {
+  const fallback = `请求失败（${response.status}）`
+  const localMessages: Record<string, string> = {
+    UNAUTHENTICATED: '登录会话已失效，请重新登录',
+    FORBIDDEN: '当前身份没有访问权限',
+    CSRF_REJECTED: '请求安全校验未通过，请重新获取安全令牌',
+  }
   try {
     const body: unknown = await response.json()
-    if (isRecord(body) && isString(body.code) && isString(body.message)) return { code: body.code, message: body.message, status: response.status }
+    if (isRecord(body) && isString(body.code)) return {
+      code: body.code,
+      message: isString(body.message) ? body.message : Object.hasOwn(localMessages, body.code) ? localMessages[body.code] : fallback,
+      status: response.status,
+    }
   } catch { /* Fall through to a status based message. */ }
-  return { code: `HTTP_${response.status}`, message: `请求失败（${response.status}）`, status: response.status }
+  return { code: `HTTP_${response.status}`, message: fallback, status: response.status }
 }
 
 const idempotencyKey = () => typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `web-${Date.now()}-${Math.random().toString(16).slice(2)}`

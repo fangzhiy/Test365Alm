@@ -30,7 +30,42 @@ it('report denial clears the previously loaded defect list and detail',async()=>
 })
 function defaults(){vi.mocked(defectsApi.list).mockResolvedValue({items:[d],nextCursor:null});vi.mocked(defectsApi.get).mockResolvedValue(d);vi.mocked(defectsApi.history).mockResolvedValue({items:[d.currentRevision],nextCursor:null});vi.mocked(defectsApi.verification).mockResolvedValue({eligible:false,runId:null,attemptId:null,reason:'No PASS'});vi.mocked(defectsApi.retests).mockResolvedValue({items:[],nextCursor:null})}
 beforeEach(()=>{vi.mocked(reviewerApi.list).mockResolvedValue({items:[{principalId:'reviewer-id',displayName:'张三'}],nextCursor:null});vi.mocked(historyApi.list).mockResolvedValue({items:[],nextCursor:null})})
-afterEach(()=>{cleanup();vi.resetAllMocks();vi.useRealTimers()})
+afterEach(()=>{cleanup();vi.resetAllMocks();vi.useRealTimers();vi.unstubAllGlobals()})
+it.each([[401,'UNAUTHENTICATED'],[403,'FORBIDDEN']] as const)('clears defect host on raw code-only %s and ignores pending detail and set names',async(status,code)=>{
+ defaults()
+ const dto={kind:'DEFECTS',version:'F-REPORT-1',generatedAt:'2026-11-11T00:00:00Z',timeZone:'UTC',projectId:'p',projectName:'项目',filters:{testSetId:''},facts:{matched:0,testSetName:''},items:[],steps:[],attachments:[],reviews:[],signatures:[],links:[],retests:[]}
+ const reports=vi.fn().mockResolvedValueOnce(Response.json(dto)).mockResolvedValueOnce(Response.json({code},{status}));vi.stubGlobal('fetch',vi.fn((url:RequestInfo|URL)=>String(url).includes('/reports/')?reports():Promise.resolve(Response.json({items:[],nextCursor:null}))))
+ let names!:(v:Awaited<ReturnType<typeof executionApi.pageSets>>)=>void,detail!:(v:Defect)=>void
+ const sets=vi.spyOn(executionApi,'pageSets').mockImplementation(()=>new Promise(r=>{names=r}))
+ try{
+  render(<DefectsPanel projectId="p" access={access}/>);fireEvent.click(await screen.findByRole('button',{name:/BUG-1/}));await screen.findByDisplayValue('Bug')
+  vi.mocked(defectsApi.get).mockImplementationOnce(()=>new Promise(r=>{detail=r}));fireEvent.click(screen.getByRole('button',{name:'刷新缺陷详情'}))
+  const signal=vi.mocked(defectsApi.get).mock.calls.at(-1)?.[2]?.signal
+  fireEvent.click(screen.getByRole('button',{name:'偏差清单报告'}));await screen.findByText(/数据完整加载/)
+  const nameSignal=sets.mock.calls.at(-1)?.[3]?.signal
+  fireEvent.click(screen.getByRole('button',{name:'应用报告筛选'}));await screen.findByText(/缺陷范围不可访问，旧内容已清理/)
+  expect(signal?.aborted).toBe(true);expect(nameSignal?.aborted).toBe(true)
+  expect(screen.queryByRole('dialog')).toBeNull();expect(screen.queryByRole('button',{name:'打印 / 另存为 PDF'})).toBeNull()
+  await act(async()=>{detail(d);names({items:[{id:'late',projectId:'p',name:'迟到测试集',description:''}],nextCursor:null})})
+  expect(screen.queryByRole('region',{name:'缺陷详情'})).toBeNull();expect(screen.queryByRole('button',{name:/BUG-1/})).toBeNull();expect(screen.queryByText('迟到测试集')).toBeNull()
+ }finally{sets.mockRestore()}
+})
+it.each(['CSRF_REJECTED','SERVICE','NETWORK'])('retains defect list and detail after ordinary report %s failure',async code=>{
+ defaults()
+ const dto={kind:'DEFECTS',version:'F-REPORT-1',generatedAt:'2026-11-11T00:00:00Z',timeZone:'UTC',projectId:'p',projectName:'项目',filters:{testSetId:''},facts:{matched:0,testSetName:''},items:[],steps:[],attachments:[],reviews:[],signatures:[],links:[],retests:[]}
+ const reports=vi.fn().mockResolvedValueOnce(Response.json(dto))
+ if(code==='NETWORK')reports.mockRejectedValueOnce(new TypeError('offline'))
+ else reports.mockResolvedValueOnce(Response.json({code},{status:code==='CSRF_REJECTED'?403:503}))
+ vi.stubGlobal('fetch',vi.fn((url:RequestInfo|URL)=>String(url).includes('/reports/')?reports():Promise.resolve(Response.json({items:[],nextCursor:null}))))
+ const sets=vi.spyOn(executionApi,'pageSets').mockResolvedValue({items:[],nextCursor:null})
+ try{
+  render(<DefectsPanel projectId="p" access={access}/>);fireEvent.click(await screen.findByRole('button',{name:/BUG-1/}));await screen.findByDisplayValue('Bug')
+  fireEvent.click(screen.getByRole('button',{name:'偏差清单报告'}));await screen.findByText(/数据完整加载/)
+  fireEvent.click(screen.getByRole('button',{name:'应用报告筛选'}));await screen.findByText(/报告未生成/)
+  expect(screen.getByRole('button',{name:'打印 / 另存为 PDF'})).toBeDisabled();fireEvent.click(screen.getByRole('button',{name:'返回业务页面'}))
+  expect(screen.getByRole('region',{name:'缺陷详情'})).toBeVisible();expect(screen.getByRole('button',{name:/BUG-1/})).toBeVisible()
+ }finally{sets.mockRestore()}
+})
 it('audit history denial leaves defect detail editable and saving reloads audit history',async()=>{
  defaults();vi.mocked(historyApi.list).mockRejectedValueOnce({status:404}).mockResolvedValue({items:[],nextCursor:null})
  const updated={...d,rowVersion:2,currentRevision:{...d.currentRevision,id:'r2',revisionNo:2,title:'Updated'}}

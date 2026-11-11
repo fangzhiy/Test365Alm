@@ -12,14 +12,14 @@ const date = (r: Row, key: string) => nullable(r,key) && (r[key] === null || Num
 const unique = (items: Row[]) => items.every(i=>string(i.id)) && new Set(items.map(i=>i.id)).size === items.length
 const states = ['NOT_RUN','RUNNING','PAUSED','PASS','FAIL','BLOCKED']
 
-// Permission errors follow the existing execution scope rule. Specific business
-// errors (including CSRF) must not invalidate a scope just because of HTTP 403.
+// HTTP 401 confirms authentication loss even if a proxy returned an invalid body.
+// Other statuses need an explicit scope code: unknown 403, CSRF, limits and
+// invalid report parameters must keep their separate error semantics.
 export function reportScopeDenied(error: unknown): boolean {
  if (typeof error !== 'object' || error === null) return false
  const e=error as {code?:unknown;status?:unknown}
- return typeof e.code==='string'
-  ? ['UNAUTHENTICATED','FORBIDDEN','NOT_FOUND','PROJECT_ACCESS_DENIED','PROJECT_NOT_FOUND'].includes(e.code)
-  : e.status===401 || e.status===403 || e.status===404
+ return e.status===401 || (typeof e.code==='string' &&
+  ['UNAUTHENTICATED','FORBIDDEN','NOT_FOUND','PROJECT_ACCESS_DENIED','PROJECT_NOT_FOUND'].includes(e.code))
 }
 
 function validateRun(r: Report, target: Extract<ReportTarget,{kind:'RUN'}>) {

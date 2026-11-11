@@ -105,8 +105,32 @@ test('real Keycloak UI reports preserve historical FAIL after related PASS and p
    await expect(dialog.getByRole('heading',{name:'单次运行执行记录报告',exact:true})).toBeVisible()
    await page.pdf({path:resolve(output,'run-report-ordinary.pdf'),preferCSSPageSize:true,printBackground:true});await dialog.screenshot({path:resolve(output,'run-report-ordinary.png')});await dialog.getByRole('button',{name:'返回业务页面'}).click()
   })
+  await stage('第二标签合法退出后原报告收到安全过滤器 401 并清理宿主',async()=>{
+   await expect(execution.locator('.execution-detail')).toBeVisible()
+   await expect(execution.getByRole('heading',{name:'运行详情 · 尝试 2',exact:true})).toBeVisible()
+   await execution.getByRole('button',{name:'测试集汇总报告',exact:true}).click()
+   const dialog=page.getByRole('dialog',{name:'业务报告'});await expect(dialog).toContainText('数据完整加载')
+   const logoutTab=await page.context().newPage()
+   try{
+    await logoutTab.goto('/');await expect(logoutTab.getByRole('button',{name:'退出登录'})).toBeVisible()
+    const logout=logoutTab.waitForResponse(r=>new URL(r.url()).pathname==='/api/v1/auth/logout'&&r.request().method()==='POST')
+    await logoutTab.getByRole('button',{name:'退出登录'}).click();expect((await logout).status()).toBe(204)
+    // Keep the original tab untouched until its real report GET observes loss.
+    await expect(dialog).toContainText('数据完整加载');await expect(execution.locator('.execution-detail')).toBeAttached()
+    const denied=page.waitForResponse(r=>new URL(r.url()).pathname===`${root}/reports/test-sets/${set.id}`)
+    await dialog.getByRole('button',{name:'应用报告筛选'}).click();const response=await denied
+    expect(response.status()).toBe(401);expect(await response.json()).toEqual({code:'UNAUTHENTICATED'})
+    await expect(dialog).toHaveCount(0);await expect(execution).toContainText('当前会话没有读取测试集和运行记录的权限。')
+    await expect(execution.locator('.execution-set')).toHaveCount(0);await expect(execution.locator('.execution-detail')).toHaveCount(0)
+    await expect(page.getByRole('button',{name:'打印 / 另存为 PDF'})).toHaveCount(0)
+   }finally{await logoutTab.close()}
+   // Restore only after proving the untouched tab cleared on the actual 401;
+   // retain the independently tested membership revocation path below.
+   await login(page,mu,mp);await select(page,tenantId,project.id)
+   await execution.getByRole('button',{name:set.name,exact:false}).click();await expect(execution.locator('.execution-detail')).toBeVisible()
+  })
   await stage('VIEWER 偏差清单入口、真实来源及复测周期和中文 PDF',async()=>{
-   await select(viewer,tenantId,project.id);await viewer.getByRole('button',{name:'偏差清单报告',exact:true}).click();const dialog=viewer.getByRole('dialog',{name:'业务报告'});await expect(dialog.getByRole('heading',{name:'偏差清单报告',exact:true})).toBeVisible();await expect(dialog).toContainText('原始来源及关联');await expect(dialog).toContainText('FAIL');await expect(dialog).toContainText('PASS');await dialog.getByLabel('报告标题关键词').fill('不存在的标题');await dialog.getByRole('button',{name:'应用报告筛选'}).click();await expect(dialog).toContainText('当前范围无偏差');await dialog.getByLabel('报告标题关键词').fill('');await dialog.getByRole('button',{name:'应用报告筛选'}).click();await expect(dialog.getByRole('heading',{name:/BUG-.*清洁残留偏差/})).toBeVisible();await dialog.screenshot({path:resolve(output,'deviation-report.png')});await viewer.pdf({path:resolve(output,'deviation-report.pdf'),preferCSSPageSize:true,printBackground:true,displayHeaderFooter:true,headerTemplate:'<span></span>',footerTemplate:'<div style="font-size:8px;text-align:center;width:100%">Test365Alm · <span class="pageNumber"></span> / <span class="totalPages"></span></div>'});await dialog.getByRole('button',{name:'返回业务页面'}).click()
+   await select(viewer,tenantId,project.id);await viewer.getByRole('button',{name:'偏差清单报告',exact:true}).click();const dialog=viewer.getByRole('dialog',{name:'业务报告'});await expect(dialog.getByRole('heading',{name:'偏差清单报告',exact:true})).toBeVisible();await expect(dialog).toContainText('原始来源及关联');await expect(dialog).toContainText('FAIL');await expect(dialog).toContainText('PASS');await dialog.getByLabel('报告标题关键词').fill('清洁残留');await dialog.getByRole('button',{name:'应用报告筛选'}).click();await expect(dialog.getByRole('heading',{name:/BUG-.*清洁残留偏差/})).toBeVisible();await expect(dialog.getByRole('heading',{name:/BUG-.*重开后历史复测/})).toHaveCount(0);await dialog.getByLabel('报告标题关键词').fill('不存在的标题');await dialog.getByRole('button',{name:'应用报告筛选'}).click();await expect(dialog).toContainText('当前范围无偏差');await dialog.getByLabel('报告标题关键词').fill('');await dialog.getByRole('button',{name:'应用报告筛选'}).click();await expect(dialog.getByRole('heading',{name:/BUG-.*清洁残留偏差/})).toBeVisible();await dialog.screenshot({path:resolve(output,'deviation-report.png')});await viewer.pdf({path:resolve(output,'deviation-report.pdf'),preferCSSPageSize:true,printBackground:true,displayHeaderFooter:true,headerTemplate:'<span></span>',footerTemplate:'<div style="font-size:8px;text-align:center;width:100%">Test365Alm · <span class="pageNumber"></span> / <span class="totalPages"></span></div>'});await dialog.getByRole('button',{name:'返回业务页面'}).click()
    await viewer.getByRole('button',{name:'偏差清单报告',exact:true}).click();await expect(dialog).toContainText('数据完整加载')
    await dialog.getByLabel('测试集范围').selectOption(set.id);await dialog.getByRole('button',{name:'应用报告筛选'}).click();await expect(dialog).toContainText(set.name)
    await expect(dialog).toContainText('历史解决周期的复测记录；不证明当前周期通过')

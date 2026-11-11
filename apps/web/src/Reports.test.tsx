@@ -43,6 +43,17 @@ describe('report history and complete read contract',()=>{
 
 describe('report integrity and current cycle',()=>{
  const setReport=():Report=>({...report(),kind:'SET',filters:{testSetId:'set',status:''},facts:{testSet:{id:'set',project_id:'p',name:'测试集'},totalInstances:1,counts:{matched:1,categories:{NOT_RUN:0,RUNNING:0,PAUSED:0,PASS:0,FAIL:1,BLOCKED:0},completionRate:1,passRate:0},otherActiveAttempts:0,relatedDefects:0},steps:[],items:[{id:'i',title:'失败用例',test_case_id:'case',test_revision_id:'revision',revision_no:1,status:'FAIL',conclusion:'FAIL',run_id:'run',attempt_id:'a',started_at:null,finished_at:null,otherActiveAttempts:0}]})
+ it.each(['CSRF_REJECTED','REPORT_LIMIT_EXCEEDED','INVALID_REQUEST','SERVICE','NETWORK'])('clears only report content for %s and retains ordinary host semantics',async(code)=>{
+  const denied=vi.fn(),read=vi.fn().mockResolvedValueOnce(Response.json(setReport()))
+  if(code==='NETWORK')read.mockRejectedValueOnce(new TypeError('offline'))
+  else read.mockResolvedValueOnce(Response.json({code},{status:code==='CSRF_REJECTED'?403:code==='INVALID_REQUEST'?400:code==='REPORT_LIMIT_EXCEEDED'?422:503}))
+  vi.stubGlobal('fetch',read)
+  render(<ReportLauncher projectId="p" target={{kind:'SET',setId:'set'}} label="报告" onDenied={denied}/>);fireEvent.click(screen.getByText('报告'));await screen.findByText(/数据完整加载/)
+  fireEvent.click(screen.getByText('应用报告筛选'));await screen.findByRole('alert')
+  expect(denied).not.toHaveBeenCalled();expect(screen.queryByText(/数据完整加载/)).toBeNull();expect(screen.getByText('打印 / 另存为 PDF')).toBeDisabled()
+  if(code==='CSRF_REJECTED')expect(screen.getByRole('alert')).toHaveTextContent('安全校验未通过')
+  fireEvent.click(screen.getByText('返回业务页面'));expect(screen.queryByRole('dialog')).toBeNull()
+ })
  it('rejects plausible totals that contradict row classifications and rates',()=>{
   const target={kind:'SET' as const,setId:'set'}
   expect(parseReport(setReport(),'p',target)).toBeTruthy()
@@ -75,7 +86,7 @@ describe('report integrity and current cycle',()=>{
  })
  it('notifies scope loss only for access errors and discards a late old project response',async()=>{
   const denied=vi.fn();let late!:(r:Response)=>void
-  vi.stubGlobal('fetch',vi.fn().mockImplementationOnce(()=>new Promise<Response>(r=>{late=r})).mockResolvedValue(new Response(JSON.stringify({code:'FORBIDDEN',message:'denied'}),{status:403})))
+  vi.stubGlobal('fetch',vi.fn().mockImplementationOnce(()=>new Promise<Response>(r=>{late=r})).mockResolvedValue(new Response(JSON.stringify({code:'FORBIDDEN'}),{status:403})))
   const view=render(<ReportLauncher projectId="p" target={target} label="报告" onDenied={denied}/>);fireEvent.click(screen.getByText('报告'))
   view.rerender(<ReportLauncher projectId="new" target={target} label="报告" onDenied={denied}/>);await screen.findByRole('alert');expect(denied).toHaveBeenCalledOnce();late(new Response(JSON.stringify(report())));await Promise.resolve();expect(screen.queryByText('旧用例 · 修订 1')).toBeNull();expect((screen.getByText('打印 / 另存为 PDF') as HTMLButtonElement).disabled).toBe(true)
  })
