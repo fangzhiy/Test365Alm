@@ -127,10 +127,14 @@ test('real Keycloak UI reports preserve historical FAIL after related PASS and p
     await expect(dialog).toHaveCount(0);await expect(execution).toContainText('当前会话没有读取测试集和运行记录的权限。')
     await expect(execution.locator('.execution-set')).toHaveCount(0);await expect(execution.locator('.execution-detail')).toHaveCount(0)
     await expect(page.getByRole('button',{name:'打印 / 另存为 PDF'})).toHaveCount(0)
+    checkpoint('真实 401 后原报告和执行宿主均已清理')
    }finally{await logoutTab.close()}
    // Restore only after proving the untouched tab cleared on the actual 401;
    // retain the independently tested membership revocation path below.
-   await login(page,mu,mp);await select(page,tenantId,project.id)
+   // Local logout leaves the IdP SSO session intact. Restore via the ordinary
+   // application entry instead of requiring a username form that SSO skips.
+   await page.goto('/');await page.getByRole('link',{name:'登录 Test365Alm'}).click()
+   await expect(page.getByRole('button',{name:'退出登录'})).toBeVisible();await select(page,tenantId,project.id)
    await execution.getByRole('button',{name:set.name,exact:false}).click();await expect(execution.locator('.execution-detail')).toBeVisible()
   })
   await stage('VIEWER 偏差清单入口、真实来源及复测周期和中文 PDF',async()=>{
