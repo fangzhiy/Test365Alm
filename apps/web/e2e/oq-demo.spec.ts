@@ -5,7 +5,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { isOwnedRun, seedProjectAccessScope, assertStepEvidenceFacilities } from './ownedR03'
 import { confirmSimulatedSignature } from './signatureUi'
-import { checkDefectCompletion, readDefectProof, selectCycleRetest, type DefectCompletion } from './oqDefectResume'
+import { checkDefectCompletion, readDefectProof, resumeAfterDefectPreflight, selectCycleRetest, type DefectCompletion } from './oqDefectResume'
 import { oqFixRegressions } from './oqFixRegressions'
 
 const envOrigin=()=>process.env.OQ_DEMO_ORIGIN
@@ -68,15 +68,11 @@ test('real Keycloak UI SYNTHETIC OQ-DEMO-01 fourteen cases complete reviewed sig
  else{saved={scenario:'OQ-DEMO-01',version:definition.version,classification:'SYNTHETIC',projectId:project.id,tenantId:scope.tenantId,cases:{},stages:[]};save()}
  const state=saved
  const proof=(id:string)=>readDefectProof(path=>get(page,path),path=>pages(page,path),root,id)
- // Preflight completed defects before any business action. v1.1 has no per-defect
- // marker: only a read-verified, unique original cycle can backfill it locally.
- for(const identity of ['OQD-12','OQD-13']){
-  const item=state.cases[identity]
-  if(item?.defectCompletion || state.stages.includes('closed-and-reopened-defects')){
-   expect(item?.defectId,'Completed defect identity missing; preserve checkpoint').toBeTruthy()
-   item.defectCompletion=checkDefectCompletion(await proof(item.defectId!),identity==='OQD-12'?'CLOSED':'REOPENED',item.defectCompletion,true);save()
-  }
- }
+ await resumeAfterDefectPreflight(['OQD-12','OQD-13'].map(identity=>({
+  defectId:state.cases[identity]?.defectId,expectedStatus:identity==='OQD-12'?'CLOSED':'REOPENED',
+  marker:state.cases[identity]?.defectCompletion,completed:state.stages.includes('closed-and-reopened-defects'),
+  record:(marker:DefectCompletion)=>{state.cases[identity].defectCompletion=marker;save()},
+ })),proof,async()=>{
  await stage('授权及目录：保留旧场景，建立独立固定版本',async()=>{
   const members=await get(admin,root+'/members')
   for(const [id,role]of[[mid,'PROJECT_MEMBER'],[vid,'PROJECT_VIEWER']]){
@@ -268,5 +264,6 @@ test('real Keycloak UI SYNTHETIC OQ-DEMO-01 fourteen cases complete reviewed sig
   writeFileSync(resolve(dir,'evidence-index.json'),JSON.stringify({scenario:definition.scenario,version:definition.version,classification:'SYNTHETIC',notice:definition.notice,projectId:state.projectId,setId:state.setId,roles:{author:mid,executor:mid,reviewer:aid,viewer:vid},cases:index,summary,defects,defectHistory,samples:output},null,2))
  })
  if(!persistent)await oqFixRegressions(page,admin,scope,mid,rootDir,get,write,pages,choose)
+ })
  }finally{await ac.close();await vc.close()}
 })

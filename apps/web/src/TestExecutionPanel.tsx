@@ -50,6 +50,10 @@ export default function TestExecutionPanel({ projectId, access, resetSignal = 0 
   const [sets, setSets] = useState<TestSet[]>([])
   const [selectedSet, setSelectedSet] = useState<TestSet | null>(null)
   const [instances, setInstances] = useState<TestInstance[]>([])
+  // Set-list readiness does not establish freshness of the selected grid.
+  // A timeout invalidates its request round before catch can run, so retain
+  // this independent invalidation until a full grid read succeeds.
+  const [gridVerified, setGridVerified] = useState(false)
   const [gridFilters, setGridFilters] = useState<GridFilters>({})
   const gridFilterRef = useRef<GridFilters>({})
   const [runs, setRuns] = useState<Run[]>([])
@@ -113,7 +117,7 @@ export default function TestExecutionPanel({ projectId, access, resetSignal = 0 
   }
   const finish = (round: number, controller: AbortController) => { const active = current(round, controller); if (active) { controllerRef.current = null; clearTimeoutRef() } return active }
   const current = (round: number, controller: AbortController) => roundRef.current === round && controllerRef.current === controller && activeProjectRef.current === projectId
-  const reset = () => { signatureLockContext.current = null; setSignatureLocked(false); gridFilterRef.current = {}; setGridFilters({}); setSets([]); setSelectedSet(null); setInstances([]); setRuns([]); setSelectedRun(null); setAttempts([]); setSelectedAttempt(null); setActuals({}); setOutcomes({}); draftBindingRef.current = null; setConflict(null); setSummary(null); setSetsCursor(null); setInstancesCursor(null); setRunsCursor(null); setAttemptsCursor(null); setAvailableCases([]); setAvailableRevisions([]); setTestCaseId(''); setTestRevisionId(''); setNotice(''); setPending(null); pendingIntentKeysRef.current.clear() }
+  const reset = () => { setGridVerified(false); signatureLockContext.current = null; setSignatureLocked(false); gridFilterRef.current = {}; setGridFilters({}); setSets([]); setSelectedSet(null); setInstances([]); setRuns([]); setSelectedRun(null); setAttempts([]); setSelectedAttempt(null); setActuals({}); setOutcomes({}); draftBindingRef.current = null; setConflict(null); setSummary(null); setSetsCursor(null); setInstancesCursor(null); setRunsCursor(null); setAttemptsCursor(null); setAvailableCases([]); setAvailableRevisions([]); setTestCaseId(''); setTestRevisionId(''); setNotice(''); setPending(null); pendingIntentKeysRef.current.clear() }
   const bindDraftStep = (stepKey: string, baseVersion: number | undefined) => {
     if (!selectedRun || !selectedAttempt || baseVersion === undefined) return
     const currentBinding = draftBindingRef.current
@@ -172,18 +176,20 @@ export default function TestExecutionPanel({ projectId, access, resetSignal = 0 
   }
   const loadSet = async (set: TestSet) => {
     if (signaturePendingInScope()) return
+    setGridVerified(false)
     const { round, controller } = begin('测试集详情请求超时，请稍后重试', true); setPending('set-detail'); setSelectedSet(set); setInstances([]); setRuns([]); setSelectedRun(null); setAttempts([]); setSelectedAttempt(null); setActuals({}); setOutcomes({}); draftBindingRef.current = null; setState('loading'); setNotice('')
-    try { const [detail, listed, listedRuns, runSummary] = await Promise.all([executionApi.getSet(projectId, set.id, { signal: controller.signal }), readInstancesPage(set.id, null, controller.signal), readRunsPage(set.id, null, controller.signal), readSummary(set.id, controller.signal)]); if (!current(round, controller)) return; setSelectedSet(detail); setInstances(listed.items); setInstancesCursor(listed.nextCursor); setRuns(listedRuns.items); setRunsCursor(listedRuns.nextCursor); setSummary(runSummary); setState('ready') }
+    try { const [detail, listed, listedRuns, runSummary] = await Promise.all([executionApi.getSet(projectId, set.id, { signal: controller.signal }), readInstancesPage(set.id, null, controller.signal), readRunsPage(set.id, null, controller.signal), readSummary(set.id, controller.signal)]); if (!current(round, controller)) return; setSelectedSet(detail); setInstances(listed.items); setGridVerified(true); setInstancesCursor(listed.nextCursor); setRuns(listedRuns.items); setRunsCursor(listedRuns.nextCursor); setSummary(runSummary); setState('ready') }
     catch (error) { if (!current(round, controller)) return; if (isScopeAccessError(error)) { invalidateScope(); return }; setState('error'); setNotice(isAbort(error) ? '测试集详情请求超时，请稍后重试' : messageFor(error)) }
     finally { if (finish(round, controller)) setPending(null) }
   }
   const refreshGrid = async (filters = gridFilterRef.current) => {
     if (signaturePendingInScope()) return
     if (!selectedSet) return
+    setGridVerified(false)
     const sameFilters = filters.status === gridFilterRef.current.status && filters.assigneeId === gridFilterRef.current.assigneeId
     gridFilterRef.current = filters; setGridFilters(filters); if(!sameFilters)setInstances([]); setInstancesCursor(null)
     const { round, controller } = begin('实例网格请求超时，请重新核对进度', true); setPending('grid-read')
-    try { const result = await readInstancesPage(selectedSet.id, null, controller.signal); if (!current(round,controller)) return; setInstances(result.items); setInstancesCursor(result.nextCursor); setState('ready') }
+    try { const result = await readInstancesPage(selectedSet.id, null, controller.signal); if (!current(round,controller)) return; setInstances(result.items); setGridVerified(true); setInstancesCursor(result.nextCursor); setState('ready') }
     catch (error) { if (current(round,controller)) { if (isScopeAccessError(error)) invalidateScope(); else {setInstances([]);setNotice(messageFor(error))} } }
     finally { if (finish(round,controller)) setPending(null) }
   }
@@ -340,7 +346,7 @@ export default function TestExecutionPanel({ projectId, access, resetSignal = 0 
         {canWrite(access) && <form className="execution-add-form" onSubmit={addInstance}><strong>加入已保存用例修订</strong><label>用例 ID<input aria-label="用例 ID" value={testCaseId} onChange={(event) => setTestCaseId(event.target.value)} required disabled={interactionLocked} /></label><label>修订 ID<input aria-label="修订 ID" value={testRevisionId} onChange={(event) => setTestRevisionId(event.target.value)} required disabled={interactionLocked} /></label><button className="primary-button" type="submit" disabled={interactionLocked}>加入实例</button></form>}
         <h4>测试实例</h4><ExecutionGrid key={`${projectId}:${selectedSet.id}:${accessKey}:${resetSignal}`} projectId={projectId} instances={instances} writable={canWrite(access)}
           disabled={state !== 'ready' || (interactionLocked && pending !== 'grid-assignment')} filters={gridFilters} nextCursor={instancesCursor}
-          refreshing={pending === 'grid-read' || state !== 'ready'}
+          refreshing={!gridVerified || pending === 'grid-read' || state !== 'ready'}
           onFilter={filters=>void refreshGrid(filters)} onRefresh={()=>void refreshGrid()} onMore={()=>void loadMoreInstances()}
           onOpen={item=>item.runId && void loadRun({id:item.runId})} onStart={item=>void startRun(item)}
           onAssigned={assignedInstance} onLock={lockGrid} onDenied={invalidateScope}/>

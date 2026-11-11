@@ -1,7 +1,8 @@
 import { expect, type Page, test } from '@playwright/test'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { checkDefectCompletion, readDefectProof, selectCycleRetest } from './oqDefectResume'
+import { captureApiWrites } from './oqRequestAudit'
+import { checkDefectCompletion, readDefectProof, resumeAfterDefectPreflight, selectCycleRetest, type DefectCompletion } from './oqDefectResume'
 
 // Reuse the runner's actual OIDC/CSRF transport; no intercepted API or SQL fixture.
 export async function oqFixRegressions(page:Page, admin:Page, scope:{tenantId:string;domainId:string}, memberId:string, rootDir:string,
@@ -43,23 +44,48 @@ export async function oqFixRegressions(page:Page, admin:Page, scope:{tenantId:st
   await finish(await read<Attempt>(path(rt.attemptId)),'PASS');await transition('REOPENED')
   phase='completed-reopened'
   const completed=await proof(d.id),marker=checkDefectCompletion(completed,'REOPENED',undefined,true)!
+  const checkpointFile=resolve(diagnostics,'fix02-recovery-checkpoint.json')
+  writeFileSync(checkpointFile,JSON.stringify({version:'1.1',projectId:project.id,defectCompletion:marker},null,2))
   // Lost local marker after a successful terminal response is recovered by read-only proof.
   expect(checkDefectCompletion(completed,'REOPENED')).toEqual(marker)
-  const snapshot=async()=>({defect:await read(`${root}/defects/${d.id}`),retests:await all(page,`${root}/defects/${d.id}/retests`),audit:await all(page,`${root}/history/defect/${d.id}`),attempts:await all(page,`${root}/runs/${run.run.id}/attempts/page`),signatures:await read(`${root}/signatures/DEVIATION_CLOSURE/${d.id}/${d.currentRevision.id}`)})
+  const snapshot=async()=>{
+   const revisions=await all(page,`${root}/defects/${d.id}/revisions`) as Revision[]
+   const attempts=await all(page,`${root}/runs/${run.run.id}/attempts/page`) as Attempt[]
+   return {defect:await read(`${root}/defects/${d.id}`),revisions,retests:await all(page,`${root}/defects/${d.id}/retests`),audit:await all(page,`${root}/history/defect/${d.id}`),attempts,
+    signatures:{closure:await Promise.all(revisions.map(r=>read(`${root}/signatures/DEVIATION_CLOSURE/${d.id}/${r.id}`))),
+     completion:await Promise.all(attempts.map(a=>read(`${root}/signatures/RUN_COMPLETION/${run.run.id}/${a.id}`))),
+     approval:await read(`${root}/signatures/TEST_APPROVAL/${c.id}/${c.currentRevision.id}`)}}
+  }
   const stable=await snapshot()
   expect(checkDefectCompletion(await proof(d.id),'REOPENED',marker,true)).toEqual(marker)
   expect(checkDefectCompletion(await proof(d.id),'REOPENED',marker,true)).toEqual(marker)
   expect(await snapshot()).toEqual(stable)
   phase='stable-completed-resume'
   await transition('RESOLVED')
-  const before=await snapshot(),current=await proof(d.id),writes:string[]=[]
-  const track=(request:import('@playwright/test').Request)=>{if(request.method()!=='GET'&&request.url().includes(root))writes.push(request.method()+' '+new URL(request.url()).pathname)}
-  page.on('request',track)
-  let conflict=''
-  try{checkDefectCompletion(await proof(d.id),'REOPENED',marker,true)}catch(e){conflict=(e as Error).message}
-  page.off('request',track)
-  const after=await snapshot()
-  expect(conflict).toContain('演示恢复冲突');expect(writes).toEqual([]);expect(after).toEqual(before)
+  const audit=captureApiWrites(page.request,root)
+  let conflict='',actionsExecuted=0
+  let before:Awaited<ReturnType<typeof snapshot>>,after:Awaited<ReturnType<typeof snapshot>>
+  let probeWrites:string[]=[]
+  try{
+   // Genuine, isolated business write proves this observes APIRequestContext.
+   // It is not blocked/intercepted and its real 2xx response is required.
+   await put(root+'/test-sets',{name:'SYNTHETIC FIX02 write-counter probe',description:'Independent controlled write'})
+   probeWrites=[...audit.writes]
+   expect(probeWrites).toEqual([`POST ${root}/test-sets`])
+   audit.clear()
+   before=await snapshot()
+   try{
+    const checkpoint=JSON.parse(readFileSync(checkpointFile,'utf8')) as {projectId:string;defectCompletion:DefectCompletion}
+    expect(checkpoint.projectId).toBe(project.id)
+    await resumeAfterDefectPreflight([{defectId:d.id,expectedStatus:'REOPENED',marker:checkpoint.defectCompletion,completed:true,record:()=>{}}],proof,async()=>{
+     actionsExecuted++
+     await transition('REOPENED')
+    })
+   }catch(e){conflict=(e as Error).message}
+   after=await snapshot()
+  }finally{audit.stop()}
+  const current=await proof(d.id),writes=[...audit.writes]
+  expect(conflict).toContain('演示恢复冲突');expect(actionsExecuted).toBe(0);expect(writes).toEqual([]);expect(after!).toEqual(before!)
   phase='new-cycle-conflict-without-writes'
   expect(selectCycleRetest(current.retests,current.resolutionId!)).toBeUndefined()
   const currentRetest=await put<{attemptId:string}>(`${root}/defects/${d.id}/retests`,{},'POST',d.rowVersion)
@@ -68,7 +94,7 @@ export async function oqFixRegressions(page:Page, admin:Page, scope:{tenantId:st
   const edited=await proof(d.id),selected=selectCycleRetest(edited.retests,current.resolutionId!)!
   expect(edited.resolutionId).toBe(current.resolutionId);expect(edited.revisionId).not.toBe(edited.resolutionId)
   expect(selected.attemptId).toBe(currentRetest.attemptId);expect(selected.resolvedRevisionId).not.toBe(oldCycle)
-  evidence.recovery={defectId:d.id,marker,newCycle:current.resolutionId,editedRevision:edited.revisionId,oldCycle,selected,conflict,writes,before,after}
+  evidence.recovery={defectId:d.id,marker,newCycle:current.resolutionId,editedRevision:edited.revisionId,oldCycle,selected,conflict,writes,probeWrites,actionsExecuted,before:before!,after:after!}
   writeFileSync(resolve(diagnostics,'fix01-regressions.json'),JSON.stringify(evidence,null,2))
   await finish(await read<Attempt>(path(currentRetest.attemptId)),'PASS')
   phase='current-cycle-retest-finished'

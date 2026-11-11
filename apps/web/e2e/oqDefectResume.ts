@@ -11,6 +11,25 @@ export type DefectProof = {
 type Revision = {id:string; revisionNo:number; status:string}
 type Defect = {id:string;projectId:string;rowVersion:number;currentRevision:Revision}
 type ReportItem = {id:string;revision:{id:string;status:string};resolved_revision_id:string|null}
+type CompletedStage = {
+ defectId?:string; expectedStatus:string; marker?:DefectCompletion; completed:boolean
+ record:(marker:DefectCompletion)=>void
+}
+
+// The scene runner and isolated regression use this same boundary: every
+// completed identity must be read-verified before any remaining business work.
+export async function resumeAfterDefectPreflight(stages:CompletedStage[], read:(id:string)=>Promise<DefectProof>, work:()=>Promise<void>) {
+ const verified:Array<{stage:CompletedStage;marker:DefectCompletion}>=[]
+ for(const stage of stages){
+  if(!stage.marker && !stage.completed)continue
+  if(!stage.defectId)throw new Error('演示恢复冲突：已完成偏差身份缺失；保留现场，不追加流转')
+  const marker=checkDefectCompletion(await read(stage.defectId),stage.expectedStatus,stage.marker,true)!
+  verified.push({stage,marker})
+ }
+ for(const {stage,marker} of verified)stage.record(marker)
+ await work()
+}
+
 export async function readDefectProof(read:(path:string)=>Promise<unknown>, all:(path:string)=>Promise<unknown[]>, root:string, id:string):Promise<DefectProof> {
  const d=await read(`${root}/defects/${id}`) as Defect
  const report=await read(`${root}/reports/defects`) as {items:ReportItem[]}

@@ -1,10 +1,19 @@
 import { expect, it } from 'vitest'
-import { checkDefectCompletion, readDefectProof, selectCycleRetest, type DefectProof } from '../e2e/oqDefectResume'
+import { checkDefectCompletion, readDefectProof, resumeAfterDefectPreflight, selectCycleRetest, type DefectProof } from '../e2e/oqDefectResume'
 
 it('never borrows a historical PASS when the current resolution has no retest', () => {
  expect(selectCycleRetest([{id:'old-pass',resolvedRevisionId:'old',runId:'run',attemptId:'pass'}], 'current')).toBeUndefined()
 })
 const proof:DefectProof={id:'d',revisionId:'reopened',stateEntryId:'reopened',rowVersion:3,status:'REOPENED',resolutionId:'resolution',resolutionEntries:['resolution'],retests:[{id:'rt',resolvedRevisionId:'resolution',runId:'run',attemptId:'pass',status:'FINISHED',conclusion:'PASS'}]}
+it('the actual resume orchestrator rejects preflight before any subsequent business action',async()=>{
+ const marker=checkDefectCompletion(proof,'REOPENED',undefined,true)!
+ let actions=0,recorded=0
+ const stages=[{defectId:'d',expectedStatus:'REOPENED',marker,completed:true,record:()=>{recorded++}}]
+ await expect(resumeAfterDefectPreflight(stages,async()=>({...proof,status:'RESOLVED',revisionId:'new'}),async()=>{actions++})).rejects.toThrow('演示恢复冲突')
+ expect(actions).toBe(0);expect(recorded).toBe(0)
+ await resumeAfterDefectPreflight(stages,async()=>proof,async()=>{actions++})
+ expect(actions).toBe(1);expect(recorded).toBe(1)
+})
 it('backfills a v1.1 completion by reading a unique original cycle, then rejects a new user cycle',()=>{
  const marker=checkDefectCompletion(proof,'REOPENED',undefined,true)!
  expect(marker).toMatchObject({revisionId:'reopened',resolutionId:'resolution',attemptId:'pass'})
