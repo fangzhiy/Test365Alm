@@ -1,68 +1,38 @@
-# 暂停后的接手与恢复指南
+# 恢复开发指南（单Codex）
 
-先读 [当前工作台](../coordinator-handoff.md)、[交接快照](2026-11-11-status.md) 和 [证据索引](evidence-index.md)。本指南记录恢复顺序，不是恢复授权；只有用户明确恢复后才启动F/G或真实资源。
+现行规则以[AGENTS.md](../../AGENTS.md)和[开发工作台](../coordinator-handoff.md)为准。本指南取代旧总管/worker/独立审查及每轮资源窗口流程。F报告、G/A03仍暂停；只有用户明确恢复后才继续。
 
-## 可以直接进行的接手核对
+## 开工
 
-1. 阅读外层和代码仓库AGENTS.md，确认当前总管身份；原Claude总管已转交接，不并行调度或移动dev。
-2. 读取实时Git状态、远端默认分支、main/dev关系。交接前发布基线是cc54867，交接文档提交在其之后；不要从旧功能分支或旧默认分支继续集成。
-3. 查看GitHub对应提交的Actions运行，将最新远端CI结果与历史本机验证分开记录。
-4. 读取相关Trail节点和learning，再定位代码；不改旧learning。正式改动完成后执行trail check，真实冲突修复或在提交说明逐项解释。
+读取规则、工作台、相关契约和实时Git状态，再用Trail定位代码。主目录固定dev；唯一开发worktree是 `C:/Users/22538/orca/workspaces/Test365Alm/codex-main`，分支codex-main。由当前Codex直接完成实现和验证，不创建worker、审查者或新的功能worktree。
 
-主代码目录内可使用以下只读命令；获取远端状态会更新远端跟踪引用：
+开工可核对 `git status --short --branch`、`git log -5 --oneline` 和远端main/dev。确认开发区干净后，可在codex-main将dev以 `git merge --ff-only dev` 同步过来。不得覆盖用户改动。
 
-```powershell
-git status --short --branch
-git log -5 --oneline
-git fetch origin
-git ls-remote --symref origin HEAD refs/heads/main refs/heads/dev
-git log --oneline origin/main..dev
-```
+## 一个功能的交付
 
-主目录固定dev，不在那里开展功能实现。总管现有集成worktree为integration/audit；功能交给Orca管理的独立worktree，不自行创建重复worker或Git worktree。
+1. 在codex-main完成一个功能，保留现有测试和数据约束。
+2. Java21后端单元测试；Linux容器内完整集成测试；前端lint/test/build；trail check。
+3. 全通过后，在docs/reviews只写一份简短记录：做了什么、实际测试结果、已知限制。重要原因和取舍用trail note。
+4. 合入dev，验收成果推进main并推送。main/dev承担原有角色，不强推，不删除历史分支。
 
-## 现有Orca任务
+不人工逐条核对方法名，不申请每轮独占窗口，不额外制作独立资源清理核验报告。既有自动化门禁继续执行，不删测试、不加retry。只清理自己的临时测试资源，不碰其他项目容器、test365alm-r02-postgres-1、5173/8080，不改Defender；私密文件不入库。
 
-Run为 `run_ac1961a61108`，repo ID为 `7d777de0-65fb-4c9d-bb61-96d9ab74c24f`。本机CLI路径为 `C:/Users/22538/AppData/Local/Programs/orca/resources/bin/orca.exe`；新会话先按orchestration技能解析实际CLI并读取版本匹配指南。
+## 用户明确恢复后，先F再G
 
-| 任务 | ID | 交接时系统状态 | 用户执行边界 |
-|---|---|---|---|
-| B业务字段 | task_6b387a82053b | completed | 已验收 |
-| C执行网格 | task_f8104afdeffd | completed | 已验收 |
-| D复核 | task_7c52218a8a7e | completed | 已验收 |
-| E签署 | task_c0b740c62973 | completed | 已验收 |
-| F报告 | task_cabd1dbc25ec | ready | 暂停，不因ready自动启动 |
-| G/A03 | task_6d9e7ae23e43 | pending，依赖F | 暂停 |
-| 暂停通知 | task_117b21ef9b8e | completed | E已确认停止后续工作 |
+F做运行/测试集/偏差报告：授权数据、冻结步骤、实际结果、结论、真实执行时间、附件、偏差、复核和三种含义签署。历史未知时间仍明确未知；中文打印/PDF需渲染核对。技术通过和业务方格式认可分开记录，不替用户宣称认可。
 
-E原dispatch为ctx_459c810d228c；暂停确认dispatch为ctx_4892bb53646b。不要因旧消息含“等待放行”或“可worker_done”而重启已结束窗口。Orca消息自动唤醒，不轮询邮箱；仅文档任务不派生功能任务。
+G在F验收合入后开展真实授权A03十四用例闭环：目录→复核→执行→偏差→复测→模拟签署→报告→历史。区分真实授权原文与合成演示数据；不得把演示种子当业务全集已验收。
 
-## 用户明确恢复后：先F，再G
+旧Orca F任务task_cabd1dbc25ec为ready、G任务task_6d9e7ae23e43为pending，仅作为历史进度参考，不因此自动启动worker。
 
-F先读取现有任务原规格、路线图第7节、交付计划和当前契约，使用最新已集成基线。保留现有任务ID和依赖，不另建重复任务。
+## 迁移、历史和证据
 
-F范围是授权数据的运行/测试集/偏差打印报告：固定步骤、实际结果、结论、真实执行时间、附件证据、偏差、复核和三种含义签署。历史未知时间继续明确未知，不能用最近保存时间补造。报告绑定确切历史快照，不能把最新状态替换历史；技术布局通过与用户业务格式认可分别记录。
+当前正式V1..V26；旧历史迁移不改。如新功能确需schema变更，只追加新版本并相应顺延故障探针；报告优先授权只读查询。权限/RLS/强版本/持久幂等/重放重新授权、不可变历史、审计与Outbox同事务仍然必须保留。
 
-先提交契约与离线薄片、逐名库存和回归；真实DB/HTTP/资产/浏览器验证须先交确切SHA供总管审查并安排独占串行窗口。F不扩为真实签名厂商认证、数据迁移或G/A03。中文PDF/打印结果需要实际渲染和逐页视觉检查。
+旧local-evidence集中在 `D:/code/ProOrca/Wetest365ALM/evidence-archive/<原worktree名>/`，见[证据索引](evidence-index.md)。不能因原worktree删除而把历史失败改为通过，也不能把后续文档提交写成产品测试源。
 
-G仅在F验收并合入后进行。先区分真实授权A03原文与合成演示数据，不能把演示种子宣称为真实业务全集验收；沿目录→复核→执行→偏差→复测→模拟签署→报告→历史验证十四用例，附最终组合门禁、独立故障探针和精确清理证据。
+## 演示环境
 
-## 后续变更必须保留的边界
+四个test365alm-demo容器已正常停止，四个数据卷保留。codex-main已保留原凭据/realm/播种记录并重建workspace状态，运行 `python tools/demo_up.py` 可由该目录接回演示；本次没有启动它。停止用 `python tools/demo_down.py`，不要delete-data。
 
-- 当前库存102unit/218IT/82专项、原五条真实UI身份及六Job全部保留；新增测试先逐名扩展，缺失/替换/重复/失败/错误/跳过都应失败。不能任意改selector或降低count刷绿。
-- 当前正式V26。旧V1..V26不改；新增迁移/故障探针按实际文件分配版本，不预建runtime角色掩盖schema-only升级问题。
-- 当前权限、RLS、强版本、持久幂等及重放重新授权、不可变历史、审计与Outbox同事务不退化。终态签署独立记录，不为签署自增终态业务版本。
-- 未知/in-flight命令保留原body/ETag/key，列表/目录迟到回调先检查scope锁；真正项目/身份/权限/reset和拒绝访问必须清空并隔离迟到响应。
-- Windows实际使用Java21。真实扫描放在已验证Linux路径；不改Defender、不mock扫描，不触碰W1、日常env或未知Docker资源。避开5173/8080/15173/18083。
-
-## 每个新真实窗口的结束条件
-
-开始前重新核验context/Engine、保护基线、唯一run/source/project标签、完整资源ID/Created/Image和确切卷名。只允许确切源archive、随机回环端口与凭据。密码不进入产品API或脱敏证据。
-
-同一窗口串行执行固定阶段，首失败停止后续阶段，不自动重跑；保留失败报告和准确NOT_RUN。修改后以新提交申请新窗口，不拿前轮部分绿色替代新一轮完整业务流。
-
-结束后保留runner原结果，再独立核验完整ID和精确卷名不存在、run/project所有资源标签空、生成秘密删除、捕获PID+Created消失及所属Java/Node0，并核对保护基线。只处理有归属证明的本任务资源，禁止全局prune。
-
-## 验收与发布
-
-总管复核确切源、证据适用范围和清理后，原worker交接逐字归档到docs/reviews，写总管review，更新清单、路线图第7节及工作台，再本地合入dev。验证后的同一交付结果推进main并推送main/dev；旧分支保留，不强推。推送GitHub不等于部署授权。
+如需从主目录启动，先按同样方法迁移私有配置并用现有归属守卫重建workspace状态；不要两处同时启动，不生成新密码去接旧卷。test365alm-r02-postgres-1和5173/8080始终受保护。

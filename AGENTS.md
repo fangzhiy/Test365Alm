@@ -1,28 +1,15 @@
 # Test365Alm 工作规则
 
-## 当前总管（2026-11-11 用户更新，优先于下文旧分工）
+## 当前开发方式（2026-11-11 用户决定，取代旧总管/worker/独立审查流程）
 
-- 用户已指定外层 Wetest365ALM 的 Codex 接任总管；原 Claude 总管转为交接方，不再并行派活或操作 dev，恢复额度后也不自动恢复总管身份。
-- 开工先读 `docs/coordinator-handoff.md`：当前负责人、工作线、验收差异与下一步以此及实时 Git 状态为准。旧的“Claude 始终是总管”私有记忆已失效。
-- 下文 Claude/Codex 的同 worktree 接力、主文件夹只集成、数据安全和测试要求继续有效；角色变更不代表任何功能自动验收或合并。
-
-## 当前阶段：演示优先（2026-11-10 起，优先于下文"轮次协作"中的文档要求）
-
-- 总纲是 `docs/alm-replacement-roadmap.md`：目标是替换内部 OpenText ALM，先做出能演示的核心功能（目录树、执行、复核、签署、审计、报告），跑通一个 OQ 测试集。
-- 流程从轻：保留自动化测试和 CI，改动要有测试；**不再**写 `docs/progress/runs/`、`docs/progress/inputs/` 的每轮证据文档，也不必每次更新 `docs/development-status.md`。改动说明写在 PR 描述里，值得留给后人的结论用 `trail note` 记下。
-- 下文的数据约束、安全边界（不可变修订、审计与 Outbox 同事务、权限、禁止提交秘密等）仍然有效。
-
-## Claude 与 Codex 接力（以 Claude 为主）
-
-- 分工：Claude 负责大纲和主要代码；Claude 额度不够时由 Codex 在**同一个文件夹、同一个分支**上接着写，回来后 Claude 审查并继续。不为接力新开分支。
-- 分支与文件夹：`dev` 是本地集成分支，主文件夹 `D:\code\ProOrca\Wetest365ALM\Test365Alm` 固定停在 `dev`，只用来合并，不在里面写功能。每个功能用 Orca 从 `dev` 新建一个 worktree（分支 `feat/<功能>`，文件夹在 `C:\Users\22538\orca\workspaces\Test365Alm\<名字>`），Claude 和 Codex 都开在这个 worktree 里接力；完成后在主文件夹把它合并回 `dev`。
-- 交出方（额度快用完、或用户说"交接"时）：
-  1. 提交全部改动，未完成也提交，提交信息以 `wip:` 开头；
-  2. 写或覆盖 `docs/handoff/<分支名>.md`：目标、已完成、下一步（具体到文件/函数）、怎么验证、注意事项；
-  3. 代码看不出来的结论（取舍、踩过的坑）用 `trail note` 记下，一起提交。
-- 接手方开工前：读 `docs/handoff/<当前分支名>.md`、`git log --oneline -15`、`git status`，再继续；完成后同样更新交接文件。
-- 合并回 `dev` 前：跑后端单元/集成测试和前端测试，运行 `trail check`；合并后删除该分支的交接文件，并更新 `docs/alm-replacement-roadmap.md` 第 7 节阶段状态。
-- 共享记忆只认仓库里的东西：本文件、路线图、`docs/handoff/`、`.trail/learnings/`。各智能体自己的私有记忆对方看不到，重要结论不要只放在那里。
+- 只保留主代码目录和一个从dev创建的 `codex-main` 开发worktree。由当前Codex直接开发，不派worker，不另派审查者，也不为每个功能创建新worktree。
+- 主目录 `D:/code/ProOrca/Wetest365ALM/Test365Alm` 固定dev，负责集成；开发目录 `C:/Users/22538/orca/workspaces/Test365Alm/codex-main` 使用codex-main分支。main是GitHub默认主分支，保存验收后的成果。
+- 一个功能完成后，运行后端单元测试、Linux容器中的完整集成测试、前端lint/test/build，再运行trail check。全部通过就合入dev；验收后的成果推进main并推送。不得把未运行写成通过。
+- 不再人工逐条核对测试名，不再为每轮申请独占资源窗口或编写资源清理的独立核验报告。既有自动化测试和门禁继续运行，不删测试、不增加retry，不弱化权限、RLS、不可变历史、审计/Outbox同事务等约束。
+- 每个功能只在 `docs/reviews/` 留一份简短记录：做了什么、实际测试结果、已知限制。值得留下的原因、取舍和排错结论用trail note记录；旧learning不直接改写。
+- F报告、G/A03仍暂停，只有用户明确恢复后才继续。开工读 `docs/coordinator-handoff.md`、本文件和实时Git状态；下面旧轮次描述仅为历史，不恢复旧派工或审批流程。
+- 不提交秘密；不碰其他项目容器、`test365alm-r02-postgres-1` 和5173/8080；不改Defender设置。只处理当前任务拥有的测试资源，正常收尾即可，无需另写独立资源报告。
+- 目标仍是演示优先：先完成内部ALM核心功能，再推进真实授权A03闭环；外部签名厂商、合规认证、迁移和部署不因此自动获准。
 
 ## 本机环境（Windows 开发机）
 
@@ -31,14 +18,11 @@
   - Git Bash：`export JAVA_HOME=D:/code/ProOrca/Wetest365ALM/.tools/jdk-21 PATH=/d/code/ProOrca/Wetest365ALM/.tools/jdk-21/bin:$PATH`
 - 用系统 Maven（`mvn`，3.9.14）即可：`cd apps/server; mvn -B -ntp test`；集成测试 `mvn -B -ntp -Pintegration verify`，需要 Docker Desktop 在运行（Testcontainers）。
 
-## 轮次协作
+## 记录与共享上下文
 
-- 每轮开始先读取本文件、`README.md`、相关实施方案/模块/契约、`docs/development-status.md` 和任务清单。
-- 先记录实际仓库、远端、分支、起始提交和工作区状态；不得把历史描述当作当前代码事实。
-- 每轮只执行用户明确授权的范围；保留用户及其他 Agent 的已有修改。
-- 每轮结束更新 `docs/development-status.md` 和 `docs/progress/runs/<round>-<task>.md`。
-- 进度记录必须区分通过、失败、未运行、不适用和阻塞；不得把文档校验写成业务验收。
-- 优先使用任务分支和 PR；没有实际 Git 仓库或远端时，明确记录，不能伪造提交、推送、PR 或审核结果。
+- 重要上下文只写入仓库规则、当前工作台、契约、简短功能记录和Trail learning，不依赖私有记忆。
+- 保留已有用户修改。文档或规则整理只做相应检查；产品逻辑发生变化时执行上面的完整功能验证流程。
+- 旧功能交接、测试证据和历史审查保留作事实参考，不因新流程而重写既有结果；原worktree证据已转存到外层evidence-archive。
 
 ## 项目状态
 

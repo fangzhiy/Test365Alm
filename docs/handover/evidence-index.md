@@ -26,25 +26,47 @@
 
 各行是各自时间点的真实验收，不是五套互不重叠的测试，不能相加声称覆盖更多独立方法。最新E组合保留既有方法，后端阶段为scan102/1→unit102→focused102/82→full102/218，全部逐名零F/E/S。
 
-## E本机证据位置
+## 证据现已集中归档
 
-下面路径相对 `C:/Users/22538/orca/workspaces/Test365Alm/feat-signature`。local-evidence被Git忽略，新的clone不会带上这些文件；需要在原机器保留worktree或另行做脱敏证据移交，不能从仅有Git源码推断它们仍存在。
+原11个worktree已删除，旧的C:/Users/22538/orca/workspaces路径只保留为历史来源。现有根目录为 `D:/code/ProOrca/Wetest365ALM/evidence-archive/`；每个 `<worktree名>/` 直接对应原local-evidence的内容，不再多套一层local-evidence。目录被外层.gitignore忽略，可能含私密运行材料，不能推送GitHub。
 
-| 相对位置 | 用途 |
+| 原工作区 | 归档目录名 | 源文件数=归档文件数 |
+|---|---|---:|
+| Test365Alm | Test365Alm/ | 0 |
+| audit-history | audit-history/ | 5,125 |
+| coordinator-handoff | coordinator-handoff/ | 0 |
+| feat-business-fields | feat-business-fields/ | 10,032 |
+| feat-execution-grid | feat-execution-grid/ | 20,286 |
+| feat-review | feat-review/ | 10,251 |
+| feat-signature | feat-signature/ | 15,758 |
+| integrate-audit | integrate-audit/ | 20 |
+| integrate-folders | integrate-folders/ | 0 |
+| r2-merge-w2 | r2-merge-w2/ | 10 |
+| w1-demo-env | w1-demo-env/ | 26 |
+| w2-folder-tree | w2-folder-tree/ | 28 |
+
+合计 **61,536文件 / 2,888,627,937字节**。源与归档的相对路径、大小和文件数核对一致；W1停止后再次拷贝核对。完整本机复制摘要在 `_metadata/archive-verification.json`，旧分支与提交保留。无证据的原目录记录为0。
+
+### E实际证据（相对 evidence-archive/feat-signature）
+
+| 位置 | 用途 |
 |---|---|
-| local-evidence/linux-tests/8eef9cc7836a4a6698d84fae4587db2f/ | 实际c549后端四阶段报告及runner结果 |
-| local-evidence/local-browser/78aa3de77a98483392c8f61b6a21043c/run.json | 实际3af82五UI、资产预检、scanner和runner清理结果 |
-| 同目录results.json | 五个确切完整身份、expected/status/retry与worker配置 |
-| 同目录ownership-start.json、manifest.json | 业务前完整资源身份、run/source/project和context/Engine |
-| local-evidence/signature/e3af82-final-window-review.json | 最终交接SHA、14文件SHA-256、实际源与复用后端边界 |
-| local-evidence/signature/e3af82-browser-start-independent.json | 业务前独立live归属核验 |
-| local-evidence/signature/e3af82-browser-independent-cleanup.json | 独立资源/秘密/进程清理和保护基线 |
-| local-evidence/signature/e3af82-browser-process-history.json | 37个PID+Created身份历史 |
-| local-evidence/signature/e3af82-browser-process-final.json | 最终进程独立核验 |
-| local-evidence/signature/e3af82-bounded-signature-timeline.json | 有界脱敏业务时间线；不含密码、Cookie或token |
-| local-evidence/signature/c549-linux-window-independent-cleanup-verified.json | 62完整后端容器ID的严格不存在核验 |
+| linux-tests/8eef9cc7836a4a6698d84fae4587db2f/ | 实际c549后端四阶段报告及runner结果 |
+| local-browser/78aa3de77a98483392c8f61b6a21043c/run.json | 实际3af82五UI及runner结果 |
+| 同目录results.json | 五条实际UI结果及执行配置 |
+| 同目录ownership-start.json、manifest.json | 历史业务前资源身份与标签 |
+| signature/e3af82-final-window-review.json | 原最终索引，保留原路径和哈希，不改写历史JSON |
+| signature/e3af82-browser-start-independent.json | 历史业务前独立核验 |
+| signature/e3af82-browser-independent-cleanup.json | 历史独立清理与保护基线 |
+| signature/e3af82-browser-process-history.json、e3af82-browser-process-final.json | 历史进程记录 |
+| signature/e3af82-bounded-signature-timeline.json | 脱敏业务时间线 |
+| signature/c549-linux-window-independent-cleanup-verified.json | 历史后端清理结果 |
 
-总管自己的独立证据位于 `C:/Users/22538/orca/workspaces/Test365Alm/integrate-audit/local-evidence/e-final-coordinator-cleanup.json`。worker和总管记录各自保留，不用一份覆盖另一份。发布前索引14份哈希已复核一致；校验以索引记录的字节为准，Windows checkout行尾与Git blob行尾可能不同。
+总管原始记录现为 `evidence-archive/integrate-audit/e-final-coordinator-cleanup.json`。原索引内local-evidence前缀应映射到对应归档根；docs路径仍按原提交查阅Git历史。原发布时14份哈希已校验，归档保留文件字节不变；Git文档blob/Windows checkout行尾差异仍属于原限制。
+
+### 演示私有配置
+
+原W1证据在 `evidence-archive/w1-demo-env/demo/`，额外的.env.demo和停止前私有配置备份在 `evidence-archive/_demo-config/w1-demo-env/`，不要打印或提交其中的秘密。正在保留的codex-main也有忽略的.env.demo及local-evidence/demo，已重建该工作区状态、没有重启服务。新归档不会自动随Git clone下载。
 
 ## 不得丢失的失败与限制
 
