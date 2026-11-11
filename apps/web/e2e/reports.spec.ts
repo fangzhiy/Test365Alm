@@ -117,9 +117,11 @@ test('real Keycloak UI reports preserve historical FAIL after related PASS and p
     const logout=logoutTab.waitForResponse(r=>new URL(r.url()).pathname==='/api/v1/auth/logout'&&r.request().method()==='POST')
     await logoutTab.getByRole('button',{name:'退出登录'}).click();const loggedOut=await logout
     steps.push({name:'第二标签退出状态',status:loggedOut.status()})
-    expect(loggedOut.status()).toBe(200);expect(await loggedOut.json()).toEqual({code:'LOGGED_OUT'})
+    expect(loggedOut.status()).toBe(200);expect(await loggedOut.json()).toEqual({status:'LOGGED_OUT'})
+    checkpoint('第二标签合法退出响应已核对')
     // Keep the original tab untouched until its real report GET observes loss.
     await expect(dialog).toContainText('数据完整加载');await expect(execution.locator('.execution-detail')).toBeAttached()
+    checkpoint('退出后原标签仍保留报告和宿主，即将请求报告')
     const denied=page.waitForResponse(r=>new URL(r.url()).pathname===`${root}/reports/test-sets/${set.id}`)
     await dialog.getByRole('button',{name:'应用报告筛选'}).click();const response=await denied
     expect(response.status()).toBe(401);expect(await response.json()).toEqual({code:'UNAUTHENTICATED'})
