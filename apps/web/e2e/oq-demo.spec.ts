@@ -213,6 +213,9 @@ test('real Keycloak UI SYNTHETIC OQ-DEMO-01 fourteen cases complete reviewed sig
      for(const s of a.steps)if(s.conclusion==='NOT_RUN')a=await write(page,`${path}/steps/${s.stepKey}`,{actualResult:'合成演示复测：修正后的观察符合预期，未操作 SAP。',conclusion:'PASS'},'PUT',s.rowVersion)
      await write(page,path+'/finish',{},'POST',a.rowVersion)
     }
+    a=await get(page,path)
+    expect(a.status,'演示恢复冲突：当前周期复测尚未完成，不追加流转').toBe('FINISHED')
+    expect(a.conclusion,'演示恢复冲突：当前周期不是 PASS，不借用旧周期结果').toBe('PASS')
     d=await get(page,`${root}/defects/${d.id}`)
     if(identity==='OQD-13'){d=await write(page,`${root}/defects/${d.id}/transitions`,{status:'REOPENED',reason:'合成新观察：旧 PASS 不证明当前问题通过'},'POST',d.rowVersion)}
     else d=await write(page,`${root}/defects/${d.id}/transitions`,{status:'CLOSED',reason:'合成复测 PASS 后关闭'},'POST',d.rowVersion)

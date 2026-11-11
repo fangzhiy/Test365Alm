@@ -4,7 +4,7 @@ import { checkDefectCompletion, readDefectProof, selectCycleRetest, type DefectP
 it('never borrows a historical PASS when the current resolution has no retest', () => {
  expect(selectCycleRetest([{id:'old-pass',resolvedRevisionId:'old',runId:'run',attemptId:'pass'}], 'current')).toBeUndefined()
 })
-const proof:DefectProof={id:'d',revisionId:'reopened',rowVersion:3,status:'REOPENED',resolutionId:'resolution',resolutionEntries:['resolution'],retests:[{id:'rt',resolvedRevisionId:'resolution',runId:'run',attemptId:'pass',status:'FINISHED',conclusion:'PASS'}]}
+const proof:DefectProof={id:'d',revisionId:'reopened',stateEntryId:'reopened',rowVersion:3,status:'REOPENED',resolutionId:'resolution',resolutionEntries:['resolution'],retests:[{id:'rt',resolvedRevisionId:'resolution',runId:'run',attemptId:'pass',status:'FINISHED',conclusion:'PASS'}]}
 it('backfills a v1.1 completion by reading a unique original cycle, then rejects a new user cycle',()=>{
  const marker=checkDefectCompletion(proof,'REOPENED',undefined,true)!
  expect(marker).toMatchObject({revisionId:'reopened',resolutionId:'resolution',attemptId:'pass'})
@@ -17,6 +17,9 @@ it('rejects changed completed revision and extra retests, and preserves interrup
  expect(()=>checkDefectCompletion({...proof,revisionId:'manual-edit',rowVersion:4},'REOPENED',marker)).toThrow('已完成对象')
  expect(()=>checkDefectCompletion({...proof,retests:[...proof.retests,{...proof.retests[0],id:'extra'}]},'REOPENED',marker)).toThrow('复测关系')
  expect(checkDefectCompletion({...proof,status:'RESOLVED',revisionId:'edited-resolved'},'REOPENED')).toBeUndefined()
+})
+it('does not adopt a manual edit after a terminal transition when backfilling an old checkpoint',()=>{
+ expect(()=>checkDefectCompletion({...proof,revisionId:'later-edit',rowVersion:4},'REOPENED',undefined,true)).toThrow('演示恢复冲突')
 })
 it('selects the exact resolution cycle independently of list or UUID order', () => {
  const current={id:'aaa',resolvedRevisionId:'current',runId:'run',attemptId:'current-attempt'}

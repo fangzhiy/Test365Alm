@@ -4,7 +4,7 @@ export type DefectCompletion = {
  retestId:string; runId:string; attemptId:string; retestIds:string[]
 }
 export type DefectProof = {
- id:string; revisionId:string; rowVersion:number; status:string; resolutionId:string|null
+ id:string; revisionId:string; stateEntryId:string; rowVersion:number; status:string; resolutionId:string|null
  // Immutable revision history, in revision-number order, establishes cycle entries.
  resolutionEntries:string[]; retests:RetestRef[]
 }
@@ -20,7 +20,9 @@ export async function readDefectProof(read:(path:string)=>Promise<unknown>, all:
  const ordered=[...revisions].sort((a,b)=>a.revisionNo-b.revisionNo)
  const entries=ordered.filter((r,i)=>r.status==='RESOLVED' && ordered[i-1]?.status!=='RESOLVED').map(r=>r.id)
  if(d.id!==id || !root.endsWith('/'+d.projectId) || !item || item.revision.id!==d.currentRevision.id || item.revision.status!==d.currentRevision.status || ordered.at(-1)?.id!==d.currentRevision.id || item.resolved_revision_id!==(entries.at(-1)??null))throw new Error(`演示恢复冲突：偏差 ${id} 的来源或周期读取不一致，请重新核对；不写入`)
- return {id,revisionId:d.currentRevision.id,rowVersion:d.rowVersion,status:d.currentRevision.status,resolutionId:item.resolved_revision_id,resolutionEntries:entries,retests}
+ const stateEntry=ordered.filter((r,i)=>r.status!==ordered[i-1]?.status).at(-1)
+ if(!stateEntry)throw new Error(`演示恢复冲突：偏差 ${id} 缺少状态进入修订`)
+ return {id,revisionId:d.currentRevision.id,stateEntryId:stateEntry.id,rowVersion:d.rowVersion,status:d.currentRevision.status,resolutionId:item.resolved_revision_id,resolutionEntries:entries,retests}
 }
 
 // Extracted from the scene runner so recovery choices can be tested directly.
@@ -39,6 +41,7 @@ export function checkDefectCompletion(proof:DefectProof, expectedStatus:string, 
  }
  if(completed && proof.status!==expectedStatus)conflict(`已完成阶段预期 ${expectedStatus}，服务端为 ${proof.status}`)
  if(saved || completed || proof.status===expectedStatus){
+  if(proof.stateEntryId!==proof.revisionId)conflict('终态流转后存在内容修改，不能补认原完成修订')
   if(proof.status!==expectedStatus || !proof.resolutionId || proof.resolutionEntries.length!==1 || proof.resolutionEntries[0]!==proof.resolutionId)conflict('无法确认原场景的唯一解决周期')
   const retest=selectCycleRetest(proof.retests,proof.resolutionId!)
   if(!retest || retest.status!=='FINISHED' || retest.conclusion!=='PASS')conflict('原解决周期缺少确切已完成 PASS 复测')
