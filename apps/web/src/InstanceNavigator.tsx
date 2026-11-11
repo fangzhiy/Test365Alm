@@ -9,6 +9,13 @@ import { reportScopeDenied } from './reportsApi'
 
 type Props = { projectId: string; instance: TestInstance; onDenied: () => void; onClose: () => void }
 
+const nextStep = {
+ NOT_RUN:'未运行：返回网格启动手工运行，再在运行工作台记录步骤。',
+ RUNNING:'运行中：通过网格“进入运行”记录步骤并完成；当前 Attempt 尚不能生成正式报告。',
+ PAUSED:'已暂停：通过网格“进入运行”继续执行；当前 Attempt 尚不能生成正式报告。',
+ FINISHED:'已完成：可查看当前 Attempt 报告；通过“进入运行”选择历史 Attempt 或按原流程重跑。',
+}
+
 // Read-only navigation for the exact saved revision. Commands remain in the
 // original case/execution/defect workbenches, with their existing authorization.
 export default function InstanceNavigator(props: Props) {
@@ -42,7 +49,8 @@ function InstanceSession({ projectId, instance, onDenied, onClose }: Props) {
    <p>{revision.description}</p><p>前置条件：{revision.preconditions || '未记录'}</p>
    <ReviewPanel projectId={projectId} testCaseId={instance.testCaseId} revisionId={revision.id} rowVersion={1} contextKey={instance.id} readOnly onDenied={onDenied}/>
    <SignaturePanel projectId={projectId} kind="TEST_APPROVAL" objectId={instance.testCaseId} snapshotId={revision.id} rowVersion={1} contextKey={instance.id} readOnly onDenied={onDenied}/>
-   <p>执行进度：{instance.status ?? '未知'} / {instance.conclusion ?? '尚无完成结论'}。通过网格“进入运行”查看历史 Attempt，完成后可打开所选 Attempt 报告及其真实关联偏差。运行签署与用例批准、偏差关闭签署分别核对。</p>
+   <p>执行进度：{instance.status ? nextStep[instance.status] : '状态未知，请刷新实例网格。'} 结论：{instance.conclusion ?? '尚无完成结论'}。</p>
+   <p>用例批准及其签署绑定上方原修订；运行完成签署绑定确切 Attempt；偏差关闭及其签署绑定偏差关闭修订。PASS 不代表偏差已关闭或本次运行已签署。历史报告请通过网格“进入运行”选择确切历史 Attempt。</p>
    {instance.runId && instance.attemptId && instance.status === 'FINISHED' && <ReportLauncher projectId={projectId} target={{kind:'RUN',runId:instance.runId,attemptId:instance.attemptId}} label="实例最新 Attempt 与关联偏差报告" onDenied={onDenied}/>}
    <ReportLauncher projectId={projectId} target={{kind:'DEFECTS',setId:instance.setId}} label="本测试集真实关联偏差及处理结果" onDenied={onDenied}/>
    <HistoryPanel projectId={projectId} objectType="test_case" objectId={instance.testCaseId}/>

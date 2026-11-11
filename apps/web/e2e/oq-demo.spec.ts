@@ -5,11 +5,13 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { isOwnedRun, seedProjectAccessScope, assertStepEvidenceFacilities } from './ownedR03'
 import { confirmSimulatedSignature } from './signatureUi'
+import { checkDefectCompletion, readDefectProof, selectCycleRetest, type DefectCompletion } from './oqDefectResume'
+import { oqFixRegressions } from './oqFixRegressions'
 
 const envOrigin=()=>process.env.OQ_DEMO_ORIGIN
 const rootDir = resolve(process.cwd(),'../..')
 const definition = JSON.parse(readFileSync(resolve(rootDir,'tools/scenarios/oq-demo-01-v1.1.json'),'utf8'))
-type CaseState = { testId:string; revisionId:string; instanceId?:string; runId?:string; originalAttemptId?:string; defectId?:string; stages:string[] }
+type CaseState = { testId:string; revisionId:string; instanceId?:string; runId?:string; originalAttemptId?:string; defectId?:string; defectCompletion?:DefectCompletion; resolutionId?:string; stages:string[] }
 type Checkpoint = { scenario:string;version:string;classification:string;projectId:string;tenantId:string;setId?:string;cases:Record<string,CaseState>;stages:string[];asset?:{assetId:string;revisionId:string;uploadId:string;linked:boolean;newVersionId?:string} }
 
 async function login(page:Page,user:string,password:string) {
@@ -65,6 +67,16 @@ test('real Keycloak UI SYNTHETIC OQ-DEMO-01 fourteen cases complete reviewed sig
  if(saved){expect(saved).toMatchObject({scenario:'OQ-DEMO-01',version:definition.version,projectId:project.id,tenantId:scope.tenantId})}
  else{saved={scenario:'OQ-DEMO-01',version:definition.version,classification:'SYNTHETIC',projectId:project.id,tenantId:scope.tenantId,cases:{},stages:[]};save()}
  const state=saved
+ const proof=(id:string)=>readDefectProof(path=>get(page,path),path=>pages(page,path),root,id)
+ // Preflight completed defects before any business action. v1.1 has no per-defect
+ // marker: only a read-verified, unique original cycle can backfill it locally.
+ for(const identity of ['OQD-12','OQD-13']){
+  const item=state.cases[identity]
+  if(item?.defectCompletion || state.stages.includes('closed-and-reopened-defects')){
+   expect(item?.defectId,'Completed defect identity missing; preserve checkpoint').toBeTruthy()
+   item.defectCompletion=checkDefectCompletion(await proof(item.defectId!),identity==='OQD-12'?'CLOSED':'REOPENED',item.defectCompletion,true);save()
+  }
+ }
  await stage('授权及目录：保留旧场景，建立独立固定版本',async()=>{
   const members=await get(admin,root+'/members')
   for(const [id,role]of[[mid,'PROJECT_MEMBER'],[vid,'PROJECT_VIEWER']]){
@@ -182,13 +194,20 @@ test('real Keycloak UI SYNTHETIC OQ-DEMO-01 fourteen cases complete reviewed sig
    let d=item.defectId?await get(page,`${root}/defects/${item.defectId}`):(await pages(page,root+'/defects')).find(d=>d.currentRevision.title===title)
    if(!d)d=await write(page,root+'/defects/from-step',{title,description:'合成演示：原失败保持，复测另记，未连接 SAP。',severity:'HIGH',priority:'HIGH',businessFields:{occurrence_department:{value:'合成质量部'},occurrence_location:{value:'隔离 Test365Alm 演示环境（未连接 SAP）'},reviewer:{value:aid}},runId:item.runId,attemptId:item.originalAttemptId,stepKey:source.steps[1].stepKey})
    item.defectId=d.id;save()
+   let verified=await proof(d.id)
+   const recovered=checkDefectCompletion(verified,identity==='OQD-12'?'CLOSED':'REOPENED',item.defectCompletion)
+   if(recovered){item.defectCompletion=recovered;save()}
    if(d.currentRevision.status==='OPEN')d=await write(page,`${root}/defects/${d.id}/transitions`,{status:'RESOLVED',reason:'合成演示首次修复'},'POST',d.rowVersion)
    if(d.currentRevision.status==='RESOLVED'){
+    verified=await proof(d.id)
+    expect(verified.resolutionId,'Resolution cycle must come from server report and immutable history').toBeTruthy()
+    if(item.resolutionId)expect(verified.resolutionId,'演示恢复冲突：原解决周期已改变，不追加流转').toBe(item.resolutionId)
+    item.resolutionId=verified.resolutionId!;save()
     let retests=await pages(page,`${root}/defects/${d.id}/retests`)
-    let rt=retests.find(r=>r.resolvedRevisionId===d.resolvedRevisionId)
-    // Use server verification's active revision when the view intentionally hides internal pointers.
-    rt??=retests[0]
-    if(!rt)rt=await write(page,`${root}/defects/${d.id}/retests`,{},'POST',d.rowVersion)
+    let rt=selectCycleRetest(retests,verified.resolutionId!)
+    if(!rt){await write(page,`${root}/defects/${d.id}/retests`,{},'POST',d.rowVersion);retests=await pages(page,`${root}/defects/${d.id}/retests`);rt=selectCycleRetest(retests,verified.resolutionId!)}
+    expect(rt,'Current cycle retest must exist').toBeDefined()
+    if(!rt)throw new Error('演示恢复冲突：当前周期复测缺失')
     const path=`${root}/runs/${rt.runId}/attempts/${rt.attemptId}`;let a=await get(page,path)
     if(a.status!=='FINISHED'){
      for(const s of a.steps)if(s.conclusion==='NOT_RUN')a=await write(page,`${path}/steps/${s.stepKey}`,{actualResult:'合成演示复测：修正后的观察符合预期，未操作 SAP。',conclusion:'PASS'},'PUT',s.rowVersion)
@@ -202,6 +221,7 @@ test('real Keycloak UI SYNTHETIC OQ-DEMO-01 fourteen cases complete reviewed sig
     expect(d.currentRevision.status).toBe('CLOSED');const s=await get(page,`${root}/signatures/DEVIATION_CLOSURE/${d.id}/${d.currentRevision.id}`)
     if(!s.signature){const bugs=page.getByRole('region',{name:'缺陷工作台'});await bugs.getByRole('button',{name:'刷新缺陷',exact:true}).click();await bugs.getByRole('button',{name:new RegExp(title)}).click();await confirmSimulatedSignature(page,'偏差关闭确认',env.R03_MEMBER_USER!,env.R03_MEMBER_PASSWORD!)}
    }else expect(d.currentRevision.status).toBe('REOPENED')
+   item.defectCompletion=checkDefectCompletion(await proof(d.id),identity==='OQD-12'?'CLOSED':'REOPENED',item.defectCompletion,true);save()
   }
  })
  await stage('证据新版本、真实报告入口、VIEWER 只读和完整证据索引',async()=>{
@@ -244,5 +264,6 @@ test('real Keycloak UI SYNTHETIC OQ-DEMO-01 fourteen cases complete reviewed sig
   state.stages=[...new Set([...state.stages,'fourteen-reviewed-signed-executed','closed-and-reopened-defects','reports-viewer-evidence'])];save()
   writeFileSync(resolve(dir,'evidence-index.json'),JSON.stringify({scenario:definition.scenario,version:definition.version,classification:'SYNTHETIC',notice:definition.notice,projectId:state.projectId,setId:state.setId,roles:{author:mid,executor:mid,reviewer:aid,viewer:vid},cases:index,summary,defects,defectHistory,samples:output},null,2))
  })
+ if(!persistent)await oqFixRegressions(page,admin,scope,mid,rootDir,get,write,pages,choose)
  }finally{await ac.close();await vc.close()}
 })
