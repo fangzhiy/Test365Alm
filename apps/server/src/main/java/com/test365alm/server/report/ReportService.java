@@ -40,7 +40,8 @@ public class ReportService {
         if(!facts.path("attempt").path("status").asText().equals("FINISHED"))
             throw ProjectAccessException.conflict("REPORT_ATTEMPT_NOT_FINISHED","Only FINISHED attempts have formal execution reports");
         var steps=rows("""
-            SELECT (to_jsonb(s)||jsonb_build_object('recorderCurrentName',p.display_name))::text
+            SELECT (to_jsonb(s)||jsonb_build_object('recorderCurrentName',p.display_name,
+              'updated_at',CASE WHEN s.updated_by IS NULL THEN NULL ELSE s.updated_at END))::text
             FROM run_step s LEFT JOIN principal p ON p.id=s.updated_by
             WHERE s.tenant_id=? AND s.project_id=? AND s.attempt_id=? ORDER BY s.ordinal LIMIT 5001
             """,5000,p.tenantId(),project,attempt);
