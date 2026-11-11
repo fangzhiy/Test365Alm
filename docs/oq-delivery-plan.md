@@ -16,6 +16,8 @@
 
 ## 工作线和依赖
 
+下段保留 E 交付时的历史快照，其中 F/G 暂停及测试库存是当时状态。当前 F 已恢复并进入 FIX02 收口，见 `docs/reviews/F-REPORT-01-FIX02.md`；G/A03 仍暂停，main 等独立审核，不沿用旧快照中的 F 暂停说明。
+
 2026-11-11：A/B/C/D/E 均已获总管对应切片验收。E 实际后端源 c549b25/run8eef9cc7 的 scan102/1→unit102→focused102/82→full102/218 逐名零 F/E/S；实际 UI 源 3af82c4/run78aa3de7 的完整五条真实 Keycloak UI 全 passed，单 worker、零 retry/skip，真实扫描及双 SCRAM 通过。最终交接 6c7b117 仅文档变化，后续未重跑后端。正式迁移实际 V1..V26，旧 V1..V25 未改；V27 独立故障探针、完整16条浏览器全集和 A03 仍 NOT_RUN。证据边界和历史失败见 `docs/reviews/signature-coordinator-review.md`，F/G 暂停。
 
 | 编号 | 交付 | 依赖 | 验收 |

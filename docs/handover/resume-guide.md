@@ -1,6 +1,6 @@
 # 恢复开发指南（单Codex）
 
-现行规则以[AGENTS.md](../../AGENTS.md)和[开发工作台](../coordinator-handoff.md)为准。本指南取代旧总管/worker/独立审查及每轮资源窗口流程。F报告、G/A03仍暂停；只有用户明确恢复后才继续。
+现行规则以[AGENTS.md](../../AGENTS.md)和[开发工作台](../coordinator-handoff.md)为准。本指南取代旧总管/worker/独立审查及每轮资源窗口流程。用户已恢复 F 报告，当前执行 F-REPORT-01-FIX02，只同步 dev、更新 PR #12，main 待独立审核；G/A03 仍暂停。
 
 ## 开工
 

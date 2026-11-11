@@ -12,7 +12,7 @@
 - [x] D2 复核UI、修改后需重新复核和跨身份真实验收（浏览器源afa0f4a/run77c0d60c：含指定复核人的四条真实Keycloak UI全passed，单worker零retry/skip，真实扫描/双SCRAM通过；完整资源/秘密/进程由总管独立核验，见test-case-review-coordinator-review）。
 - [x] E1 可替换模拟签署提供方、再认证和不可变签署记录（实际后端源c549b25/run8eef9cc7：scan102/1→unit102→focused102/82→full102/218逐名零F/E/S；62完整资源ID清理由总管独立核验，见docs/reviews/signature-coordinator-review.md）。
 - [x] E2 三种签署动作、签后锁定与新修订重新复核签署（实际UI源3af82c4/run78aa3de7：完整五条真实Keycloak UI全passed，1worker/0retry/0skip，真实扫描和双SCRAM通过；资源、秘密及进程独立核验，最终交接6c7b117仅文档变化）。
-- [x] F1 三类只读报告技术交付；确切 Attempt、实例最新结果、真实偏差来源/复测周期及只读权限回归完成，待独立审核推进 main，见 docs/reviews/F-REPORT-01.md。
-- [x] F2 三类中文 PDF 实际生成并逐页核验（12/6/4 页）；合成演示技术版式通过，业务格式认可仍待确认，不能当作 A03 验收。
+- [x] F1 三类只读报告技术交付；FIX01 已审核的周期/关闭签署/DTO/刷新锁保持，FIX02 补齐 code-only 安全拒绝到宿主清理，结果见 docs/reviews/F-REPORT-01-FIX02.md；main 仍待独立审核。
+- [x] F2 三类中文 PDF 实际生成并逐页核验。初版 F 本地为12/6/4页；FIX01 本地为运行12/汇总12/偏差8/普通运行3页，已审核 PR CI 42986595142 制品为12/11/8/3页，来源不同。FIX02 不改打印布局，引用已有逐页审核；合成演示技术版式不等于业务格式认可、正式电子签名认证或 A03 验收。
 - [ ] G1 A03十四用例独立环境真实浏览器全链路和报告核对。
 - [ ] G2 最终组合完整测试、独立审查、精确清理、本地集成与路线图更新。
