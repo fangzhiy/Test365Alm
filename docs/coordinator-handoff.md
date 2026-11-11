@@ -30,6 +30,8 @@ F/FIX01/FIX02 已独立审核接受 dd62943，PR #12 合入 main 的实际提交
 
 OQ-DEMO-01-FIX02 继续同一 PR #13，补网格超时后列表重试不能恢复旧报告资格，以及实际 resume 编排/APIRequestContext 的零写回归。当前验证与来源见 [FIX02](reviews/OQ-DEMO-01-FIX02.md)，不推进 main；真实 G/A03 和报告业务格式认可仍待后续。
 
+OQ-DEMO-01-FIX03 保留已接受网格修复，只补旧v1.1已有defectId、无完成标记时也必须读取历史的预检；多解决周期在回填及后续写入前拒绝。准确RED、真实旧文件与单周期恢复证据见[FIX03](reviews/OQ-DEMO-01-FIX03.md)，继续PR #13、只集成dev/codex-main，G/A03仍暂停。
+
 ## F-REPORT-01 FIX02 交付时历史
 
 当前为 F-REPORT-01-FIX02：保留已审核 FIX01 语义，只修正 code-only 安全错误解析/分类及报告宿主清理链，补两个宿主与真实第二标签退出后的 401 回归。当前验证和最终结果见 [FIX02 集中记录](reviews/F-REPORT-01-FIX02.md)。仍只同步 dev、更新 PR #12，main 待独立审核；G/A03 暂停。FIX02 未改打印，沿用已审核 PR CI 42986595142 样张（运行12/汇总11/偏差8/普通3页）；FIX01 本地汇总12页是另一份来源。
