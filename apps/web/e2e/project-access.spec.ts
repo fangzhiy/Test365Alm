@@ -6,6 +6,7 @@ import { isOwnedCiRun, isOwnedRun, seedProjectAccessScope } from './ownedR03'
 import { safeHttpEvent, safeLocation, type SafeHttpEvent } from './safeHttpDiagnostics'
 import { confirmSimulatedSignature } from './signatureUi'
 import { fillSignatureCredentials } from './signatureLoginUi'
+import { approveSignatureRevision } from './signatureReviewUi'
 
 type Page = import('@playwright/test').Page
 type APIResponse = import('@playwright/test').APIResponse
@@ -300,7 +301,7 @@ test('real Keycloak UI simulated signature rejects wrong credentials binds ident
       await form.getByRole('combobox',{name:'指定复核人',exact:true}).selectOption({label:'R03 Tester'})
       await form.getByRole('button',{name:'新增步骤',exact:true}).click();await form.getByLabel('步骤 1 操作',{exact:true}).fill('Freeze signature content');await form.getByLabel('步骤 1 预期结果',{exact:true}).fill('Original evidence')
       await form.getByRole('button',{name:'创建用例',exact:true}).click();await expect(panel).toContainText('测试用例已创建')
-      await panel.getByRole('button',{name:'提交复核',exact:true}).click();await panel.getByRole('button',{name:'批准',exact:true}).click()
+      await approveSignatureRevision(panel.getByRole('region',{name:'用例复核',exact:true}))
       await expect(panel.getByRole('region',{name:'用例复核',exact:true})).toContainText('已批准')
     }
     await diagnostics.step(page,'signature wrong password then real same-subject confirmation',async()=>{
