@@ -9,7 +9,7 @@
 - 不人工逐条核对测试名，不再逐轮申请独占窗口或编写资源清理的独立核验报告。既有自动化门禁继续保留，不删测试、不加retry。
 - 每个功能仅在docs/reviews留一份简短记录（做了什么、测试结果、已知限制）；值得留下的原因和取舍用trail note记录。
 - 保留权限/RLS/强版本/持久幂等与重放重新授权、不可变历史、审计/Outbox同事务；不提交秘密。不碰其他项目容器、test365alm-r02-postgres-1及5173/8080，不改Defender。
-- **F报告、G/A03继续暂停，未经用户明确恢复不开发、不启动对应任务。**
+- **用户已恢复 F-REPORT-01；三类只读报告已完成本地技术验证，见 [集中交付记录](reviews/F-REPORT-01.md)。只集成 dev，main 待独立审核。G/A03 仍暂停。**
 
 ## 仅保留的工作区
 
@@ -20,7 +20,11 @@
 
 GitHub：[fangzhiy/Test365Alm](https://github.com/fangzhiy/Test365Alm)。main为默认主分支，dev为集成分支；本次整理前main/dev为d6a9479。旧分支全部保留，旧chore/r01-status-001不再是默认分支。新功能在codex-main开发，不再新建feat分支或Orca任务。
 
-## 当前已交付与待办
+## F-REPORT-01 当前轮次
+
+审核基线 d7dca900f868aa20a1709272f68f1260a7cbebf6，保留 AUTH-FIX-01 和 push 仅 dev/main 的 CI 配置。执行记录绑定确切 Attempt 与原修订；汇总采用实例最新启动 Attempt 后筛选；偏差范围由真实来源/复测关系决定。报告不持久化、不补签、不写业务状态。技术验证与业务格式认可分开，合成样张不是 A03 业务验收。后端 1bbec573 的 Linux 107/225 全绿；前端/真实浏览器 9be934e 为 458 测试及六条真实流程全绿，三类 PDF 12/6/4 页逐页检查；精确命令、范围、CI 和限制集中在本轮 review。
+
+## 当前已交付与待办（以下为原轮次历史）
 
 A审计、B业务字段、C执行网格、D指定身份复核、E模拟签署/锁定均已验收并集成。现有清单见[tasks/oq-delivery-todo.md](../tasks/oq-delivery-todo.md)，阶段状态见[路线图第7节](alm-replacement-roadmap.md#7-阶段状态)。
 
