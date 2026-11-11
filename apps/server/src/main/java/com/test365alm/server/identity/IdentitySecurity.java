@@ -13,6 +13,11 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.oauth2.client.oidc.userinfo.OidcUserService;
+import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository;
+import org.springframework.security.oauth2.core.oidc.user.OidcUser;
+import com.test365alm.server.signature.SignatureLoginFlow;
+import com.test365alm.server.project.ProjectAccessResolver;
+import com.test365alm.server.project.ProjectService;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.csrf.InvalidCsrfTokenException;
@@ -25,6 +30,8 @@ public class IdentitySecurity {
     @Bean
     @ConditionalOnProperty(name = "test365alm.oidc.enabled", havingValue = "true")
     SecurityFilterChain oidcSecurity(HttpSecurity http, PrincipalRepository principals,
+            ClientRegistrationRepository registrations, SignatureLoginFlow signatureLogin,
+            ProjectAccessResolver actors, ProjectService projects,
             @Value("${test365alm.web.origin}") String webOrigin,
             @Value("${server.address:127.0.0.1}") String serverAddress,
             @Value("${server.servlet.session.cookie.secure:false}") boolean secureCookie) throws Exception {
@@ -32,6 +39,7 @@ public class IdentitySecurity {
         configureCommon(http);
         OidcUserService delegate = new OidcUserService();
         http.oauth2Login(oauth -> oauth
+                .authorizationEndpoint(endpoint -> endpoint.authorizationRequestResolver(signatureLogin.resolver(registrations)))
                 .userInfoEndpoint(userInfo -> userInfo.oidcUserService(request -> {
                     var user = delegate.loadUser(request);
                     var token = user.getIdToken();
@@ -45,8 +53,30 @@ public class IdentitySecurity {
                     }
                     return user;
                 }))
-                .successHandler((request, response, authentication) -> response.sendRedirect(webOrigin + "/"))
-                .failureHandler((request, response, exception) -> response.sendRedirect(webOrigin + "/?login=failed")));
+                .successHandler((request, response, authentication) -> {
+                    if(signatureLogin.pending(request)) {
+                        try {
+                            var pending=signatureLogin.pendingValue(request);
+                            var actor=actors.requirePrincipal(authentication);
+                            if(!actor.equals(pending.actorId()))throw new OAuth2AuthenticationException("signature_identity_mismatch");
+                            projects.requireTestWriteAccess(actor,pending.projectId());
+                            var token=((OidcUser)authentication.getPrincipal()).getIdToken();
+                            signatureLogin.complete(request,token.getIssuer().toString(),token.getSubject(),token.getAuthenticatedAt());
+                            response.sendRedirect(webOrigin+"/?signature=reauthenticated");
+                        } catch(RuntimeException denied) {
+                            request.getSession().invalidate();
+                            org.springframework.security.core.context.SecurityContextHolder.clearContext();
+                            response.sendRedirect(webOrigin+"/?signature=failed");
+                        }
+                    } else response.sendRedirect(webOrigin+"/");
+                })
+                .failureHandler((request, response, exception) -> {
+                    if(signatureLogin.pending(request)) {
+                        request.getSession().invalidate();
+                        org.springframework.security.core.context.SecurityContextHolder.clearContext();
+                        response.sendRedirect(webOrigin+"/?signature=failed");
+                    } else response.sendRedirect(webOrigin+"/?login=failed");
+                }));
         return http.build();
     }
 

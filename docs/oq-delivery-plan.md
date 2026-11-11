@@ -2,17 +2,21 @@
 
 2026-11-11 用户明确要求“执行全部”，授权执行已列出的审计验收、业务字段、复核、模拟签署、报告和 A03 十四用例闭环。本文件细化 `alm-replacement-roadmap.md`，不改写仍有未完成项的旧 P0 `tasks/plan.md` / `tasks/todo.md`；当前任务清单为 `tasks/oq-delivery-todo.md`。Orca Run：`run_ac1961a61108`。
 
+## 当前执行边界
+
+2026-11-11 用户先要求“所有暂停”，后明确“收尾，先提交github”并要求推送主分支。本次仅收尾已验收 A–E、归档 E 与推送 GitHub 主分支 `main`（设为默认），并同步远端 `dev`；F/G 保持暂停，不派工、不启动新测试资源。下文原执行全部授权按此最新限制执行。
+
 ## 已有基线与验收事实
 
 - 主文件夹固定 `dev@da47293`，目录树已集成。审计组合检查点 `bdeace0` 已通过前端246、Java单元85、Python155；审计 worker 合并后为 `34c19f6`。
 - 审计原单线 `ef27b7a` 的 Linux 82 单元／157 集成全绿，真实 ClamAV/EICAR 通过，精确清理完成。该结果不能代替组合版本85单元／167集成和三条真实浏览器验收。
 - 后续组合 `34c19f6` 的85单元／167完整集成、`4a13589`的三条真实Keycloak UI均通过，资源清理已核验，总管批准审计历史本地集成。详见 `docs/reviews/audit-history-coordinator-review.md`；不是将旧单线报告沿用为新组合报告。
 - B和C已分别完成验收。最新B+C组合后端96def34通过93单元/187真实集成，浏览器8f48057三条真实资产流程通过；精确清理与进程退出已由总管核验，详见 `docs/reviews/execution-grid-coordinator-review.md`。以上来源是实际被测提交，后续文档集成不冒充重跑。
-- 不推送、不创建远程资源、不更改 Defender、不接生产或旧 ALM，不触碰 W1 演示或用户5173/8080端口。所有业务变更仍须审查后由总管合入 dev。
+- 本次按用户最新授权推送 GitHub 默认主分支；不部署、不更改 Defender、不接生产或旧 ALM，不触碰 W1 演示或用户5173/8080端口。所有业务变更仍须审查后由总管合入 dev。
 
 ## 工作线和依赖
 
-2026-11-11：A/B/C/D 均已获总管对应切片验收，D证据及边界见 `docs/reviews/test-case-review-coordinator-review.md`。正式迁移实际 V1..V25；下一条 E 从本地已集成 D 基线开始，正式 V26、故意失败探针 V27，旧 V1..V25 不改。D 的独立探针及完整15条浏览器全集仍未运行，留最终组合验收，不影响既已实际通过的D1/D2范围。
+2026-11-11：A/B/C/D/E 均已获总管对应切片验收。E 实际后端源 c549b25/run8eef9cc7 的 scan102/1→unit102→focused102/82→full102/218 逐名零 F/E/S；实际 UI 源 3af82c4/run78aa3de7 的完整五条真实 Keycloak UI 全 passed，单 worker、零 retry/skip，真实扫描及双 SCRAM 通过。最终交接 6c7b117 仅文档变化，后续未重跑后端。正式迁移实际 V1..V26，旧 V1..V25 未改；V27 独立故障探针、完整16条浏览器全集和 A03 仍 NOT_RUN。证据边界和历史失败见 `docs/reviews/signature-coordinator-review.md`，F/G 暂停。
 
 | 编号 | 交付 | 依赖 | 验收 |
 |---|---|---|---|

@@ -16,10 +16,13 @@ class ExecutionFocusTests(unittest.TestCase):
         return {"unit": summary([{"class": c, "method": m} for c, names in inventory["unit"].items() for m in names]),
                 "integration": summary([{"class": c, "method": m} for c, m in sorted(inside.FOCUSED_METHODS)])}
 
-    def test_fixed_sixty_six_names_and_no_extra_asset_provision_method(self):
+    def test_fixed_eighty_two_names_and_no_extra_asset_provision_method(self):
         self.assertEqual(43, len(inside.EXECUTION_METHODS))
         self.assertEqual(8, len(inside.BUSINESS_METHODS))
-        self.assertEqual(66, len(inside.FOCUSED_METHODS))
+        self.assertEqual(82, len(inside.FOCUSED_METHODS))
+        self.assertEqual(16,len(inside.SIGNATURE_METHODS))
+        from tools.verify_signature_report import REQUIRED as SIGNATURE_REQUIRED
+        self.assertEqual({(c,n) for c,names in SIGNATURE_REQUIRED.items() for n in names},inside.SIGNATURE_METHODS)
         self.assertEqual(15, len(inside.REVIEW_METHODS))
         from tools.verify_test_review_report import REQUIRED
         self.assertEqual({(c,n) for c,names in REQUIRED.items() for n in names},inside.REVIEW_METHODS)
@@ -31,7 +34,7 @@ class ExecutionFocusTests(unittest.TestCase):
         self.assertEqual(1, selected[2].count("-Dit.test="))
 
     def test_each_missing_or_replaced_method_is_rejected_even_with_same_total(self):
-        for index in range(66):
+        for index in range(82):
             bad = self.report()
             bad["integration"]["cases"][index]["method"] = "unapprovedReplacement"
             self.assertFalse(inside.valid_report("focused", bad))
@@ -58,7 +61,7 @@ class ExecutionFocusTests(unittest.TestCase):
             self.assertFalse(inside.valid_report("focused", bad))
 
     def test_unit_method_substitution_cannot_hide_behind_the_exact_total(self):
-        for index in range(95):
+        for index in range(102):
             bad=self.report()
             bad["unit"]["cases"][index]["method"]="unapprovedReplacement"
             self.assertFalse(inside.valid_report("focused",bad))
@@ -68,9 +71,9 @@ class ExecutionFocusTests(unittest.TestCase):
         inventory=json.loads((Path(__file__).parents[1]/"linux-test/combined-methods.json").read_text(encoding="utf-8"))
         cases = [{"class": c, "method": m} for c, names in inventory["integration"].items() for m in names]
         good["integration"]["cases"] = cases
-        good["integration"]["tests"] = 202
+        good["integration"]["tests"] = 218
         self.assertTrue(inside.valid_report("integration", good))
-        for index in range(202):
+        for index in range(218):
             bad = copy.deepcopy(good)
             bad["integration"]["cases"][index]["method"] = "unapprovedReplacement"
             self.assertFalse(inside.valid_report("integration", bad))
@@ -87,8 +90,8 @@ class ExecutionFocusTests(unittest.TestCase):
             package=re.search(r"package\s+([\w.]+);",text)[1]
             actual["integration" if path.stem.endswith("IT") else "unit"][package+"."+path.stem]=sorted(names)
         self.assertEqual(frozen,actual)
-        self.assertEqual(95,sum(map(len,frozen["unit"].values())))
-        self.assertEqual(202,sum(map(len,frozen["integration"].values())))
+        self.assertEqual(102,sum(map(len,frozen["unit"].values())))
+        self.assertEqual(218,sum(map(len,frozen["integration"].values())))
 
     def test_stage_order_and_each_failure_short_circuits_without_retry(self):
         for failure_index in range(5):

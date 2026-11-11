@@ -20,6 +20,7 @@ REQUIRED_DEFECT_UI_TEST = "real Keycloak UI member creates defect from FAIL rete
 REQUIRED_RELEASE_UI_TEST = "real Keycloak UI admin plans release cycle scope and freezes quality snapshots"
 REQUIRED_ASSET_UI_TEST = "real Keycloak UI member uploads scans attaches and preserves old asset revision"
 REQUIRED_REVIEW_UI_TEST = "real Keycloak UI designated reviewer rejects approves and new revision requires fresh review"
+REQUIRED_SIGNATURE_UI_TEST = "real Keycloak UI simulated signature rejects wrong credentials binds identity and preserves signed revision"
 REQUIRED_BROWSER_TESTS = (
     REQUIRED_TEST,
     REQUIRED_UI_TEST,
@@ -31,6 +32,7 @@ REQUIRED_BROWSER_TESTS = (
     REQUIRED_RELEASE_UI_TEST,
     REQUIRED_ASSET_UI_TEST,
     REQUIRED_REVIEW_UI_TEST,
+    REQUIRED_SIGNATURE_UI_TEST,
 )
 
 

@@ -1,6 +1,6 @@
 # OQ 演示闭环任务
 
-计划与验收细则：`docs/oq-delivery-plan.md`。用户已授权执行全部；此清单独立于旧P0任务，只有取得实际证据才勾选。
+计划与验收细则：`docs/oq-delivery-plan.md`。用户此前授权执行全部，后要求全部暂停；2026-11-11 最新仅授权收尾并提交 GitHub 主分支，F/G 继续暂停。此清单独立于旧P0任务，只有取得实际证据才勾选。
 
 - [x] A1 组合85单元／167集成全绿及精确清理（确切源34c19f6；总管核对scan/unit/integration/run脱敏JSON，均0F/E/S、退出0、cleanup true）。
 - [x] A2 三入口真实Keycloak UI验收（确切源4a13589，run06caafafb42e4762b6f4b9f222265ab7；三条passed、1worker/0retry/0skip、exit0、cleanup/processes_stopped均true）；审查批准本地dev集成。
@@ -10,8 +10,8 @@
 - [x] C2 独立实际结果/结论、步骤时间和附件实际交互（浏览器源8f48057，run7dfd6f17；真实S3/ClamAV、正式双SCRAM provision及三条Keycloak UI passed，1worker/0retry/0skip，资源/秘密/进程独立核验；见执行网格总管复核）。
 - [x] D1 复核状态机、指定身份和不可变修订绑定（后端源6fa15ce/run5222fc82：95单元/66专项/202完整集成零F/E/S；逐名门禁及57完整资源ID清理由总管独立核对）。
 - [x] D2 复核UI、修改后需重新复核和跨身份真实验收（浏览器源afa0f4a/run77c0d60c：含指定复核人的四条真实Keycloak UI全passed，单worker零retry/skip，真实扫描/双SCRAM通过；完整资源/秘密/进程由总管独立核验，见test-case-review-coordinator-review）。
-- [ ] E1 可替换模拟签署提供方、再认证和不可变签署记录。
-- [ ] E2 三种签署动作、签后锁定与新修订重新复核签署。
+- [x] E1 可替换模拟签署提供方、再认证和不可变签署记录（实际后端源c549b25/run8eef9cc7：scan102/1→unit102→focused102/82→full102/218逐名零F/E/S；62完整资源ID清理由总管独立核验，见docs/reviews/signature-coordinator-review.md）。
+- [x] E2 三种签署动作、签后锁定与新修订重新复核签署（实际UI源3af82c4/run78aa3de7：完整五条真实Keycloak UI全passed，1worker/0retry/0skip，真实扫描和双SCRAM通过；资源、秘密及进程独立核验，最终交接6c7b117仅文档变化）。
 - [ ] F1 运行打印报告、统计汇总、偏差清单。
 - [ ] F2 中文打印/PDF布局核验及业务认可状态准确记录。
 - [ ] G1 A03十四用例独立环境真实浏览器全链路和报告核对。

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { confirmSimulatedSignature } from './signatureUi'
 import { ExecutionDiagnostics } from './executionDiagnostics'
 import { randomUUID } from 'node:crypto'
 import { assertStepEvidenceFacilities, isOwnedRun, seedProjectAccessScope } from './ownedR03'
@@ -177,6 +178,7 @@ test('real Keycloak UI manual execution creates, resumes, finishes and reruns a 
     await expect(execution.getByRole('button', { name: '完成运行' })).toBeVisible()
     await execution.getByRole('button', { name: '完成运行' }).click()
     await expect(execution).toContainText('已完成 · FAIL')
+    await confirmSimulatedSignature(memberPage,'运行完成确认',memberUser!,memberPassword!)
     await execution.getByRole('button', { name: '重新运行' }).click()
     await expect(execution).toContainText('运行详情 · 尝试 2')
     const retryEvidence=execution.getByRole('region',{name:'步骤 1 附件',exact:true})
@@ -208,6 +210,9 @@ test('real Keycloak UI manual execution creates, resumes, finishes and reruns a 
     await reopenedExecution.getByRole('button', { name: '刷新运行详情' }).click()
     await expect(reopenedExecution).toContainText('运行详情 · 尝试 2')
     await reopenedExecution.getByRole('button', { name: '尝试 1 · FAIL' }).click()
+    const originalSignature=reopenedExecution.getByRole('region',{name:'模拟电子签署：运行完成确认',exact:true})
+    await originalSignature.getByRole('button',{name:'查看模拟签署',exact:true}).click()
+    await expect(originalSignature).toContainText('已模拟签署：运行完成确认')
     await expect(reopenedExecution.getByLabel('步骤 1 实际结果')).toHaveValue('Login form is visible')
     await expect(reopenedExecution.getByLabel('步骤 2 实际结果')).toHaveValue('Server rejected credentials')
     await expect(reopenedExecution.getByLabel('步骤 1 结论')).toHaveValue('PASS')

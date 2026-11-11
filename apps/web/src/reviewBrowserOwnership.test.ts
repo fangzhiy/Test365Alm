@@ -3,7 +3,8 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Browser, Page } from '@playwright/test'
-const required = 'real Keycloak UI designated reviewer rejects approves and new revision requires fresh review'
+const flows = ['real Keycloak UI designated reviewer rejects approves and new revision requires fresh review',
+  'real Keycloak UI simulated signature rejects wrong credentials binds identity and preserves signed revision']
 type Callback = (fixtures: { page: Page; browser: Browser }) => Promise<void>
 const harness = vi.hoisted(() => ({
   registered: [] as { name: string; callback: Callback }[], read: vi.fn(), write: vi.fn(), mkdir: vi.fn(), docker: vi.fn(),
@@ -33,7 +34,7 @@ beforeEach(() => {
 })
 afterEach(() => vi.unstubAllEnvs())
 const scenarios = ['local-owned', 'CI-owned', 'unowned', 'missing manifest', 'wrong project', 'wrong run', 'wrong source', 'invalid random run', 'invalid source SHA', 'wrong root', 'wrong env path', 'wrong compose path', 'partial CI', 'foreign CI project'] as const
-it.each(scenarios)('registers the real review flow and admits only valid ownership: %s', async scenario => {
+it.each(flows.flatMap(required => scenarios.map(scenario => ({required,scenario}))))('registers $required and admits only valid ownership: $scenario', async ({required,scenario}) => {
   const local = manifest()
   if (scenario !== 'unowned' && scenario !== 'CI-owned' && scenario !== 'partial CI' && scenario !== 'foreign CI project') {
     vi.stubEnv('R03_LOCAL_MANIFEST', resolve(root, 'local-evidence/fixture-manifest.json'))

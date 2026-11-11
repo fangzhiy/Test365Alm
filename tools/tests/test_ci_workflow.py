@@ -26,10 +26,10 @@ class CiWorkflowTests(unittest.TestCase):
         self.assertIn("github_sha=", workflow)
         self.assertIn("checkout_sha=", workflow)
 
-    def test_migration_job_records_formal_v25_before_intentional_v26_failure(self):
+    def test_migration_job_records_formal_v26_before_intentional_v27_failure(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
-        self.assertIn("Verify formal V25 then intentional V26 migration startup failure", workflow)
-        self.assertIn("Formal V25 migration and intentional V26 failure were detected", workflow)
+        self.assertIn("Verify formal V26 then intentional V27 migration startup failure", workflow)
+        self.assertIn("Formal V26 migration and intentional V27 failure were detected", workflow)
         self.assertIn("verify_r02_migration_failure.py", workflow)
 
     def test_server_job_requires_project_access_rls_evidence(self):
@@ -64,6 +64,12 @@ class CiWorkflowTests(unittest.TestCase):
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn("verify_test_review_report.py target/failsafe-reports", workflow)
         self.assertIn("apps/server/test-review-report.txt", workflow)
+
+    def test_server_job_requires_simulated_signature_evidence_without_removing_review_gate(self):
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("verify_signature_report.py target/failsafe-reports", workflow)
+        self.assertIn("apps/server/signature-report.txt", workflow)
+        self.assertIn("verify_test_review_report.py target/failsafe-reports", workflow)
 
     def test_server_requires_nonempty_upgrade_before_full_regression(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")

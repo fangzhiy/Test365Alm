@@ -4,6 +4,9 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { isOwnedCiRun, isOwnedRun, seedProjectAccessScope } from './ownedR03'
 import { safeHttpEvent, safeLocation, type SafeHttpEvent } from './safeHttpDiagnostics'
+import { confirmSimulatedSignature } from './signatureUi'
+import { fillSignatureCredentials } from './signatureLoginUi'
+import { approveSignatureRevision } from './signatureReviewUi'
 
 type Page = import('@playwright/test').Page
 type APIResponse = import('@playwright/test').APIResponse
@@ -268,6 +271,71 @@ test('real Keycloak UI designated reviewer rejects approves and new revision req
     try{await memberContext?.close();await viewerContext?.close()}catch(error){cleanupError=error}
     await diagnostics.write(test.info().title,businessError,cleanupError,'test-review-context')
   }
+  if(!businessError&&cleanupError)throw cleanupError
+})
+
+test('real Keycloak UI simulated signature rejects wrong credentials binds identity and preserves signed revision',async({page,browser})=>{
+  test.skip(!isOwnedRun(),'signature flow requires an explicitly owned isolated R03 stack')
+  test.setTimeout(180000)
+  const diagnostics=new UiDiagnostics();let viewerContext:import('@playwright/test').BrowserContext|undefined
+  let businessError:unknown,cleanupError:unknown
+  try{
+    for(const name of ['R03_TEST_USER','R03_TEST_USER_PASSWORD','R03_VIEWER_USER','R03_VIEWER_PASSWORD'])if(!process.env[name])throw new Error('Isolated signature test identities are required')
+    const admin=await diagnostics.step(page,'signature login current signer',()=>login(page,process.env.R03_TEST_USER!,process.env.R03_TEST_USER_PASSWORD!,'R03 Tester',diagnostics))
+    viewerContext=await browser.newContext();const viewer=await viewerContext.newPage()
+    const viewerId=await diagnostics.step(viewer,'signature login independent viewer',()=>login(viewer,process.env.R03_VIEWER_USER!,process.env.R03_VIEWER_PASSWORD!,'R03 Viewer',diagnostics))
+    const {tenantId,domainId}=seedProjectAccessScope(admin,viewerId)
+    const created=await write(page,'POST','/api/v1/projects',{tenantId,domainId,code:`SIGN-${Date.now()}`,name:'Signature isolated project'},diagnostics)
+    expect(created.status()).toBe(201);const project=await created.json() as {id:string}
+    expect((await write(page,'PUT',`/api/v1/projects/${project.id}/members/${viewerId}`,{roles:['PROJECT_VIEWER'],authorizationVersion:0},diagnostics)).status()).toBe(200)
+    const select=async(target:Page)=>{
+      await target.getByRole('button',{name:'加载访问范围'}).click();const access=target.getByRole('region',{name:'租户、项目与成员'})
+      await access.getByRole('combobox').first().selectOption(tenantId);await access.locator('.access-selects select').nth(1).selectOption(project.id)
+      return target.locator('section.test-cases-panel')
+    }
+    const panel=await select(page),title=`Signed immutable revision ${Date.now()}`
+    const approveNewCase=async(name:string)=>{
+      const form=panel.locator('.test-create-form')
+      await form.getByLabel('测试用例标题',{exact:true}).fill(name)
+      await form.getByLabel('复核人姓名',{exact:true}).fill('R03 Tester');await form.getByRole('button',{name:'查找复核人',exact:true}).click()
+      await form.getByRole('combobox',{name:'指定复核人',exact:true}).selectOption({label:'R03 Tester'})
+      await form.getByRole('button',{name:'新增步骤',exact:true}).click();await form.getByLabel('步骤 1 操作',{exact:true}).fill('Freeze signature content');await form.getByLabel('步骤 1 预期结果',{exact:true}).fill('Original evidence')
+      await form.getByRole('button',{name:'创建用例',exact:true}).click();await expect(panel).toContainText('测试用例已创建')
+      await approveSignatureRevision(panel.getByRole('region',{name:'用例复核',exact:true}))
+      await expect(panel.getByRole('region',{name:'用例复核',exact:true})).toContainText('已批准')
+    }
+    await diagnostics.step(page,'signature wrong password then real same-subject confirmation',async()=>{
+      await approveNewCase(title);await confirmSimulatedSignature(page,'用例批准确认',process.env.R03_TEST_USER!,process.env.R03_TEST_USER_PASSWORD!,true)
+    })
+    await diagnostics.step(page,'signature new revision is unsigned and old revision stays read only',async()=>{
+      await panel.getByLabel('编辑测试用例标题').fill(`${title} revised`);await panel.getByRole('button',{name:'保存为新修订'}).click()
+      await expect(panel.getByRole('region',{name:'用例复核',exact:true})).toContainText('未提交')
+      const current=panel.getByRole('region',{name:'模拟电子签署：用例批准确认',exact:true})
+      await current.getByRole('button',{name:'查看模拟签署',exact:true}).click();await expect(current.getByRole('button',{name:'开始模拟签署'})).toHaveCount(0)
+      await panel.getByRole('region',{name:'测试用例修订历史'}).getByRole('button',{name:/修订 1/}).click()
+      const history=panel.locator('.revision-readonly');await expect(history).toContainText(title)
+      const frozen=panel.getByRole('region',{name:'模拟电子签署：用例批准确认',exact:true}).nth(1)
+      await frozen.getByRole('button',{name:'查看模拟签署',exact:true}).click();await expect(frozen).toContainText('已模拟签署：用例批准确认')
+    })
+    await diagnostics.step(viewer,'viewer reads frozen signature and cannot sign',async()=>{
+      const v=await select(viewer);await v.locator('.test-case-list .requirement-row').filter({hasText:title}).click()
+      await v.getByRole('region',{name:'测试用例修订历史'}).getByRole('button',{name:/修订 1/}).click()
+      const frozen=v.getByRole('region',{name:'模拟电子签署：用例批准确认',exact:true}).nth(1)
+      await frozen.getByRole('button',{name:'查看模拟签署',exact:true}).click();await expect(frozen).toContainText('已模拟签署：用例批准确认');await expect(frozen.getByRole('button',{name:'开始模拟签署'})).toHaveCount(0)
+    })
+    await diagnostics.step(page,'other-subject credentials invalidate signing session without a signature',async()=>{
+      await approveNewCase(`Wrong identity challenge ${Date.now()}`)
+      const signing=panel.getByRole('region',{name:'模拟电子签署：用例批准确认',exact:true}).first()
+      await signing.getByRole('button',{name:'查看模拟签署',exact:true}).click();await signing.getByRole('button',{name:'开始模拟签署'}).click()
+      const opened=page.waitForEvent('popup');await signing.getByRole('button',{name:'重新登录以确认身份'}).click();const popup=await opened
+      await fillSignatureCredentials(popup,process.env.R03_VIEWER_USER!,process.env.R03_VIEWER_PASSWORD!,true)
+      await Promise.all([popup.waitForEvent('close',{timeout:15000}),popup.locator('#kc-login').click()])
+      await expect(panel).toContainText('当前签署范围不可访问')
+      await expect(panel.getByRole('button',{name:/确认模拟签署：/})).toHaveCount(0)
+      expect((await page.request.get('/api/v1/me')).status()).toBe(401)
+    })
+  }catch(error){businessError=error;throw error}
+  finally{try{await viewerContext?.close()}catch(error){cleanupError=error}await diagnostics.write(test.info().title,businessError,cleanupError,'signature-context')}
   if(!businessError&&cleanupError)throw cleanupError
 })
 

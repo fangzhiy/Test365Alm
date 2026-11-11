@@ -2,7 +2,16 @@
 
 更新：2026-11-11。本文长期保留，不属于功能合并后删除的 `docs/handoff/` 文件。
 
-## 最新执行状态（优先于下文历史检查点）
+## 当前收尾与暂停状态（2026-11-11，优先于所有旧授权）
+
+- 用户先明确“所有暂停”，后授权“收尾，先提交github”并要求推送主分支。本次只完成已验收 A–E 的归档、dev 本地集成与 GitHub 主分支 `main`（设为默认），并同步远端 `dev` 推送；F报告/G A03继续暂停，未经用户明确恢复不派工或启动验证资源。分支约定：`main` 保存已验收成果并作为默认分支，`dev` 做集成，`feat/*` 做功能开发；旧 `chore/r01-status-001` 保留。
+- E1/E2已由总管在 `msg_088209b2a237` 验收，最终worker交接 `6c7b117070b18130c8cbfa78b5e3cfb1bbdb1c73` 相对实际UI源 `3af82c48b97eb4eb01d1b61ea6e9db68fce2f082` 仅交接文档变化。原文逐字归档 `docs/reviews/signature-worker-handoff.md`，正式结论 `docs/reviews/signature-coordinator-review.md`，清单E1/E2已勾选。
+- E实际后端源 `c549b25dd962554607ca10dc869326371c86b8c1` / run `8eef9cc7836a4a6698d84fae4587db2f`：scan102/1→unit102→focused102/82→full102/218全逐名零F/E/S；后续后端/设施树未变而获准沿用，不冒称后续SHA重跑。实际UI源3af82c4 / run `r03-local-78aa3de77a98483392c8f61b6a21043c`：完整五身份全部passed，1worker/0retry/0skip，真实S3/ClamAV和正式双SCRAM均通过。
+- 总管已独立核验后端62完整容器ID、浏览器4完整容器/1完整网络/3卷及run/project标签空，3秘密和37个PID+Created均消失，owned Java/Node0；Engine一致，保护47容器/22网络/45卷不变。证据 `integrate-audit/local-evidence/e-final-coordinator-cleanup.json`，worker最终索引 `feat-signature/local-evidence/signature/e3af82-final-window-review.json` 的14份哈希已复核匹配。
+- 正式迁移实际26份（新增V26），V1..V25 blob未变；V27独立故障探针、16条UI全集、A03及F报告均未在E窗口运行。外部签名厂商/合规认证/部署不在本次验收。所有旧失败及诊断局限保留。
+- E暂停通知已由 `ctx_4892bb53646b` / task `task_117b21ef9b8e` 确认完成，无存活owned资源。功能worktree两份原自动配置修改保留，不入提交。主仓库固定dev；外层需求文档用户修改不混入。
+
+## 先前执行状态（历史记录，受上方暂停与收尾范围限制）
 
 - 用户已明确“执行全部”，继续本地实现/测试/审查/集成：审计、业务字段、执行网格、复核、模拟签署与锁定、报告、A03十四用例闭环。Run `run_ac1961a61108`，细则 `docs/oq-delivery-plan.md`，清单 `tasks/oq-delivery-todo.md`。不推送、不部署或接生产，不自行确认业务报告格式认可。
 - 目录树已在 `dev@da47293`。审计总管组合后端 `34c19f6` 完整85单元/167集成真实S3/ClamAV/EICAR全绿，cleanup true；真实浏览器源 `4a13589` 的用例/执行/缺陷三条Keycloak流程全部passed，单worker、0retry/skip，exit0、cleanup/processes_stopped均true。总管已独立核对脱敏JSON、实际源码相同性及审查结论，批准本地dev集成。

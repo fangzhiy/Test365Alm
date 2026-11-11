@@ -1,4 +1,5 @@
 import { expect,test } from '@playwright/test'
+import { confirmSimulatedSignature } from './signatureUi'
 import type { Page } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { mkdir,writeFile } from 'node:fs/promises'
@@ -55,6 +56,9 @@ test('real Keycloak UI member creates defect from FAIL retests PASS closes and p
    const detail=bugs.getByRole('region',{name:'缺陷详情'});await detail.getByRole('button',{name:'开始复测'}).click();const attempt=detail.getByRole('region',{name:'缺陷关联尝试'});await expect(attempt).toContainText('RUNNING')
    await attempt.getByLabel('复测步骤 1 实际结果').fill('Repair verified PASS');await attempt.getByLabel('复测步骤 1 结论').selectOption('PASS');await attempt.getByRole('button',{name:'保存复测步骤 1'}).click();await expect(attempt).toContainText('复测步骤已保存');await attempt.getByRole('button',{name:'完成复测'}).click();await expect(attempt).toContainText('FINISHED · PASS')
    await detail.getByRole('button',{name:'刷新缺陷详情'}).click();await expect(detail).toContainText('可用相关 PASS');await detail.getByRole('button',{name:'转为 CLOSED'}).click();await expect(detail).toContainText('CLOSED · v5')
+  })
+  await step('Reauthenticate and simulate signing the exact closed deviation',async()=>{
+   await confirmSimulatedSignature(member,'偏差关闭确认',mu,mp)
   })
   await step('Real reload preserves source FAIL retest PASS and immutable status history',async()=>{
    await member.reload();await expect(member.getByRole('button',{name:'退出登录'})).toBeVisible();await select(member,tenantId,project);await req.getByRole('button',{name:new RegExp(requirementTitle)}).click();await expect(req.getByLabel('编辑设备或系统编号')).toHaveValue('EQ-BROWSER-23');await expect(req.getByLabel('编辑所属部门')).toHaveValue('Quality Assurance');await bugs.getByRole('button',{name:new RegExp(bugTitle)}).click();const detail=bugs.getByRole('region',{name:'缺陷详情'});await expect(detail).toContainText('CLOSED · v5');await expect(detail.getByLabel('编辑发生部门')).toHaveValue('Quality Assurance');await expect(detail.getByLabel('编辑发生地点或系统')).toHaveValue('Line A');await expect(detail.getByLabel('编辑指定复核人').locator('option:checked')).toHaveText('R03 Member');await expect(detail).toContainText('原实际：Original failure remains')

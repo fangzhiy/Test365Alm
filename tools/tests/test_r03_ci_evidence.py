@@ -10,7 +10,7 @@ from tools.verify_r03_project_browser_report import REQUIRED_CORE_UI_TEST, REQUI
 from tools.verify_r03_oidc_http_report import REQUIRED_TESTS, verify
 from tools.verify_r03_project_access_report import REQUIRED_PROJECT_TESTS, verify_project_access
 from tools.verify_r03_project_browser_report import REQUIRED_MANUAL_EXECUTION_UI_TEST, REQUIRED_MANUAL_TEST_CASE_UI_TEST, REQUIRED_REQUIREMENT_UI_TEST, REQUIRED_TEST as REQUIRED_PROJECT_BROWSER_TEST, REQUIRED_UI_TEST as REQUIRED_PROJECT_UI_TEST, verify as verify_project_browser
-from tools.verify_r03_project_browser_report import REQUIRED_REVIEW_UI_TEST, REQUIRED_BROWSER_TESTS
+from tools.verify_r03_project_browser_report import REQUIRED_REVIEW_UI_TEST, REQUIRED_SIGNATURE_UI_TEST, REQUIRED_BROWSER_TESTS
 
 TERMINAL_HTTP_TEST = "realOidcAssetHttpTerminalCompleteFreezesRejectionAndReauthorizesReplay"
 
@@ -29,7 +29,7 @@ class R03CiEvidenceTests(unittest.TestCase):
         source = (Path(__file__).resolve().parents[2] /
                   "apps/server/src/test/java/com/test365alm/server/identity/OidcCallbackSecurityIT.java").read_text(encoding="utf-8")
         methods = re.findall(r"@Test\s+void\s+(\w+)\s*\(", source)
-        self.assertEqual(27, len(methods))
+        self.assertEqual(30, len(methods))
         self.assertEqual(len(methods), len(set(methods)))
         self.assertIn(TERMINAL_HTTP_TEST, methods)
         self.assertEqual(set(methods), REQUIRED_TESTS)
@@ -147,7 +147,7 @@ class R03CiEvidenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             report = Path(directory) / "results.xml"
             report.write_text(
-                '<testsuites><testsuite tests="10" failures="0" errors="0" skipped="0">'
+                '<testsuites><testsuite tests="11" failures="0" errors="0" skipped="0">'
                 f'<testcase name="{REQUIRED_PROJECT_BROWSER_TEST}" />'
                 f'<testcase name="{REQUIRED_PROJECT_UI_TEST}" />'
                 f'<testcase name="{REQUIRED_REQUIREMENT_UI_TEST}" />'
@@ -158,6 +158,7 @@ class R03CiEvidenceTests(unittest.TestCase):
                 f'<testcase name="{REQUIRED_RELEASE_UI_TEST}" />'
                 f'<testcase name="{REQUIRED_ASSET_UI_TEST}" />'
                 f'<testcase name="{REQUIRED_REVIEW_UI_TEST}" />'
+                f'<testcase name="{REQUIRED_SIGNATURE_UI_TEST}" />'
                 '</testsuite></testsuites>'
             )
             valid, summary = verify_project_browser(report)
@@ -190,24 +191,25 @@ class R03CiEvidenceTests(unittest.TestCase):
             self.assertFalse(valid)
             self.assertIn("manual execution", summary)
 
-    def test_review_browser_case_missing_or_nonpassing_cannot_be_hidden_by_green_totals(self):
-        for mutation in ("missing", "failure", "error", "skipped", "duplicate"):
-            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as raw:
-                root = ET.Element("testsuite", tests=str(len(REQUIRED_BROWSER_TESTS)), failures="0", errors="0", skipped="0")
-                for name in REQUIRED_BROWSER_TESTS:
-                    case = ET.SubElement(root, "testcase", name=name)
-                    if name == REQUIRED_REVIEW_UI_TEST:
-                        if mutation == "missing":
-                            root.remove(case)
-                            root.set("tests", str(len(REQUIRED_BROWSER_TESTS)-1))
-                        elif mutation == "duplicate":
-                            ET.SubElement(root, "testcase", name=name)
-                            root.set("tests", str(len(REQUIRED_BROWSER_TESTS)+1))
-                        else:
-                            ET.SubElement(case, mutation)
-                report = Path(raw)/"browser.xml"
-                ET.ElementTree(root).write(report)
-                self.assertFalse(verify_project_browser(report)[0])
+    def test_every_required_browser_case_missing_or_nonpassing_cannot_be_hidden_by_green_totals(self):
+        for required_name in REQUIRED_BROWSER_TESTS:
+            for mutation in ("missing", "failure", "error", "skipped", "duplicate"):
+                with self.subTest(required_name=required_name,mutation=mutation), tempfile.TemporaryDirectory() as raw:
+                    root = ET.Element("testsuite", tests=str(len(REQUIRED_BROWSER_TESTS)), failures="0", errors="0", skipped="0")
+                    for name in REQUIRED_BROWSER_TESTS:
+                        case = ET.SubElement(root, "testcase", name=name)
+                        if name == required_name:
+                            if mutation == "missing":
+                                root.remove(case)
+                                root.set("tests", str(len(REQUIRED_BROWSER_TESTS)-1))
+                            elif mutation == "duplicate":
+                                ET.SubElement(root, "testcase", name=name)
+                                root.set("tests", str(len(REQUIRED_BROWSER_TESTS)+1))
+                            else:
+                                ET.SubElement(case, mutation)
+                    report = Path(raw)/"browser.xml"
+                    ET.ElementTree(root).write(report)
+                    self.assertFalse(verify_project_browser(report)[0])
 
 
 if __name__ == "__main__":

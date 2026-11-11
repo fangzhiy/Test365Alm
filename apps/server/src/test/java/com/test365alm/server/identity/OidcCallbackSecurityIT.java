@@ -1428,6 +1428,81 @@ class OidcCallbackSecurityIT {
         assertTestCaseRejected(()->defectHttp(member,path,"POST","\"1\"","{\"action\":\"SUBMIT\"}",key,member.csrfToken()),404,"NOT_FOUND");
     }
 
+    @Test void realOidcSignatureHttpSameSubjectFreshLoginCsrfStrongVersionAndFrozenReplay()throws Exception {
+        var f=testCaseHttpFixture();var member=f.member();String path=approvedSignatureHttpCase(f);
+        assertEquals(403,defectHttp(member,path+"/challenges","POST","\"3\"","{}","sig-no-csrf",null).statusCode());
+        assertEquals(428,defectHttp(member,path+"/challenges","POST",null,"{}","sig-no-version",member.csrfToken()).statusCode());
+        assertEquals(403,testCasePost(f.viewer(),path+"/challenges","\"3\"","{}").statusCode());
+        assertEquals(400,testCasePost(member,path+"/challenges","\"3\"","{\"password\":\"not-accepted\"}").statusCode());
+        var challenge=testCasePost(member,path+"/challenges","\"3\"","{}");assertEquals(200,challenge.statusCode(),challenge.body());
+        String body="{\"challengeId\":\""+jsonField(challenge.body(),"id")+"\"}";
+        assertEquals(403,testCasePost(member,path,"\"3\"",body).statusCode(),"an unverified challenge is never sufficient");
+        String authUrl=jsonField(challenge.body(),"authenticationUrl");
+        var verified=signatureReauthenticate(member,authUrl,Variant.VALID,member.flow().scenario().subject,Instant.now().getEpochSecond(),true);
+        String key="signature-http-"+UUID.randomUUID();
+        var signed=defectHttp(verified,path,"POST","\"3\"",body,key,verified.csrfToken());assertEquals(200,signed.statusCode(),signed.body());
+        assertEquals("SIMULATED_V1",jsonText(signed.body(),"signature","evidence","provider"));
+        assertEquals(member.principalId().toString(),jsonText(signed.body(),"signature","actorId"));
+        assertEquals(signed.body(),defectHttp(verified,path,"POST","\"3\"",body,key,verified.csrfToken()).body());
+        assertEquals(409,testCasePost(verified,path,"\"3\"",body).statusCode());
+        assertEquals(200,get(f.viewer().flow().client(),path).statusCode());
+        for(String secret:List.of("password","access_token","id_token","code_verifier","session_binding"))assertFalse(signed.body().contains(secret));
+    }
+
+    @Test void realOidcSignatureHttpRejectsOtherSubjectMissingOrStaleAuthenticationAndInvalidNonce()throws Exception {
+        for(String invalid:List.of("other-subject","missing-time","stale-time","wrong-nonce")) {
+            var f=testCaseHttpFixture();var member=f.member();String path=approvedSignatureHttpCase(f);
+            var challenge=testCasePost(member,path+"/challenges","\"3\"","{}");assertEquals(200,challenge.statusCode(),challenge.body());
+            var before=signatureRows(f.project());
+            String subject=invalid.equals("other-subject")?f.viewer().flow().scenario().subject:member.flow().scenario().subject;
+            Long authTime=invalid.equals("missing-time")?null:Instant.now().minusSeconds(invalid.equals("stale-time")?600:0).getEpochSecond();
+            signatureReauthenticate(member,jsonField(challenge.body(),"authenticationUrl"),invalid.equals("wrong-nonce")?Variant.WRONG_NONCE:Variant.VALID,subject,authTime,false);
+            assertEquals(401,get(member.flow().client(),path).statusCode(),invalid+" invalidates the local signing session");
+            assertEquals(before,signatureRows(f.project()),invalid+" must not form a signature or business evidence");
+        }
+    }
+
+    @Test void realOidcSignatureHttpCrossSessionRevocationAndLogoutRejectPendingOrReplayedWrites()throws Exception {
+        var f=testCaseHttpFixture();var member=f.member();String path=approvedSignatureHttpCase(f);
+        var challenge=testCasePost(member,path+"/challenges","\"3\"","{}");assertEquals(200,challenge.statusCode());
+        String url=jsonField(challenge.body(),"authenticationUrl"),body="{\"challengeId\":\""+jsonField(challenge.body(),"id")+"\"}";
+        assertEquals(403,get(f.admin().flow().client(),url).statusCode(),"another session cannot start this challenge");
+        var verified=signatureReauthenticate(member,url,Variant.VALID,member.flow().scenario().subject,Instant.now().getEpochSecond(),true);
+        String key="signature-revoke-"+UUID.randomUUID();
+        assertEquals(200,defectHttp(verified,path,"POST","\"3\"",body,key,verified.csrfToken()).statusCode());
+        try(var c=ownerConnection();var s=c.prepareStatement("UPDATE project_member SET revoked_at=CURRENT_TIMESTAMP WHERE project_id=? AND principal_id=?")) {s.setObject(1,f.project());s.setObject(2,member.principalId());assertEquals(1,s.executeUpdate());}
+        var before=signatureRows(f.project());
+        assertEquals(404,defectHttp(verified,path,"POST","\"3\"",body,key,verified.csrfToken()).statusCode());
+        assertEquals(before,signatureRows(f.project()));
+        assertEquals(200,postJson(verified.flow().client(),"/api/v1/auth/logout",verified.csrfHeader(),verified.csrfToken(),"{}").statusCode());
+        assertEquals(401,get(verified.flow().client(),path).statusCode());
+    }
+    private String approvedSignatureHttpCase(TestCaseHttpFixture f)throws Exception {
+        String body=testCaseBody("Signature exact content",null,true);
+        body=body.substring(0,body.length()-1)+",\"businessFields\":{\"reviewer\":{\"value\":\""+f.member().principalId()+"\"}}}";
+        var created=testCasePost(f.member(),testCasePath(f.project()),null,body);assertEquals(201,created.statusCode(),created.body());
+        String test=jsonField(created.body(),"id"),revision=jsonText(created.body(),"currentRevision","id");
+        String review=testCasePath(f.project())+"/"+test+"/revisions/"+revision+"/review";
+        assertEquals(200,testCasePost(f.member(),review,"\"1\"","{\"action\":\"SUBMIT\"}").statusCode());
+        assertEquals(200,testCasePost(f.member(),review,"\"2\"","{\"action\":\"APPROVE\"}").statusCode());
+        return "/api/v1/projects/"+f.project()+"/signatures/TEST_APPROVAL/"+test+"/"+revision;
+    }
+    private HttpActor signatureReauthenticate(HttpActor actor,String url,Variant variant,String subject,Long authTime,boolean accepted)throws Exception {
+        assertEquals(303,get(actor.flow().client(),url).statusCode());
+        var flow=runAuthorization(variant,subject,actor.flow().client(),authTime);
+        assertEquals(302,flow.callback().statusCode());assertTrue(flow.callback().headers().firstValue("location").orElseThrow().endsWith(accepted?"/?signature=reauthenticated":"/?signature=failed"));
+        if(!accepted)return actor;
+        String csrf=get(flow.client(),"/api/v1/csrf").body();return new HttpActor(flow,actor.principalId(),jsonField(csrf,"headerName"),jsonField(csrf,"token"));
+    }
+    private Map<String,List<String>> signatureRows(UUID project)throws Exception {
+        var result=new java.util.TreeMap<String,List<String>>();try(var c=ownerConnection()) {
+            for(String table:List.of("signature_record","signature_outbox_event","audit_event","core_command_idempotency"))
+                try(var s=c.prepareStatement("SELECT to_jsonb(t)::text FROM "+table+" t WHERE project_id=? ORDER BY to_jsonb(t)::text")) {
+                    s.setObject(1,project);try(var r=s.executeQuery()){var rows=new ArrayList<String>();while(r.next())rows.add(r.getString(1));result.put(table,rows);}
+                }
+        }return result;
+    }
+
     private Map<String,List<String>> reviewRows(UUID project)throws Exception {
         var result=new java.util.TreeMap<String,List<String>>();try(var c=ownerConnection()) {
             for(String table:List.of("test_case","test_revision","test_review_event","test_review_outbox_event","audit_event","core_command_idempotency"))
@@ -1672,13 +1747,19 @@ class OidcCallbackSecurityIT {
     }
 
     private Flow runAuthorization(Variant variant, String subject, HttpClient client) throws Exception {
+        return runAuthorization(variant,subject,client,null);
+    }
+
+    private Flow runAuthorization(Variant variant, String subject, HttpClient client, Long authenticationTime) throws Exception {
         Scenario scenario = IDP.prepare(variant, subject);
+        scenario.authenticationTime=authenticationTime;
 
         HttpResponse<String> start = get(client, "/oauth2/authorization/test365alm");
         assertEquals(302, start.statusCode());
         URI authorization = URI.create(start.headers().firstValue("location").orElseThrow());
         assertEquals(IDP.authorizationEndpoint(), withoutQuery(authorization));
         Map<String, String> request = query(authorization);
+        if(authenticationTime!=null){assertEquals("login",request.get("prompt"));assertEquals("0",request.get("max_age"));}
         assertEquals("code", request.get("response_type"));
         assertEquals(CLIENT_ID, request.get("client_id"));
         assertTrue(request.getOrDefault("scope", "").contains("openid"));
@@ -2092,6 +2173,7 @@ class OidcCallbackSecurityIT {
         private final AtomicInteger tokenRequests = new AtomicInteger();
         private volatile String authorizationNonce;
         private volatile boolean protocolValid;
+        private volatile Long authenticationTime;
 
         private Scenario(Variant variant, String subject) {
             this.variant = variant;
@@ -2268,11 +2350,13 @@ class OidcCallbackSecurityIT {
                     case WRONG_NONCE -> nonce = sha256("wrong-nonce");
                     default -> { }
                 }
-                JWTClaimsSet claims = new JWTClaimsSet.Builder()
+                var claimsBuilder = new JWTClaimsSet.Builder()
                         .issuer(tokenIssuer).subject(scenario.subject).audience(audience)
                         .issueTime(java.util.Date.from(issued)).expirationTime(java.util.Date.from(expiry))
                         .claim("nonce", nonce).claim("name", "HTTP Callback Tester")
-                        .claim("preferred_username", "r03-fix02").build();
+                        .claim("preferred_username", "r03-fix02");
+                if(scenario.authenticationTime!=null)claimsBuilder.claim("auth_time",scenario.authenticationTime);
+                JWTClaimsSet claims=claimsBuilder.build();
                 SignedJWT jwt = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256)
                         .keyID(trustedKey.getKeyID()).build(), claims);
                 jwt.sign(new RSASSASigner(key));
