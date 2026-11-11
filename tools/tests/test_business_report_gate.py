@@ -21,6 +21,6 @@ class BusinessReportGateTests(unittest.TestCase):
                 self.assertEqual(change=='good',verify_browser(path),change)
 
     def test_exact_database_inventory_is_required(self):
-        self.assertEqual(6,len(REQUIRED))
+        self.assertEqual(7,len(REQUIRED))
         with tempfile.TemporaryDirectory() as directory:
             self.assertFalse(verify(Path(directory),{'com.test365alm.server.report.ReportDatabaseIT':REQUIRED})[0])

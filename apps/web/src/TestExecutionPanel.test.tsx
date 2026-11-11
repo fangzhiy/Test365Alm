@@ -10,6 +10,7 @@ import { executionApi } from './testExecution'
 import { testsApi } from './tests'
 import type { Run, RunAttempt, RunStep, TestInstance, TestSet } from './testExecution'
 import { historyApi } from './historyApi'
+import * as reportReads from './reportsApi'
 
 vi.mock('./historyApi', () => ({ historyApi: { list: vi.fn() } }))
 
@@ -38,6 +39,21 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.resetAllMocks() })
 
 describe('TestExecutionPanel', () => {
+  it('report denial invalidates the loaded execution host rather than leaving old lists behind', async () => {
+    vi.mocked(executionApi.pageSets).mockResolvedValue({items:[set],nextCursor:null})
+    vi.mocked(executionApi.getSet).mockResolvedValue(set)
+    vi.mocked(executionApi.pageInstances).mockResolvedValue({items:[instance],nextCursor:null})
+    vi.mocked(executionApi.pageRuns).mockResolvedValue({items:[run],nextCursor:null})
+    const read=vi.spyOn(reportReads,'loadReport').mockResolvedValue({kind:'SET',version:'F-REPORT-1',generatedAt:'2026-11-11T00:00:00Z',timeZone:'UTC',projectId:'project-1',projectName:'项目',filters:{},facts:{testSet:{id:'set-1',name:'统计'},counts:{categories:{}}},items:[],steps:[],attachments:[],reviews:[],signatures:[],links:[],retests:[]})
+    try {
+      render(<TestExecutionPanel projectId="project-1" access={access}/>);
+      fireEvent.click(await screen.findByRole('button',{name:/登录冒烟/}));await screen.findByRole('button',{name:'测试集汇总报告'})
+      fireEvent.click(screen.getByRole('button',{name:'测试集汇总报告'}));await screen.findByText('数据完整加载',{exact:false})
+      read.mockRejectedValue({code:'PROJECT_ACCESS_DENIED',status:403,message:'revoked'})
+      fireEvent.click(screen.getByRole('button',{name:'应用报告筛选'}));await screen.findByText('当前会话没有读取测试集和运行记录的权限。')
+      expect(screen.queryByRole('dialog')).toBeNull();expect(screen.queryByRole('button',{name:/登录冒烟/})).toBeNull();expect(screen.queryByRole('button',{name:'测试集汇总报告'})).toBeNull()
+    } finally { read.mockRestore() }
+  })
   it.each(['set detail', 'execution grid'] as const)('keeps case discovery and instance entry locked until %s finishes, then starts from the new grid row', async (slowRead) => {
     let release!: () => void
     const gate = new Promise<void>(resolve => { release = resolve })

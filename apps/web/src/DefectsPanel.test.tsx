@@ -8,6 +8,8 @@ import { defectsApi } from './defectsApi'
 import type { Defect } from './defectsApi'
 import { historyApi } from './historyApi'
 import { reviewerApi } from './reviewerApi'
+import * as reportReads from './reportsApi'
+import { executionApi } from './testExecution'
 vi.mock('./historyApi',()=>({historyApi:{list:vi.fn()}}))
 vi.mock('./DefectAttempt',()=>({default:()=>null}))
 vi.mock('./defectsApi',async()=>({...await vi.importActual<typeof import('./defectsApi')>('./defectsApi'),defectsApi:{list:vi.fn(),create:vi.fn(),get:vi.fn(),history:vi.fn(),verification:vi.fn(),retests:vi.fn(),edit:vi.fn(),transition:vi.fn(),retest:vi.fn()}}))
@@ -15,6 +17,17 @@ vi.mock('./reviewerApi',()=>({reviewerApi:{list:vi.fn().mockResolvedValue({items
 const access={tenantId:'t',projectId:'p',principalId:'m',roles:['PROJECT_MEMBER'] as const,permissions:['defect:read','defect:create','defect:update','defect:transition','defect:history:read','run:write']}
 const c={title:'Bug',description:'reproduce',severity:'HIGH',priority:'MEDIUM'}
 const d={id:'d',projectId:'p',displayNumber:1,rowVersion:1,createdBy:'m',createdAt:'2026-10-16',currentRevision:{...c,id:'r1',defectId:'d',revisionNo:1,status:'OPEN' as const,reason:'',createdBy:'m',createdAt:'2026-10-16'},links:[]}
+it('report denial clears the previously loaded defect list and detail',async()=>{
+ defaults()
+ const read=vi.spyOn(reportReads,'loadReport').mockResolvedValue({kind:'DEFECTS',version:'F-REPORT-1',generatedAt:'2026-11-11T00:00:00Z',timeZone:'UTC',projectId:'p',projectName:'项目',filters:{},facts:{matched:0},items:[],steps:[],attachments:[],reviews:[],signatures:[],links:[],retests:[]})
+ const sets=vi.spyOn(executionApi,'pageSets').mockResolvedValue({items:[],nextCursor:null})
+ try {
+  render(<DefectsPanel projectId="p" access={access}/>);fireEvent.click(await screen.findByRole('button',{name:/BUG-1/}));await screen.findByRole('region',{name:'缺陷详情'})
+  fireEvent.click(screen.getByRole('button',{name:'偏差清单报告'}));await screen.findByText('数据完整加载',{exact:false})
+  read.mockRejectedValue({code:'FORBIDDEN',status:403,message:'revoked'});fireEvent.click(screen.getByRole('button',{name:'应用报告筛选'}))
+  await screen.findByText(/缺陷范围不可访问，旧内容已清理/);expect(screen.queryByRole('dialog')).toBeNull();expect(screen.queryByRole('region',{name:'缺陷详情'})).toBeNull();expect(screen.queryByRole('button',{name:/BUG-1/})).toBeNull()
+ }finally{read.mockRestore();sets.mockRestore()}
+})
 function defaults(){vi.mocked(defectsApi.list).mockResolvedValue({items:[d],nextCursor:null});vi.mocked(defectsApi.get).mockResolvedValue(d);vi.mocked(defectsApi.history).mockResolvedValue({items:[d.currentRevision],nextCursor:null});vi.mocked(defectsApi.verification).mockResolvedValue({eligible:false,runId:null,attemptId:null,reason:'No PASS'});vi.mocked(defectsApi.retests).mockResolvedValue({items:[],nextCursor:null})}
 beforeEach(()=>{vi.mocked(reviewerApi.list).mockResolvedValue({items:[{principalId:'reviewer-id',displayName:'张三'}],nextCursor:null});vi.mocked(historyApi.list).mockResolvedValue({items:[],nextCursor:null})})
 afterEach(()=>{cleanup();vi.resetAllMocks();vi.useRealTimers()})

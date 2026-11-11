@@ -99,11 +99,57 @@ class ReportDatabaseIT {
         var resolved=defects.transition(f.actor,f.project,d.id(),"RESOLVED","修复",tag(d.rowVersion()),key());
         var rt=defects.retest(f.actor,f.project,d.id(),tag(resolved.rowVersion()),key());finish(f,execution.run(f.actor,f.project,rt.runId()),"PASS","新结果");
         var reopened=defects.transition(f.actor,f.project,d.id(),"REOPENED","新问题",tag(resolved.rowVersion()),key());
-        var second=defects.transition(f.actor,f.project,d.id(),"RESOLVED","第二周期",tag(reopened.rowVersion()),key());
+        for(var report:List.of(reports.defects(f.viewer,f.project,set.id(),null,null,""),reports.run(f.viewer,f.project,r.run().id(),a.id()))) {
+            assertTrue(report.items().get(0).path("currentResolutionId").isNull());
+            assertEquals(resolved.currentRevision().id().toString(),report.items().get(0).path("resolved_revision_id").asText());
+            assertEquals("PASS",report.retests().get(0).path("conclusion").asText());
+        }
+        var progress=defects.transition(f.actor,f.project,d.id(),"IN_PROGRESS","调查",tag(reopened.rowVersion()),key());
+        assertTrue(reports.defects(f.viewer,f.project,set.id(),null,null,"").items().get(0).path("currentResolutionId").isNull());
+        var second=defects.transition(f.actor,f.project,d.id(),"RESOLVED","第二周期",tag(progress.rowVersion()),key());
+        assertEquals(second.currentRevision().id().toString(),reports.defects(f.viewer,f.project,set.id(),null,null,"").items().get(0).path("currentResolutionId").asText());
+        var secondRetest=defects.retest(f.actor,f.project,d.id(),tag(second.rowVersion()),key());
+        finish(f,execution.run(f.actor,f.project,secondRetest.runId()),"PASS","第二周期通过");
         assertEquals(2,reports.defects(f.viewer,f.project,null,null,"HIGH","%_").items().size());
         var scoped=reports.defects(f.viewer,f.project,set.id(),null,null,"");assertEquals(1,scoped.items().size());
         assertEquals("FAIL",scoped.links().get(0).path("source_conclusion").asText());assertEquals("原始失败",scoped.links().get(0).path("actual_result").asText());
         assertEquals("PASS",scoped.retests().get(0).path("conclusion").asText());assertNotEquals(second.currentRevision().id().toString(),scoped.retests().get(0).path("resolved_revision_id").asText());
+        assertEquals(2,scoped.retests().size());assertEquals(second.currentRevision().id().toString(),scoped.retests().get(1).path("resolved_revision_id").asText());
+    }
+    @Test void relatedClosureSignatureAppearsOnSourceAndRetestWithoutSigningEitherAttempt()throws Exception {
+        var f=fixture();var t=create(f);var set=execution.createSet(f.actor,f.project,"Closure relations","",key());
+        var i=execution.addInstance(f.actor,f.project,set.id(),t.id(),t.currentRevision().id(),key());
+        var run=execution.createRun(f.actor,f.project,i.id(),key());var a=finish(f,run,"FAIL","失败来源");
+        var content=CoreCommands.JSON.readTree("{\"title\":\"Related\",\"description\":\"\",\"severity\":\"HIGH\",\"priority\":\"HIGH\"}");
+        var d=defects.fromStep(f.actor,f.project,content,run.run().id(),a.id(),a.steps().get(0).stepKey(),key());
+        var resolved=defects.transition(f.actor,f.project,d.id(),"RESOLVED","修复",tag(d.rowVersion()),key());
+        var retest=defects.retest(f.actor,f.project,d.id(),tag(resolved.rowVersion()),key());
+        var b=finish(f,execution.run(f.actor,f.project,retest.runId()),"PASS","复测通过");
+        var closed=defects.transition(f.actor,f.project,d.id(),"CLOSED","关闭",tag(resolved.rowVersion()),key());
+        var challenge=signatures.prepare(f.actor,f.project,SignatureRules.Kind.DEVIATION_CLOSURE,d.id(),closed.currentRevision().id(),empty(),tag(closed.rowVersion()),key(),BINDING);
+        var signature=signatures.sign(f.actor,f.project,SignatureRules.Kind.DEVIATION_CLOSURE,d.id(),closed.currentRevision().id(),body(challenge),tag(closed.rowVersion()),key(),BINDING,proof(f,challenge)).signature();
+        // A signed but unrelated defect must not enter either execution report.
+        for(var scope:List.of(f,fixture())) {
+            var unrelated=defects.create(scope.actor,scope.project,content,null,key());
+            var ur=defects.transition(scope.actor,scope.project,unrelated.id(),"RESOLVED","fix",tag(unrelated.rowVersion()),key());
+            var uc=defects.transition(scope.actor,scope.project,unrelated.id(),"CLOSED","close",tag(ur.rowVersion()),key());
+            var ch=signatures.prepare(scope.actor,scope.project,SignatureRules.Kind.DEVIATION_CLOSURE,uc.id(),uc.currentRevision().id(),empty(),tag(uc.rowVersion()),key(),BINDING);
+            signatures.sign(scope.actor,scope.project,SignatureRules.Kind.DEVIATION_CLOSURE,uc.id(),uc.currentRevision().id(),body(ch),tag(uc.rowVersion()),key(),BINDING,proof(scope,ch));
+        }
+        var tables=List.of("signature_record","signature_challenge","signature_outbox_event","defect_outbox_event","execution_outbox_event","audit_event");
+        var before=new HashMap<String,Integer>();for(var table:tables)before.put(table,count(f,table));
+        tools.jackson.databind.JsonNode stored;
+        try(var db=owner();var st=db.prepareStatement("SELECT payload::text FROM signature_record WHERE id=?")) {
+            st.setObject(1,signature.id());try(var rs=st.executeQuery()){assertTrue(rs.next());stored=CoreCommands.JSON.readTree(rs.getString(1));}
+        }
+        for(var attempt:List.of(a,b)) {
+            var report=reports.run(f.viewer,f.project,run.run().id(),attempt.id());
+            assertEquals(List.of(stored),report.signatures());
+            assertEquals(signature.contentDigest(),report.signatures().get(0).path("contentDigest").asText());
+            assertEquals(closed.currentRevision().id().toString(),report.signatures().get(0).path("snapshotId").asText());
+            assertFalse(report.signatures().stream().anyMatch(s->s.path("kind").asText().equals("RUN_COMPLETION")));
+        }
+        for(var table:tables)assertEquals(before.get(table),count(f,table),table);
     }
     @Test void exactReviewAndThreeSignatureKindsUseStoredPayloadWithoutReadSideWrites()throws Exception {
         var f=fixture();var t=approved(f);var c=prepare(f,t);var sig=sign(f,t,c,proof(f,c),key()).signature();

@@ -464,6 +464,7 @@
       "historicalFailureSurvivesRevisionAssignmentAndPassingRerun",
       "latestSelectionPrecedesFilteringWithStableTiesAndSeparateHistoricalActivity",
       "manualDefectsAndRealRelationsPreserveOriginalFailureAndRetestCycle",
+      "relatedClosureSignatureAppearsOnSourceAndRetestWithoutSigningEitherAttempt",
       "viewerReadAndCrossTenantProjectRevokedDisabledDenials"
     ]
   }

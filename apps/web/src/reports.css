@@ -7,3 +7,17 @@
 
 .report-facts .report-wide{grid-column:1 / -1}
 @media print{html:has(.report-overlay){background:white}.report-document header,.report-document footer{background:white}}
+.report-trace{font-size:10px;color:#536474;margin:6px 0;overflow-wrap:anywhere}
+.report-trace .report-facts{grid-template-columns:1fr}
+.report-statistics{border:1px solid #ccd5dc;padding:12px;margin:16px 0}
+.report-statistics .report-facts{grid-template-columns:repeat(5,minmax(0,1fr));margin:0}
+@media print{
+  .report-facts .report-short{break-inside:avoid}
+  .report-facts dt{break-after:avoid}
+  .report-facts .report-wide{display:block;break-inside:auto}
+  .report-statistics{break-inside:avoid}
+  .report-trace{font-size:7pt}
+  .signature-snapshot{display:none}
+  .with-appendix .signature-snapshot{display:block}
+  .with-appendix .signature-snapshot>pre,.with-appendix .signature-snapshot>p{display:block}
+}

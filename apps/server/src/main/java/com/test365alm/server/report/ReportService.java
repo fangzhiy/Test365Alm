@@ -68,8 +68,13 @@ public class ReportService {
             """,5000,p.tenantId(),project,run,attempt,test,revision);
         var defects=selectDefects(p,null,null,null,"",run,attempt);
         var related=relations(p,defects);
+        // Merge original payloads by record identity, never regenerate snapshots.
+        var signatures=new TreeMap<String,JsonNode>();
+        signed.forEach(s->signatures.put(s.path("id").asText(),s));
+        related.signatures().forEach(s->signatures.put(s.path("id").asText(),s));
+        ReportRules.limit(signatures.size(),5000);
         return view("RUN",p,Map.of("runId",run.toString(),"attemptId",attempt.toString()),facts,defects,steps,
-                attachments,reviews,signed,related.links(),related.retests());
+                attachments,reviews,List.copyOf(signatures.values()),related.links(),related.retests());
     }
 
     @Transactional(readOnly=true,isolation=Isolation.REPEATABLE_READ)
@@ -109,13 +114,13 @@ public class ReportService {
     @Transactional(readOnly=true,isolation=Isolation.REPEATABLE_READ)
     public View defects(UUID actor,UUID project,UUID set,String requestedStatus,String requestedSeverity,String query) {
         var p=commands.scope(actor,project,false,false);
-        if(set!=null)one("SELECT to_jsonb(s)::text FROM test_set s WHERE tenant_id=? AND project_id=? AND id=?",p.tenantId(),project,set);
+        String setName=set==null?"":one("SELECT to_jsonb(s)::text FROM test_set s WHERE tenant_id=? AND project_id=? AND id=?",p.tenantId(),project,set).path("name").asText();
         String status=ReportRules.filter(requestedStatus,List.of("OPEN","IN_PROGRESS","RESOLVED","CLOSED","REOPENED"));
         String severity=ReportRules.filter(requestedSeverity,List.of("LOW","MEDIUM","HIGH","CRITICAL"));
         String q=query==null?"":query.strip();if(q.length()>200)throw ProjectAccessException.invalid("Report title filter is too long");
         var items=selectDefects(p,set,status,severity,q,null,null);
         var related=relations(p,items);
-        return view("DEFECTS",p,filters(set,status,severity,q),CoreCommands.JSON.valueToTree(Map.of("matched",items.size())),
+        return view("DEFECTS",p,filters(set,status,severity,q),CoreCommands.JSON.valueToTree(Map.of("matched",items.size(),"testSetName",setName)),
                 items,List.of(),List.of(),List.of(),related.signatures(),related.links(),related.retests());
     }
 
@@ -123,6 +128,8 @@ public class ReportService {
         return rows("""
             SELECT jsonb_build_object('id',d.id,'display_number',d.display_number,'created_by',d.created_by,
               'created_at',d.created_at,'creatorCurrentName',pr.display_name,'resolved_revision_id',d.resolved_revision_id,
+              'currentResolutionId',CASE WHEN d.status IN ('RESOLVED','CLOSED') THEN d.resolved_revision_id ELSE NULL END,
+              'lastResolvedRevisionNo',(SELECT revision_no FROM defect_revision WHERE id=d.resolved_revision_id AND project_id=d.project_id),
               'revision',to_jsonb(r))::text
             FROM defect d JOIN defect_revision r ON r.id=d.current_revision_id AND r.project_id=d.project_id
             LEFT JOIN principal pr ON pr.id=d.created_by
