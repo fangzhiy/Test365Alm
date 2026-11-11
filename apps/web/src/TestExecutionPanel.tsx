@@ -208,7 +208,7 @@ export default function TestExecutionPanel({ projectId, access, resetSignal = 0 
     if (signaturePendingInScope()) return
     const preserveDraft = options?.preserveDraft === true
     const previousAttemptId = selectedAttempt?.id
-    const { round, controller } = begin('运行详情请求超时，请稍后重试', true); if (!preserveDraft) setSelectedRun(null)
+    const { round, controller } = begin('运行详情请求超时，请稍后重试', true); setPending('run-read'); if (!preserveDraft) setSelectedRun(null)
     if (!preserveDraft) { setAttempts([]); setSelectedAttempt(null); setActuals({}); setOutcomes({}) }
     setState('loading')
     try {
@@ -241,7 +241,7 @@ export default function TestExecutionPanel({ projectId, access, resetSignal = 0 
       setState('ready')
     }
     catch (error) { if (!current(round, controller)) return; if (isScopeAccessError(error)) { invalidateScope(); return }; setState('error'); setNotice(isAbort(error) ? '运行详情请求超时，请稍后重试' : messageFor(error)) }
-    finally { finish(round, controller) }
+    finally { if (finish(round, controller)) setPending(null) }
   }
   const loadMoreAttempts = async () => {
     if (signaturePendingInScope()) return

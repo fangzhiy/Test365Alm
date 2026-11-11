@@ -39,6 +39,18 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.resetAllMocks() })
 
 describe('TestExecutionPanel', () => {
+  it('locks stale history buttons while refreshing run details so they cannot cancel the new history read',async()=>{
+    const old={...attempt,state:'FINISHED' as const,outcome:'FAIL' as const},next={...old,id:'attempt-2',attemptNo:2,outcome:'PASS' as const}
+    vi.mocked(executionApi.pageSets).mockResolvedValue({items:[set],nextCursor:null});vi.mocked(executionApi.getSet).mockResolvedValue(set)
+    vi.mocked(executionApi.pageInstances).mockResolvedValue({items:[instance],nextCursor:null});vi.mocked(executionApi.pageRuns).mockResolvedValue({items:[{...run,attempt:old}],nextCursor:null})
+    vi.mocked(executionApi.getRun).mockResolvedValue({...run,attempt:old});vi.mocked(executionApi.pageAttempts).mockResolvedValue({items:[old],nextCursor:null});vi.mocked(executionApi.getAttempt).mockResolvedValue(old)
+    render(<TestExecutionPanel projectId="project-1" access={access}/>);fireEvent.click(await screen.findByRole('button',{name:/登录冒烟/}));fireEvent.click(await screen.findByRole('button',{name:/运行 run-1/}));await screen.findByRole('button',{name:'查看所选 Attempt 执行报告'})
+    let complete!:(v:Run)=>void;vi.mocked(executionApi.getRun).mockImplementationOnce(()=>new Promise(r=>{complete=r}));vi.mocked(executionApi.pageAttempts).mockResolvedValue({items:[old,next],nextCursor:null})
+    fireEvent.click(screen.getByRole('button',{name:'刷新运行详情'}));const stale=screen.getByRole('button',{name:'尝试 1 · FAIL'})
+    expect(stale).toBeDisabled();fireEvent.click(stale)
+    const signal=vi.mocked(executionApi.getRun).mock.calls.at(-1)?.[2]?.signal;expect(signal?.aborted).toBe(false)
+    await act(async()=>complete({...run,attempt:next}));await waitFor(()=>expect(screen.getByRole('button',{name:'尝试 2 · PASS'})).toBeEnabled());expect(screen.getByRole('heading',{name:'运行详情 · 尝试 1'})).toBeVisible()
+  })
   it('withholds the old report entry until the selected historical Attempt has loaded', async () => {
     const old={...attempt,state:'FINISHED' as const,outcome:'FAIL' as const},next={...old,id:'attempt-2',attemptNo:2,outcome:'PASS' as const}
     vi.mocked(executionApi.pageSets).mockResolvedValue({items:[set],nextCursor:null});vi.mocked(executionApi.getSet).mockResolvedValue(set)
