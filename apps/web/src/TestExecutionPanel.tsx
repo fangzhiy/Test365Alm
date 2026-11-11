@@ -208,7 +208,12 @@ export default function TestExecutionPanel({ projectId, access, resetSignal = 0 
     if (signaturePendingInScope()) return
     const preserveDraft = options?.preserveDraft === true
     const previousAttemptId = selectedAttempt?.id
-    const { round, controller } = begin('运行详情请求超时，请稍后重试', true); setPending('run-read'); if (!preserveDraft) setSelectedRun(null)
+    const { round, controller } = begin('运行详情请求超时，请稍后重试', true)
+    // Refresh keeps the old history visible: lock its dependent actions until
+    // the replacement history arrives. A new run selection clears that history
+    // and remains interruptible by another run selection.
+    if (preserveDraft) setPending('run-read')
+    else setSelectedRun(null)
     if (!preserveDraft) { setAttempts([]); setSelectedAttempt(null); setActuals({}); setOutcomes({}) }
     setState('loading')
     try {
