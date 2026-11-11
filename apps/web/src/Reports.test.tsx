@@ -7,6 +7,12 @@ const target={kind:'RUN' as const,runId:'run-old',attemptId:'attempt-fail'}
 const report=():Report=>({kind:'RUN',version:'F-REPORT-1',generatedAt:'2026-11-11T00:00:00Z',timeZone:'UTC',projectId:'p',projectName:'中文项目',filters:{runId:'run-old',attemptId:'attempt-fail'},facts:{run:{id:'run-old'},attempt:{id:'attempt-fail',status:'FINISHED',conclusion:'FAIL'},manifest:{title:'旧用例',source_revision_no:1},businessFields:{test_purpose:{value:'原目的'}}},items:[],steps:[{id:'step',ordinal:1,action:'操作',expected:'预期',actual_result:'长中文 <script>alert(1)</script>',conclusion:'FAIL',executed_at:null,updated_at:'2026-11-11T00:00:00Z'}],attachments:[],reviews:[],signatures:[],links:[],retests:[]})
 afterEach(()=>{cleanup();vi.unstubAllGlobals();vi.restoreAllMocks()})
 describe('report history and complete read contract',()=>{
+ it('focuses the report, makes the application inert, and restores focus on Escape',()=>{
+  vi.stubGlobal('fetch',vi.fn(()=>new Promise(()=>{})))
+  const root=document.createElement('div');root.id='root';document.body.append(root)
+  render(<ReportLauncher projectId="p" target={target} label="报告"/>,{container:root});const opener=screen.getByText('报告');opener.focus();fireEvent.click(opener)
+  expect(root.inert).toBe(true);expect(document.activeElement).toBe(screen.getByText('返回业务页面'));fireEvent.keyDown(screen.getByRole('dialog'),{key:'Escape'});expect(root.inert).toBe(false);expect(document.activeElement).toBe(opener);expect(screen.queryByRole('dialog')).toBeNull()
+ })
  it('shows the Attempt unsigned when only its original test revision has approval signature',()=>{
   const r=report();r.signatures=[{kind:'TEST_APPROVAL',objectId:'case',snapshotId:'revision',displayName:'原签署人',contentSnapshot:{original:true}}]
   render(<ReportBody report={r}/>);expect(screen.getByText('本次 Attempt 未签署')).toBeTruthy();expect(screen.queryByText('本次 Attempt 已模拟签署')).toBeNull()
