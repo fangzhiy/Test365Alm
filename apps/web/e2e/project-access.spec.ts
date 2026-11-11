@@ -5,6 +5,7 @@ import { resolve } from 'node:path'
 import { isOwnedCiRun, isOwnedRun, seedProjectAccessScope } from './ownedR03'
 import { safeHttpEvent, safeLocation, type SafeHttpEvent } from './safeHttpDiagnostics'
 import { confirmSimulatedSignature } from './signatureUi'
+import { fillSignatureCredentials } from './signatureLoginUi'
 
 type Page = import('@playwright/test').Page
 type APIResponse = import('@playwright/test').APIResponse
@@ -326,7 +327,7 @@ test('real Keycloak UI simulated signature rejects wrong credentials binds ident
       const signing=panel.getByRole('region',{name:'模拟电子签署：用例批准确认',exact:true}).first()
       await signing.getByRole('button',{name:'查看模拟签署',exact:true}).click();await signing.getByRole('button',{name:'开始模拟签署'}).click()
       const opened=page.waitForEvent('popup');await signing.getByRole('button',{name:'重新登录以确认身份'}).click();const popup=await opened
-      await popup.locator('#username').fill(process.env.R03_VIEWER_USER!);await popup.locator('#password').fill(process.env.R03_VIEWER_PASSWORD!)
+      await fillSignatureCredentials(popup,process.env.R03_VIEWER_USER!,process.env.R03_VIEWER_PASSWORD!,true)
       await Promise.all([popup.waitForEvent('close',{timeout:15000}),popup.locator('#kc-login').click()])
       await expect(panel).toContainText('当前签署范围不可访问')
       await expect(panel.getByRole('button',{name:/确认模拟签署：/})).toHaveCount(0)
