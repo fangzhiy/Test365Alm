@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
+import { writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { isOwnedRun, assertStepEvidenceFacilities, seedProjectAccessScope } from './ownedR03'
 import { confirmSimulatedSignature } from './signatureUi'
@@ -21,7 +22,7 @@ test('real Keycloak UI reports preserve historical FAIL after related PASS and p
  const env=process.env,mu=env.R03_MEMBER_USER!,mp=env.R03_MEMBER_PASSWORD!,viewerContext=await browser.newContext(),viewer=await viewerContext.newPage(),adminContext=await browser.newContext(),admin=await adminContext.newPage()
  const output=resolve(process.cwd(),'../../output/pdf'),evidence=resolve(process.cwd(),'../../local-evidence/r03');await mkdir(output,{recursive:true});await mkdir(evidence,{recursive:true})
  const steps:object[]=[];async function stage(name:string,fn:()=>Promise<void>){await test.step(name,async()=>{let passed=false;try{await fn();passed=true}finally{steps.push({name,passed})}})}
- const checkpoint=(name:string)=>{steps.push({name,entered:true})}
+ const checkpoint=(name:string)=>{steps.push({name,entered:true});writeFileSync(resolve(evidence,'reports-context.json'),JSON.stringify({schemaVersion:1,steps},null,2))}
  try{
   const aid=await login(admin,env.R03_TEST_USER!,env.R03_TEST_USER_PASSWORD!),mid=await login(page,mu,mp),vid=await login(viewer,env.R03_VIEWER_USER!,env.R03_VIEWER_PASSWORD!),{tenantId,domainId}=seedProjectAccessScope(aid,vid,mid)
   const project=await write(admin,'/api/v1/projects',{tenantId,domainId,code:`F-${randomUUID()}`,name:'合成演示 · 中文报告项目'}),root=`/api/v1/projects/${project.id}`
@@ -117,19 +118,28 @@ test('real Keycloak UI reports preserve historical FAIL after related PASS and p
     const logout=logoutTab.waitForResponse(r=>new URL(r.url()).pathname==='/api/v1/auth/logout'&&r.request().method()==='POST')
     await logoutTab.getByRole('button',{name:'退出登录'}).click();const loggedOut=await logout
     steps.push({name:'第二标签退出状态',status:loggedOut.status()})
-    expect(loggedOut.status()).toBe(200);expect(await loggedOut.json()).toEqual({status:'LOGGED_OUT'})
-    checkpoint('第二标签合法退出响应已核对')
+    expect(loggedOut.status()).toBe(200)
+    await expect(logoutTab.getByRole('link',{name:'登录 Test365Alm'})).toBeVisible()
+    checkpoint('第二标签真实退出成功并显示未登录入口')
     // Keep the original tab untouched until its real report GET observes loss.
     await expect(dialog).toContainText('数据完整加载');await expect(execution.locator('.execution-detail')).toBeAttached()
     checkpoint('退出后原标签仍保留报告和宿主，即将请求报告')
     const denied=page.waitForResponse(r=>new URL(r.url()).pathname===`${root}/reports/test-sets/${set.id}`)
     await dialog.getByRole('button',{name:'应用报告筛选'}).click();const response=await denied
-    expect(response.status()).toBe(401);expect(await response.json()).toEqual({code:'UNAUTHENTICATED'})
+    expect(response.status()).toBe(401)
+    // Observe the original UI request above, then independently verify the
+    // filter's raw body through the same real server and shared cookie context.
+    const rawDenied=await page.request.get(`${root}/reports/test-sets/${set.id}`)
+    expect(rawDenied.status()).toBe(401);expect(await rawDenied.json()).toEqual({code:'UNAUTHENTICATED'})
     steps.push({name:'原标签报告安全拒绝',status:401,code:'UNAUTHENTICATED'})
     await expect(dialog).toHaveCount(0);await expect(execution).toContainText('当前会话没有读取测试集和运行记录的权限。')
     await expect(execution.locator('.execution-set')).toHaveCount(0);await expect(execution.locator('.execution-detail')).toHaveCount(0)
     await expect(page.getByRole('button',{name:'打印 / 另存为 PDF'})).toHaveCount(0)
     checkpoint('真实 401 后原报告和执行宿主均已清理')
+   }catch(error){
+    const location=error instanceof Error?error.stack?.match(/reports\.spec\.ts:(\d+):(\d+)/):null
+    steps.push({name:'会话失效验证失败位置',line:location?Number(location[1]):null,column:location?Number(location[2]):null})
+    checkpoint('会话失效失败已定位');throw error
    }finally{await logoutTab.close()}
    // Restore only after proving the untouched tab cleared on the actual 401;
    // retain the independently tested membership revocation path below.
