@@ -24,3 +24,6 @@ raw-migration/
 local-evidence/
 # Git Credential Manager may create diagnostics containing sensitive metadata
 gcm-diagnose.log
+
+# Regenerable report PDF samples (published as CI artifacts, never business archives)
+/output/pdf/

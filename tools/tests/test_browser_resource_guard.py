@@ -121,12 +121,12 @@ class BrowserResourceGuardTests(unittest.TestCase):
         report = {"status": "passed", "workers": 1, "retries": 0,
                   "cases": [{"name": name, "status": "passed", "expected": "passed", "retry": 0} for name in EXPECTED]}
         self.assertTrue(validate_results(report))
-        self.assertEqual(5,len(EXPECTED))
+        self.assertEqual(6,len(EXPECTED))
         self.assertIn("real Keycloak UI simulated signature rejects wrong credentials binds identity and preserves signed revision",EXPECTED)
         self.assertIn("real Keycloak UI designated reviewer rejects approves and new revision requires fresh review",EXPECTED)
-        for index in range(5):
+        for index in range(6):
             missing={**report,"cases":report["cases"][:index]+report["cases"][index+1:]}
-            duplicate={**report,"cases":[*report["cases"][:index],report["cases"][(index+1)%5],*report["cases"][index+1:]]}
+            duplicate={**report,"cases":[*report["cases"][:index],report["cases"][(index+1)%6],*report["cases"][index+1:]]}
             replacement={**report,"cases":[*report["cases"][:index],{**report["cases"][index],"name":"unapproved"},*report["cases"][index+1:]]}
             replay={**report,"cases":[*report["cases"][:index],{**report["cases"][index],"retry":1},*report["cases"][index+1:]]}
             expected_skip={**report,"cases":[*report["cases"][:index],{**report["cases"][index],"expected":"skipped"},*report["cases"][index+1:]]}

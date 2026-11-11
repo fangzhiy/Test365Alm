@@ -1,3 +1,4 @@
+import ReportLauncher from './Reports'
 import { useCallback,useEffect,useState } from 'react'
 import { defectsApi } from './defectsApi'
 import type { Defect } from './defectsApi'
@@ -17,7 +18,7 @@ function Scope({projectId,access}:{projectId:string;access:ProjectAccess}) {
  const load=useCallback((search:string,after:string|null)=>run(signal=>defectsApi.list(projectId,search,after,{signal}),page=>{setItems(old=>after?[...old,...page.items]:page.items);setCursor(page.nextCursor)}),[projectId,run])
  useEffect(()=>{void load('',null)},[load])
  if(denied||scopeDenied)return <section aria-label="缺陷工作台"><p role="alert">缺陷范围不可访问，旧内容已清理；请重新加载项目权限。</p></section>
- return <section aria-label="缺陷工作台" className="version-panel defects-panel"><h2>缺陷工作台</h2>
+ return <section aria-label="缺陷工作台" className="version-panel defects-panel"><h2>缺陷工作台</h2>{!message&&<ReportLauncher onDenied={onDenied} projectId={projectId} target={{kind:'DEFECTS'}} label="偏差清单报告"/>}
   <label>查询缺陷标题<input value={q} maxLength={200} onChange={e=>setQ(e.target.value)} disabled={busy||detailLocked||creationLocked}/></label>
   <button disabled={busy||detailLocked||creationLocked} onClick={()=>void load(q,null)}>查询缺陷</button><button disabled={busy||detailLocked||creationLocked} onClick={()=>void load(q,null)}>刷新缺陷</button>
   {!items.length&&!busy&&<p>当前范围暂无缺陷。</p>}<ul>{items.map(d=><li key={d.id}><button disabled={busy||detailLocked||creationLocked} onClick={()=>setSelected(d.id)}>BUG-{d.displayNumber} · {d.currentRevision.title} · {d.currentRevision.status}</button></li>)}</ul>

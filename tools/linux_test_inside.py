@@ -113,13 +113,13 @@ FOCUSED_METHODS = BUSINESS_METHODS | EXECUTION_METHODS | REVIEW_METHODS | SIGNAT
 INVENTORY = json.loads((Path(__file__).with_name("linux-test") / "combined-methods.json").read_text(encoding="utf-8"))
 UNIT_METHODS = {(suite,name) for suite,names in INVENTORY["unit"].items() for name in names}
 INTEGRATION_METHODS = {(suite,name) for suite,names in INVENTORY["integration"].items() for name in names}
-if len(UNIT_METHODS) != 105 or len(INTEGRATION_METHODS) != 219 or not FOCUSED_METHODS <= INTEGRATION_METHODS:
+if len(UNIT_METHODS) != 107 or len(INTEGRATION_METHODS) != 226 or not FOCUSED_METHODS <= INTEGRATION_METHODS:
     raise ValueError("Frozen combined method inventory does not match the reviewed gate")
 
 
 def valid_report(phase: str, report: dict) -> bool:
     # The merged source inventory is frozen by identity, not a caller-selected total.
-    expected = {"scan": (105, 1), "unit": (105, None), "focused": (105, 82), "integration": (105, 219)}[phase]
+    expected = {"scan": (107, 1), "unit": (107, None), "focused": (107, 82), "integration": (107, 226)}[phase]
     if report["unit"]["tests"] != expected[0]:
         return False
     if expected[1] is not None and report["integration"]["tests"] != expected[1]:

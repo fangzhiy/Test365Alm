@@ -30,7 +30,7 @@ class LinuxRunnerGuardTests(unittest.TestCase):
             (INTEGRATION_METHODS, 202, "906d9e17304a8d69f69c4803115840ee15380aea241b72c3dac42c4a0a53cfb6"),
             (FOCUSED_METHODS - SIGNATURE_METHODS, 66, "f5fa4502015f078c7324589be92d20284c0fcf82ab9612c1bbb122920ad72f20"),
         ):
-            baseline = sorted((c,n) for c,n in methods if ".signature." not in c and not n.startswith("realOidcSignature")
+            baseline = sorted((c,n) for c,n in methods if ".signature." not in c and ".report." not in c and not n.startswith("realOidcSignature")
                               and c != "com.test365alm.server.identity.LoginDiagnosticsTest"
                               and n != "lateAnonymousMeResponseCannotReplaceAuthorizationSession")
             self.assertEqual(count, len(baseline))

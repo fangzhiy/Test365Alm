@@ -238,6 +238,7 @@ jobs:
         run: |
           set -o pipefail
           python ../../tools/verify_signature_report.py target/failsafe-reports 2>&1 | tee signature-report.txt
+          python ../../tools/verify_business_reports.py database target/failsafe-reports
       - name: Upload backend evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -415,6 +416,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Install Chinese print fonts
+        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
       - name: Install browser and build application
         run: |
           set -euo pipefail
@@ -538,6 +541,9 @@ jobs:
           set -o pipefail
           python tools/verify_r03_project_browser_report.py local-evidence/r03/playwright-results.xml \
             2>&1 | tee local-evidence/r03/project-browser-report.txt
+      - name: Require complete F report browser flow
+        if: always()
+        run: python tools/verify_business_reports.py browser local-evidence/r03/playwright-results.xml
       - name: Upload R03 browser evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -565,6 +571,8 @@ jobs:
             local-evidence/r03/asset-services.txt
             local-evidence/r03/playwright-results.xml
             local-evidence/r03/project-browser-report.txt
+            local-evidence/r03/reports-context.json
+            output/pdf/
             local-evidence/r03/import-permissions.txt
             local-evidence/r03/image-user.txt
             local-evidence/r03/containers.txt
