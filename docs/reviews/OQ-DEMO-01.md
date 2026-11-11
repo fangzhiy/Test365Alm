@@ -2,7 +2,7 @@
 
 ## 已接受的 F 收口
 
-PR #12 head `dd62943f9f341226e1492f9b032dd29467e9ebc3` 两路六 Job 成功、无新增代码后，以确切 head 合入 main：`b8975e4604295269c2c0e8efef461614fc4b37da`。dev/codex-main 从该合入点快进。F 技术验收已接受；业务报告格式认可待确认，分页留白及历史登录逐例归因限制保留。合入正常 push CI 的实际结果集中在本轮 PR 摘要，不手动重复全集。
+PR #12 head `dd62943f9f341226e1492f9b032dd29467e9ebc3` 两路六 Job 成功、无新增代码后，以确切 head 合入 main：`b8975e4604295269c2c0e8efef461614fc4b37da`。dev/codex-main 从该合入点快进。F 技术验收已接受；业务报告格式认可待确认，分页留白及历史登录逐例归因限制保留。合入正常 push CI：[main 42998297752](https://github.com/fangzhiy/Test365Alm/actions/runs/42998297752)、[dev 42998350475](https://github.com/fangzhiy/Test365Alm/actions/runs/42998350475) 均六 Job 成功，不手动重复全集。
 
 ## 新增合成场景（待审核）
 
@@ -38,6 +38,17 @@ python tools/demo_down.py --profile oq-demo-01
 前端全套曾497/498通过：FIX02既有测试在初次详情仍busy时点刷新，捕获旧signal；补等待按钮enabled并断言受控Promise已启动，保留取消/晚到断言。工具首次219/220通过：新增浏览器必需用例后旧工具夹具未同步，已补新用例，原缺失/失败/重复拒绝门槛保留。最终组合验证、被测SHA与CI集中在新PR摘要；失败日志保留于 `local-evidence/oq-*`，不写未运行为通过。
 
 证据：`local-evidence/demo-oq-demo-01/evidence-index.json` 逐条关联修订、复核、实例/Run/Attempt、签署原记录、固定附件、来源/复测及报告；`scenario.json` 为阶段检查点，`stages.json` 为阶段结果，`inspection.json` 为只读实际状态。一次性 runner 使用 `python tools/local_browser_runner.py --source <SHA> --with-assets --scenario oq-demo-01`，保留原六流程，新增第七流程；CI保留原全集，新增完整场景及原始JSON制品。
+
+本地实际命令与证据：
+
+- `python -m unittest discover -s tools/tests -v`：220/220；`local-evidence/oq-tools-final.log`。
+- `apps/web` 执行 `npm run lint`、`npm run test:run -- --reporter=verbose --reporter=json --outputFile.json=../../local-evidence/oq-vitest-final.json`、`npm run build`：43文件、500/500，零失败/跳过；lint保留10项既有warning、build通过。此组合随后提交为 `cc14bfe7ff43e564b54fbd9a34178f163900ad3a`。
+- `python tools/local_browser_runner.py --source cc14bfe7ff43e564b54fbd9a34178f163900ad3a --with-assets --scenario oq-demo-01`：7/7、1worker/0retry/0skip，正式scanner provision及真实资产preflight通过，cleanup/processes_stopped均true；run `3c0e82262e00418b850881f47d308643`。
+- `python tools/linux_test_runner.py --source cc14bfe7ff43e564b54fbd9a34178f163900ad3a`：Java21单元107、专项集成82、完整集成226，均零失败/错误/跳过；含真实clean/EICAR扫描专项及既有报告门禁。run `2b473fc6fbdd492da1db95995133bd5f`，逐阶段JSON保留在`local-evidence/linux-tests/`；后续8f2仅浏览器续跑冲突保护，不改变后端/工具测试源。
+- `python tools/oq_demo.py --profile oq-demo-01 --mode resume`：完整业务场景、既有状态续跑通过；持久环境正常停止/重启后inspect通过，数据保留。`8f2dba663e5e94ee4db60d1e9409964549c734f2` 仅收紧已完成目录/负责人变更冲突保护，其实际持久续跑也通过（`oq-demo-resume-safety.log`）。
+- `git diff --check`、`trail build/check`通过（无冲突，20条词法提示已核对）。首次runner使用短SHA被入口拒绝、未创建资源，改用完整40位SHA后执行，未将拒绝写成通过。
+
+最终提交含以上实现及简短证据收尾；最终head的正常dev push / pull_request CI、实际checkout与原始制品核对记录在同一PR摘要，本地不同被测版本不冒称最终CI结果。
 
 样张及截图：`output/pdf/oq-demo-01/` 下 ordinary-run、original-fail、retest-pass、test-set-summary、deviation-list 的 PDF/PNG。本地v1.1来源页数依次5/6/6/6/6，已渲染检查全部29页、中文/跨页/表头/附件/签署/末页完整，保留既有留白与字段跨页限制，不在本批重设计打印。逐页缩略图和提取核对见 `local-evidence/oq-pdf-review/`。历史F样张来源不改写。技术排版通过不等于业务格式认可，模拟签署不等于正式电子签名认证。
 
