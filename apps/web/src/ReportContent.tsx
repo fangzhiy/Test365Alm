@@ -11,7 +11,7 @@ function Facts({ values }: { values: [string, Json | undefined][] }) {
     <div key={k} className={text(v).length > 160 ? 'report-wide' : 'report-short'}><dt>{k}</dt><dd>{text(v)}</dd></div>)}</dl>
 }
 function Trace({ values }: { values: [string, Json | undefined][] }) {
-  return <details className="report-trace"><summary>技术溯源标识</summary><Facts values={values} /></details>
+  return <details className="report-trace" open><summary>技术溯源标识</summary><Facts values={values} /></details>
 }
 function BusinessFields({ value }: { value: Json | undefined }) {
   const entries = Object.entries(row(value))
@@ -99,7 +99,7 @@ function SetReport({ report: r, onTarget }: { report: Report; onTarget?: (t: Rep
   const f = r.facts, counts = row(f.counts)
   return <><h2>{text(row(f.testSet).name)}</h2><p>{text(row(f.testSet).description)}</p>
     <section className="report-statistics"><Facts values={[["测试集实例总数", f.totalInstances], ["当前匹配实例数", counts.matched],
-      ...Object.entries(row(counts.categories)).map(([k, v]): [string, Json] => [label(k), v]), ["完成率", rate(counts.completionRate)], ["通过率", rate(counts.passRate)]]} /></section>
+      ...['NOT_RUN','RUNNING','PAUSED','PASS','FAIL','BLOCKED'].map((k): [string, Json] => [label(k), row(counts.categories)[k]]), ["完成率", rate(counts.completionRate)], ["通过率", rate(counts.passRate)]]} /></section>
     <p>实例最新执行结果：按 started_at、runId、attemptId 降序选择一次，再筛选。每实例仅归入一类；同用例不同实例分别计数。
       完成率 = (PASS + FAIL + BLOCKED) / 匹配实例数；通过率 = PASS / 已完成数；零分母显示 —。</p>
     <Facts values={[["其他历史活动 Attempt 数（匹配实例，不混入分类）", f.otherActiveAttempts], ["本测试集相关偏差数（全测试集，不受实例状态筛选影响）", f.relatedDefects]]} />

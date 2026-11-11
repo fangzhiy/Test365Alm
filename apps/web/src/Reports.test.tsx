@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import ReportLauncher, { ReportBody } from './Reports'
-import { parseReport } from './reportsApi'
+import { parseReport, reportScopeDenied } from './reportsApi'
 import type { Report } from './reportsApi'
 const target={kind:'RUN' as const,runId:'run-old',attemptId:'attempt-fail'}
 const report=():Report=>({kind:'RUN',version:'F-REPORT-1',generatedAt:'2026-11-11T00:00:00Z',timeZone:'UTC',projectId:'p',projectName:'中文项目',filters:{runId:'run-old',attemptId:'attempt-fail'},facts:{testSetId:'set',testSetName:'原测试集',run:{id:'run-old',manifest_id:'manifest',test_instance_id:'instance'},attempt:{id:'attempt-fail',run_id:'run-old',project_id:'p',status:'FINISHED',conclusion:'FAIL',started_at:null,finished_at:null},manifest:{id:'manifest',project_id:'p',test_instance_id:'instance',source_test_case_id:'case',source_revision_id:'revision',title:'旧用例',source_revision_no:1},businessFields:{test_purpose:{value:'原目的'}}},items:[],steps:[{id:'step',project_id:'p',attempt_id:'attempt-fail',step_key:'step-key',ordinal:1,action:'操作',expected:'预期',actual_result:'长中文 <script>alert(1)</script>',conclusion:'FAIL',executed_at:null,updated_at:'2026-11-11T00:00:00Z'}],attachments:[],reviews:[],signatures:[],links:[],retests:[]})
@@ -50,6 +50,13 @@ describe('report integrity and current cycle',()=>{
   const wrongRate=setReport();(wrongRate.facts.counts as Record<string,unknown>).completionRate=1.5
   const duplicate=setReport();duplicate.items.push(duplicate.items[0])
   for(const r of [wrongCounts,wrongRate,duplicate])expect(()=>parseReport(r,'p',target)).toThrow('报告响应不完整')
+  const empty=setReport();empty.items=[];empty.facts={testSet:{id:'set',project_id:'p',name:'空集'},totalInstances:0,counts:{matched:0,categories:{NOT_RUN:0,RUNNING:0,PAUSED:0,PASS:0,FAIL:0,BLOCKED:0},completionRate:null,passRate:null},otherActiveAttempts:0,relatedDefects:0}
+  expect(parseReport(empty,'p',target)).toBe(empty)
+ })
+ it('does not confuse ordinary network or CSRF errors with loss of scope',()=>{
+  expect(reportScopeDenied(new TypeError('offline'))).toBe(false)
+  expect(reportScopeDenied({status:403,code:'CSRF_INVALID'})).toBe(false)
+  expect(reportScopeDenied({status:403,code:'FORBIDDEN'})).toBe(true)
  })
  it('rejects mismatched sources missing records and out-of-scope evidence but accepts explicit unknown time',()=>{
   const source=report();(source.facts.manifest as Record<string,unknown>).project_id='foreign'

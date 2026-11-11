@@ -39,6 +39,7 @@ function validateSet(r: Report, target: Extract<ReportTarget,{kind:'SET'}>) {
  const f=r.facts,c=f.counts
  if(!object(f.testSet)||f.testSet.id!==target.setId||f.testSet.project_id!==r.projectId||typeof f.testSet.name!=='string'||r.filters.testSetId!==target.setId||!count(f.totalInstances)||!count(f.otherActiveAttempts)||!count(f.relatedDefects)||!object(c)||!object(c.categories)||!count(c.matched)||c.matched!==r.items.length||c.matched>f.totalInstances)return invalid()
  const actual:Record<string,number>=Object.fromEntries(states.map(s=>[s,0]))
+ if(!r.filters.status&&c.matched!==f.totalInstances)return invalid()
  for(const i of r.items) {
   if(!string(i.title)||!string(i.test_case_id)||!string(i.test_revision_id)||!count(i.revision_no)||i.revision_no<1||!states.includes(String(i.status))||!count(i.otherActiveAttempts)||!date(i,'started_at')||!date(i,'finished_at')||!nullable(i,'run_id')||!nullable(i,'attempt_id'))return invalid()
   if(i.status==='NOT_RUN'?(i.run_id!==null||i.attempt_id!==null||i.started_at!==null||i.finished_at!==null||i.conclusion!==null):(!string(i.run_id)||!string(i.attempt_id)))return invalid()

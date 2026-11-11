@@ -8,6 +8,7 @@ export const labels: Record<string, string> = {
   OPEN: '待处理', IN_PROGRESS: '处理中', RESOLVED: '已解决', CLOSED: '已关闭', REOPENED: '已重开',
   LOW: '低', MEDIUM: '中', HIGH: '高', CRITICAL: '严重',
   TEST_APPROVAL: '用例批准', RUN_COMPLETION: '运行完成确认', DEVIATION_CLOSURE: '偏差关闭确认',
+  DRAFT: '草稿', SUBMITTED: '待复核', APPROVED: '已批准', REJECTED: '已拒绝',
   RUN_STEP: '执行步骤来源', REQUIREMENT: '需求关联', SUBMIT: '提交复核', APPROVE: '批准', REJECT: '拒绝',
 }
 export const label = (v: Json | undefined) => typeof v === 'string' && labels[v] ? `${labels[v]} (${v})` : text(v)

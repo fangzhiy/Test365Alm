@@ -39,6 +39,18 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.resetAllMocks() })
 
 describe('TestExecutionPanel', () => {
+  it('withholds the old report entry until the selected historical Attempt has loaded', async () => {
+    const old={...attempt,state:'FINISHED' as const,outcome:'FAIL' as const},next={...old,id:'attempt-2',attemptNo:2,outcome:'PASS' as const}
+    vi.mocked(executionApi.pageSets).mockResolvedValue({items:[set],nextCursor:null});vi.mocked(executionApi.getSet).mockResolvedValue(set)
+    vi.mocked(executionApi.pageInstances).mockResolvedValue({items:[instance],nextCursor:null});vi.mocked(executionApi.pageRuns).mockResolvedValue({items:[{...run,attempt:old}],nextCursor:null})
+    vi.mocked(executionApi.getRun).mockResolvedValue({...run,attempt:old});vi.mocked(executionApi.pageAttempts).mockResolvedValue({items:[old,next],nextCursor:null})
+    let complete!:(v:RunAttempt)=>void
+    vi.mocked(executionApi.getAttempt).mockImplementation(()=>new Promise(r=>{complete=r}))
+    render(<TestExecutionPanel projectId="project-1" access={access}/>);fireEvent.click(await screen.findByRole('button',{name:/登录冒烟/}));fireEvent.click(await screen.findByRole('button',{name:/运行 run-1/}))
+    await screen.findByRole('button',{name:'查看所选 Attempt 执行报告'});fireEvent.click(screen.getByRole('button',{name:'尝试 2 · PASS'}))
+    expect(screen.queryByRole('button',{name:'查看所选 Attempt 执行报告'})).toBeNull()
+    await act(async()=>complete(next));await screen.findByRole('heading',{name:'运行详情 · 尝试 2'});expect(screen.getByRole('button',{name:'查看所选 Attempt 执行报告'})).toBeEnabled()
+  })
   it('report denial invalidates the loaded execution host rather than leaving old lists behind', async () => {
     vi.mocked(executionApi.pageSets).mockResolvedValue({items:[set],nextCursor:null})
     vi.mocked(executionApi.getSet).mockResolvedValue(set)
