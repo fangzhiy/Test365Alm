@@ -4,6 +4,7 @@ import {createHash,randomUUID} from 'node:crypto'
 import {mkdir,writeFile} from 'node:fs/promises'
 import {resolve} from 'node:path'
 import {isOwnedCiRun,seedProjectAccessScope} from './ownedR03'
+import {safeHttpEvent,safeLocation} from './safeHttpDiagnostics'
 
 async function login(page:Page,user:string,password:string){
  await page.goto('/');await page.getByRole('link',{name:'登录 Test365Alm'}).click();await page.locator('#username').fill(user);await page.locator('#password').fill(password);await page.locator('#kc-login').click();await expect(page.getByRole('button',{name:'退出登录'})).toBeVisible();const me=await page.request.get('/api/v1/me',{timeout:10_000});expect(me.status()).toBe(200);return (await me.json()).id as string
@@ -23,10 +24,13 @@ test('real Keycloak UI member uploads scans attaches and preserves old asset rev
  const credentials=['R03_TEST_USER','R03_TEST_USER_PASSWORD','R03_MEMBER_USER','R03_MEMBER_PASSWORD','R03_VIEWER_USER','R03_VIEWER_PASSWORD'].map(k=>process.env[k]);if(credentials.some(v=>!v))throw new Error('Ephemeral credentials missing')
  const [au,ap,mu,mp,vu,vp]=credentials as string[],memberContext=await browser.newContext(),viewerContext=await browser.newContext(),member=await memberContext.newPage(),viewer=await viewerContext.newPage()
  const timeline:object[]=[],http:object[]=[];let businessError:unknown,cleanupError:unknown,evidenceError:unknown
- for(const p of [member,viewer])p.on('response',r=>{const pathname=new URL(r.url()).pathname;if(pathname.startsWith('/api/v1/'))http.push({pathname,status:r.status()})})
- async function step(name:string,action:()=>Promise<void>){const start=Date.now();let failed=false;try{await test.step(name,action,{timeout:30_000})}catch(e){failed=true;throw e}finally{timeline.push({name,failed,durationMs:Date.now()-start,pathname:new URL(member.url()).pathname,http:http.splice(0)})}}
+ for(const [role,p] of [['admin',page],['member',member],['viewer',viewer]] as const)p.on('response',r=>{const event=safeHttpEvent(r.url(),r.status(),new Date().toISOString(),r.headers());if(event&&http.length<200)http.push({role,...event})})
+ async function step<T>(name:string,action:()=>Promise<T>,target=member):Promise<T>{const start=Date.now();let failed=false;try{return await test.step(name,action,{timeout:30_000})}catch(e){failed=true;throw e}finally{timeline.push({name,failed,durationMs:Date.now()-start,...safeLocation(target.url()),http:http.splice(0)})}}
  try{
-  const adminId=await login(page,au,ap),memberId=await login(member,mu,mp),viewerId=await login(viewer,vu,vp),{tenantId,domainId}=seedProjectAccessScope(adminId,viewerId,memberId)
+  const adminId=await step('login admin',()=>login(page,au,ap),page)
+  const memberId=await step('login member',()=>login(member,mu,mp),member)
+  const viewerId=await step('login viewer',()=>login(viewer,vu,vp),viewer)
+  const {tenantId,domainId}=seedProjectAccessScope(adminId,viewerId,memberId)
   const created=await write(page,'/api/v1/projects',{tenantId,domainId,code:`R11-${randomUUID()}`,name:'R11 attachment project'});expect(created.status()).toBe(201);const project=(await created.json()).id as string,root=`/api/v1/projects/${project}`
   for(const [principal,role]of[[memberId,'PROJECT_MEMBER'],[viewerId,'PROJECT_VIEWER']])expect((await write(page,`${root}/members/${principal}`,{roles:[role],authorizationVersion:0},'PUT')).status()).toBe(200)
   await select(member,tenantId,project);const permissions=await member.request.get(`/api/v1/me/permissions?projectId=${project}`,{timeout:10_000});expect(permissions.status()).toBe(200);expect((await permissions.json()).roles).toEqual(['PROJECT_MEMBER'])

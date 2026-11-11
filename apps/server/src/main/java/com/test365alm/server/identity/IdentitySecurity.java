@@ -4,8 +4,6 @@ import java.io.IOException;
 import java.net.URI;
 
 import jakarta.servlet.http.HttpServletResponse;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -22,10 +20,12 @@ import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.csrf.InvalidCsrfTokenException;
 import org.springframework.security.web.csrf.MissingCsrfTokenException;
+import org.springframework.security.web.savedrequest.NullRequestCache;
+import org.springframework.security.oauth2.client.web.OAuth2AuthorizationRequestRedirectFilter;
+import org.springframework.security.oauth2.core.OAuth2Error;
 
 @Configuration
 public class IdentitySecurity {
-    private static final Logger log = LoggerFactory.getLogger(IdentitySecurity.class);
 
     @Bean
     @ConditionalOnProperty(name = "test365alm.oidc.enabled", havingValue = "true")
@@ -37,6 +37,7 @@ public class IdentitySecurity {
             @Value("${server.servlet.session.cookie.secure:false}") boolean secureCookie) throws Exception {
         enforceCookieBoundary(serverAddress, webOrigin, secureCookie);
         configureCommon(http);
+        http.addFilterBefore(new LoginDiagnostics(), OAuth2AuthorizationRequestRedirectFilter.class);
         OidcUserService delegate = new OidcUserService();
         http.oauth2Login(oauth -> oauth
                 .authorizationEndpoint(endpoint -> endpoint.authorizationRequestResolver(signatureLogin.resolver(registrations)))
@@ -44,12 +45,12 @@ public class IdentitySecurity {
                     var user = delegate.loadUser(request);
                     var token = user.getIdToken();
                     try {
-                        var local = principals.upsertVerified(token.getIssuer().toString(), token.getSubject(),
+                        principals.upsertVerified(token.getIssuer().toString(), token.getSubject(),
                                 user.getFullName() != null ? user.getFullName() : user.getPreferredUsername());
-                        log.info("OIDC login resolved local principal {}", local.id());
                     } catch (PrincipalRepository.DisabledPrincipalException disabled) {
-                        log.warn("OIDC login refused: local principal disabled");
                         throw new OAuth2AuthenticationException("identity_disabled");
+                    } catch (RuntimeException unavailable) {
+                        throw new OAuth2AuthenticationException(new OAuth2Error("local_principal_failure"));
                     }
                     return user;
                 }))
@@ -62,15 +63,21 @@ public class IdentitySecurity {
                             projects.requireTestWriteAccess(actor,pending.projectId());
                             var token=((OidcUser)authentication.getPrincipal()).getIdToken();
                             signatureLogin.complete(request,token.getIssuer().toString(),token.getSubject(),token.getAuthenticatedAt());
+                            LoginDiagnostics.event(request, response, "signature", "authenticated");
                             response.sendRedirect(webOrigin+"/?signature=reauthenticated");
                         } catch(RuntimeException denied) {
+                            LoginDiagnostics.event(request, response, "signature", "binding_or_permission_rejected");
                             request.getSession().invalidate();
                             org.springframework.security.core.context.SecurityContextHolder.clearContext();
                             response.sendRedirect(webOrigin+"/?signature=failed");
                         }
-                    } else response.sendRedirect(webOrigin+"/");
+                    } else {
+                        LoginDiagnostics.event(request, response, "login", "authenticated");
+                        response.sendRedirect(webOrigin+"/");
+                    }
                 })
                 .failureHandler((request, response, exception) -> {
+                    LoginDiagnostics.failure(request, response, exception);
                     if(signatureLogin.pending(request)) {
                         request.getSession().invalidate();
                         org.springframework.security.core.context.SecurityContextHolder.clearContext();
@@ -88,6 +95,10 @@ public class IdentitySecurity {
     }
 
     private void configureCommon(HttpSecurity http) throws Exception {
+        // SPA login has a fixed success target. Saving anonymous API requests creates
+        // competing JSESSIONID cookies; a late 401 can discard the authorization session.
+        // OAuth2's authorization request repository still uses its normal session.
+        http.requestCache(cache -> cache.requestCache(new NullRequestCache()));
         http.authorizeHttpRequests(auth -> auth
                 .requestMatchers("/health/live", "/health/ready", "/api/v1/version", "/api/v1/csrf",
                         "/oauth2/authorization/test365alm", "/login/oauth2/code/test365alm").permitAll()

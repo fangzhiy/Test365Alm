@@ -23,4 +23,19 @@ describe('safe browser HTTP diagnostics', () => {
     expect(safeHttpEvent('not-a-url', 200, observedAt)).toBeNull()
     expect(safeHttpEvent('http://127.0.0.1:5173/api/v1/me', 0, observedAt)).toBeNull()
   })
+
+  it('accepts only independent diagnostic UUIDs and fixed authentication categories', () => {
+    const url = 'http://127.0.0.1:5173/login/oauth2/code/test365alm?code=secret&state=secret'
+    const diagnosticId = '12345678-1234-1234-1234-123456789abc'
+    expect(safeHttpEvent(url, 302, observedAt, {
+      'x-auth-diagnostic-id': diagnosticId, 'x-auth-stage': 'session_association', 'x-auth-category': 'request_missing',
+      'set-cookie': 'secret-cookie',
+    })).toMatchObject({ diagnosticId, authStage: 'session_association', authCategory: 'request_missing' })
+    const rejected = safeHttpEvent(url, 302, observedAt, {
+      'x-auth-diagnostic-id': 'secret-session', 'x-auth-stage': 'secret-exception', 'x-auth-category': 'secret-token',
+      'set-cookie': 'secret-cookie',
+    })
+    expect(JSON.stringify(rejected)).not.toContain('secret')
+    expect(rejected).not.toHaveProperty('diagnosticId')
+  })
 })

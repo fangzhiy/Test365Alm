@@ -8,6 +8,7 @@ from pathlib import Path
 
 
 REQUIRED_TESTS = {
+    "lateAnonymousMeResponseCannotReplaceAuthorizationSession",
     "realOidcSignatureHttpCrossSessionRevocationAndLogoutRejectPendingOrReplayedWrites",
     "realOidcSignatureHttpRejectsOtherSubjectMissingOrStaleAuthenticationAndInvalidNonce",
     "realOidcSignatureHttpSameSubjectFreshLoginCsrfStrongVersionAndFrozenReplay",

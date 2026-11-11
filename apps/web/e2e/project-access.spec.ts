@@ -69,7 +69,7 @@ class UiDiagnostics {
     const pageErrors: string[] = []
     const responseListener = (response: import('@playwright/test').Response): void => {
       this.recordStatus(response.status())
-      const event = safeHttpEvent(response.url(), response.status(), new Date().toISOString())
+      const event = safeHttpEvent(response.url(), response.status(), new Date().toISOString(), response.headers())
       if (event && this.httpEvents.length < 200) this.httpEvents.push(event)
       try {
         const path = new URL(response.url()).pathname

@@ -169,6 +169,11 @@
     ],
     "com.test365alm.server.signature.SimulatedSignatureProviderTest": [
       "evidenceIsExplicitlySimulatedAndBindsEveryServerVerifiedMaterialField"
+    ],
+    "com.test365alm.server.identity.LoginDiagnosticsTest": [
+      "classifiesKnownStagesAndNeverReflectsUnknownErrorOrMessage",
+      "linksAuthorizationAndCallbackWithIndependentRandomDiagnosticId",
+      "missingSessionDiagnosticDoesNotCreateOne"
     ]
   },
   "integration": {
@@ -305,6 +310,7 @@
     "com.test365alm.server.identity.OidcCallbackSecurityIT": [
       "expiredTokenIsRejectedAfterRealTokenExchangeWithoutPrincipalWrite",
       "failedCallbackDoesNotPoisonClientAndFreshLegalAuthorizationRecovers",
+      "lateAnonymousMeResponseCannotReplaceAuthorizationSession",
       "legalTokenCompletesHttpCallbackAndPersistsPrincipal",
       "realHttpApplicationUsesRestrictedRuntimeRole",
       "realOidcAssetHttpIntegrityCsrfRolesAndIdempotency",
