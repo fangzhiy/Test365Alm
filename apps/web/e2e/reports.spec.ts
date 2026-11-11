@@ -110,16 +110,20 @@ test('real Keycloak UI reports preserve historical FAIL after related PASS and p
    await expect(execution.getByRole('heading',{name:'运行详情 · 尝试 2',exact:true})).toBeVisible()
    await execution.getByRole('button',{name:'测试集汇总报告',exact:true}).click()
    const dialog=page.getByRole('dialog',{name:'业务报告'});await expect(dialog).toContainText('数据完整加载')
+   checkpoint('会话失效验证：原标签报告已加载')
    const logoutTab=await page.context().newPage()
    try{
     await logoutTab.goto('/');await expect(logoutTab.getByRole('button',{name:'退出登录'})).toBeVisible()
     const logout=logoutTab.waitForResponse(r=>new URL(r.url()).pathname==='/api/v1/auth/logout'&&r.request().method()==='POST')
-    await logoutTab.getByRole('button',{name:'退出登录'}).click();expect((await logout).status()).toBe(204)
+    await logoutTab.getByRole('button',{name:'退出登录'}).click();const loggedOut=await logout
+    steps.push({name:'第二标签退出状态',status:loggedOut.status()})
+    expect(loggedOut.status()).toBe(200);expect(await loggedOut.json()).toEqual({code:'LOGGED_OUT'})
     // Keep the original tab untouched until its real report GET observes loss.
     await expect(dialog).toContainText('数据完整加载');await expect(execution.locator('.execution-detail')).toBeAttached()
     const denied=page.waitForResponse(r=>new URL(r.url()).pathname===`${root}/reports/test-sets/${set.id}`)
     await dialog.getByRole('button',{name:'应用报告筛选'}).click();const response=await denied
     expect(response.status()).toBe(401);expect(await response.json()).toEqual({code:'UNAUTHENTICATED'})
+    steps.push({name:'原标签报告安全拒绝',status:401,code:'UNAUTHENTICATED'})
     await expect(dialog).toHaveCount(0);await expect(execution).toContainText('当前会话没有读取测试集和运行记录的权限。')
     await expect(execution.locator('.execution-set')).toHaveCount(0);await expect(execution.locator('.execution-detail')).toHaveCount(0)
     await expect(page.getByRole('button',{name:'打印 / 另存为 PDF'})).toHaveCount(0)
