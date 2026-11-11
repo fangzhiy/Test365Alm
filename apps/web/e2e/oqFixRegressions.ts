@@ -69,6 +69,7 @@ export async function oqFixRegressions(page:Page, admin:Page, scope:{tenantId:st
   expect(edited.resolutionId).toBe(current.resolutionId);expect(edited.revisionId).not.toBe(edited.resolutionId)
   expect(selected.attemptId).toBe(currentRetest.attemptId);expect(selected.resolvedRevisionId).not.toBe(oldCycle)
   evidence.recovery={defectId:d.id,marker,newCycle:current.resolutionId,editedRevision:edited.revisionId,oldCycle,selected,conflict,writes,before,after}
+  writeFileSync(resolve(diagnostics,'fix01-regressions.json'),JSON.stringify(evidence,null,2))
   await finish(await read<Attempt>(path(currentRetest.attemptId)),'PASS')
   phase='current-cycle-retest-finished'
  })

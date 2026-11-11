@@ -180,10 +180,11 @@ export default function TestExecutionPanel({ projectId, access, resetSignal = 0 
   const refreshGrid = async (filters = gridFilterRef.current) => {
     if (signaturePendingInScope()) return
     if (!selectedSet) return
-    gridFilterRef.current = filters; setGridFilters(filters); setInstances([]); setInstancesCursor(null)
-    const { round, controller } = begin(); setPending('grid-read')
-    try { const result = await readInstancesPage(selectedSet.id, null, controller.signal); if (!current(round,controller)) return; setInstances(result.items); setInstancesCursor(result.nextCursor) }
-    catch (error) { if (current(round,controller)) { if (isScopeAccessError(error)) invalidateScope(); else setNotice(messageFor(error)) } }
+    const sameFilters = filters.status === gridFilterRef.current.status && filters.assigneeId === gridFilterRef.current.assigneeId
+    gridFilterRef.current = filters; setGridFilters(filters); if(!sameFilters)setInstances([]); setInstancesCursor(null)
+    const { round, controller } = begin('实例网格请求超时，请重新核对进度', true); setPending('grid-read')
+    try { const result = await readInstancesPage(selectedSet.id, null, controller.signal); if (!current(round,controller)) return; setInstances(result.items); setInstancesCursor(result.nextCursor); setState('ready') }
+    catch (error) { if (current(round,controller)) { if (isScopeAccessError(error)) invalidateScope(); else {setInstances([]);setNotice(messageFor(error))} } }
     finally { if (finish(round,controller)) setPending(null) }
   }
   const assignedInstance = (assignment: Assignment) => setInstances(rows => rows.flatMap(row => row.id !== assignment.instanceId ? [row]
@@ -339,6 +340,7 @@ export default function TestExecutionPanel({ projectId, access, resetSignal = 0 
         {canWrite(access) && <form className="execution-add-form" onSubmit={addInstance}><strong>加入已保存用例修订</strong><label>用例 ID<input aria-label="用例 ID" value={testCaseId} onChange={(event) => setTestCaseId(event.target.value)} required disabled={interactionLocked} /></label><label>修订 ID<input aria-label="修订 ID" value={testRevisionId} onChange={(event) => setTestRevisionId(event.target.value)} required disabled={interactionLocked} /></label><button className="primary-button" type="submit" disabled={interactionLocked}>加入实例</button></form>}
         <h4>测试实例</h4><ExecutionGrid key={`${projectId}:${selectedSet.id}:${accessKey}:${resetSignal}`} projectId={projectId} instances={instances} writable={canWrite(access)}
           disabled={state !== 'ready' || (interactionLocked && pending !== 'grid-assignment')} filters={gridFilters} nextCursor={instancesCursor}
+          refreshing={pending === 'grid-read' || state !== 'ready'}
           onFilter={filters=>void refreshGrid(filters)} onRefresh={()=>void refreshGrid()} onMore={()=>void loadMoreInstances()}
           onOpen={item=>item.runId && void loadRun({id:item.runId})} onStart={item=>void startRun(item)}
           onAssigned={assignedInstance} onLock={lockGrid} onDenied={invalidateScope}/>

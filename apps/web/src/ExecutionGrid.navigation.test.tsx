@@ -19,6 +19,7 @@ it('an open grid navigator tracks refreshed Attempt 1 → running/paused Attempt
  const p=props(),view=render(<ExecutionGrid {...p}/>);fireEvent.click(screen.getByRole('button',{name:'查看绑定修订 导航用例'}));await screen.findByText('冻结内容')
  const nav=()=>within(screen.getByRole('region',{name:'实例修订与闭环导航'}))
  fireEvent.click(nav().getByRole('button',{name:'实例最新 Attempt 与关联偏差报告'}));expect(request).toHaveBeenLastCalledWith('/reports/runs/run/attempts/a1')
+ view.rerender(<ExecutionGrid {...p} refreshing/>);expect(nav().getByRole('status')).toHaveTextContent('正在重新核对');expect(nav().queryByRole('button',{name:'实例最新 Attempt 与关联偏差报告'})).not.toBeInTheDocument()
  for(const status of ['RUNNING','PAUSED'] as const){view.rerender(<ExecutionGrid {...p} instances={[{...instance,attemptId:'a2',status,conclusion:null}]}/>);expect(nav().queryByRole('button',{name:'实例最新 Attempt 与关联偏差报告'})).not.toBeInTheDocument()}
  view.rerender(<ExecutionGrid {...p} instances={[{...instance,runId:'run2',attemptId:'a2',status:'FINISHED',conclusion:'PASS'}]}/>);fireEvent.click(screen.getByRole('button',{name:'刷新实例网格'}));expect(p.onRefresh).toHaveBeenCalledOnce()
  fireEvent.click(nav().getByRole('button',{name:'实例最新 Attempt 与关联偏差报告'}));expect(request).toHaveBeenLastCalledWith('/reports/runs/run2/attempts/a2')

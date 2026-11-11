@@ -7,7 +7,7 @@ import HistoryPanel from './HistoryPanel'
 import ReportLauncher from './Reports'
 import { reportScopeDenied } from './reportsApi'
 
-type Props = { projectId: string; instance: TestInstance; onDenied: () => void; onClose: () => void }
+type Props = { projectId: string; instance: TestInstance; refreshing?:boolean; onDenied: () => void; onClose: () => void }
 
 const nextStep = {
  NOT_RUN:'未运行：返回网格启动手工运行，再在运行工作台记录步骤。',
@@ -21,7 +21,7 @@ const nextStep = {
 export default function InstanceNavigator(props: Props) {
  return <InstanceSession key={`${props.projectId}:${props.instance.id}:${props.instance.testRevisionId}`} {...props}/>
 }
-function InstanceSession({ projectId, instance, onDenied, onClose }: Props) {
+function InstanceSession({ projectId, instance, refreshing=false, onDenied, onClose }: Props) {
  const [revision, setRevision] = useState<TestRevision | null>(null)
  const [error, setError] = useState('')
  const denied = useRef(onDenied)
@@ -49,9 +49,9 @@ function InstanceSession({ projectId, instance, onDenied, onClose }: Props) {
    <p>{revision.description}</p><p>前置条件：{revision.preconditions || '未记录'}</p>
    <ReviewPanel projectId={projectId} testCaseId={instance.testCaseId} revisionId={revision.id} rowVersion={1} contextKey={instance.id} readOnly onDenied={onDenied}/>
    <SignaturePanel projectId={projectId} kind="TEST_APPROVAL" objectId={instance.testCaseId} snapshotId={revision.id} rowVersion={1} contextKey={instance.id} readOnly onDenied={onDenied}/>
-   <p>执行进度：{instance.status ? nextStep[instance.status] : '状态未知，请刷新实例网格。'} 结论：{instance.conclusion ?? '尚无完成结论'}。</p>
+   {refreshing ? <p role="status">正在重新核对实例进度，当前 Attempt 报告暂不可用。</p> : <p>执行进度：{instance.status ? nextStep[instance.status] : '状态未知，请刷新实例网格。'} 结论：{instance.conclusion ?? '尚无完成结论'}。</p>}
    <p>用例批准及其签署绑定上方原修订；运行完成签署绑定确切 Attempt；偏差关闭及其签署绑定偏差关闭修订。PASS 不代表偏差已关闭或本次运行已签署。历史报告请通过网格“进入运行”选择确切历史 Attempt。</p>
-   {instance.runId && instance.attemptId && instance.status === 'FINISHED' && <ReportLauncher projectId={projectId} target={{kind:'RUN',runId:instance.runId,attemptId:instance.attemptId}} label="实例最新 Attempt 与关联偏差报告" onDenied={onDenied}/>}
+   {!refreshing && instance.runId && instance.attemptId && instance.status === 'FINISHED' && <ReportLauncher projectId={projectId} target={{kind:'RUN',runId:instance.runId,attemptId:instance.attemptId}} label="实例最新 Attempt 与关联偏差报告" onDenied={onDenied}/>}
    <ReportLauncher projectId={projectId} target={{kind:'DEFECTS',setId:instance.setId}} label="本测试集真实关联偏差及处理结果" onDenied={onDenied}/>
    <HistoryPanel projectId={projectId} objectType="test_case" objectId={instance.testCaseId}/>
    <details><summary>确切来源标识</summary><p style={{overflowWrap:'anywhere'}}>实例 {instance.id} / 用例 {instance.testCaseId} / 修订 {revision.id}</p></details>

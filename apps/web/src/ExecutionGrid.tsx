@@ -7,6 +7,7 @@ import InstanceNavigator from './InstanceNavigator'
 
 type Props = {
   projectId: string; instances: TestInstance[]; writable: boolean; disabled: boolean; nextCursor: string | null; filters: GridFilters
+  refreshing?: boolean
   onFilter: (filters: GridFilters) => void; onMore: () => void; onRefresh: () => void
   onOpen: (instance: TestInstance) => void; onStart: (instance: TestInstance) => void
   onAssigned: (assignment: Assignment) => void; onLock: (locked: boolean) => void; onDenied: () => void
@@ -71,7 +72,7 @@ export default function ExecutionGrid(props: Props) {
     </tr>)}</tbody></table></div>
     {!instances.length && <p>当前筛选没有实例。</p>}
     {nextCursor && <button type="button" className="secondary-button" disabled={locked} onClick={props.onMore}>加载更多实例</button>}
-    {navigation && <InstanceNavigator key={`${projectId}:${navigation.id}:${navigation.testRevisionId}`} projectId={projectId} instance={navigation} onDenied={navigationDenied} onClose={()=>setSelection(null)}/>}
+    {navigation && <InstanceNavigator key={`${projectId}:${navigation.id}:${navigation.testRevisionId}`} projectId={projectId} instance={navigation} refreshing={props.refreshing} onDenied={navigationDenied} onClose={()=>setSelection(null)}/>}
     {editing && <form className="execution-assignment" onSubmit={e=>{e.preventDefault();void save()}} aria-label="分配实例负责人">
       <strong>{editing.title}</strong><label>实例负责人<select aria-label="实例负责人" value={assignee} disabled={locked} onChange={e=>setAssignee(e.target.value)}>
         <option value="">未分配</option>{editing.assigneeId && !people.items.some(p=>p.id===editing.assigneeId) && <option value={editing.assigneeId}>{editing.assigneeName}（待核验）</option>}
