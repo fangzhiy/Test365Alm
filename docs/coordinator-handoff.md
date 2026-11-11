@@ -5,6 +5,7 @@
 ## 当前收尾与暂停状态（2026-11-11，优先于所有旧授权）
 
 - 用户先明确“所有暂停”，后授权“收尾，先提交github”并要求推送主分支。本次只完成已验收 A–E 的归档、dev 本地集成与 GitHub 主分支 `main`（设为默认），并同步远端 `dev` 推送；F报告/G A03继续暂停，未经用户明确恢复不派工或启动验证资源。分支约定：`main` 保存已验收成果并作为默认分支，`dev` 做集成，`feat/*` 做功能开发；旧 `chore/r01-status-001` 保留。
+- GitHub已完成首次同步：main/dev均为 `41becc532886155cf96f1147dd90e6ea52ad068f`，API及远端HEAD均确认默认分支main；旧默认分支仍保留于 `0c10c38835f112fa41281e824a320f4184cbe08d`。主工作区dev干净，分别配置main/dev跟踪origin同名分支。后续本收尾记录提交同步到两分支，不改变实际被测业务树；CI触发配置覆盖所有分支，新远端CI结果不冒称已通过。
 - E1/E2已由总管在 `msg_088209b2a237` 验收，最终worker交接 `6c7b117070b18130c8cbfa78b5e3cfb1bbdb1c73` 相对实际UI源 `3af82c48b97eb4eb01d1b61ea6e9db68fce2f082` 仅交接文档变化。原文逐字归档 `docs/reviews/signature-worker-handoff.md`，正式结论 `docs/reviews/signature-coordinator-review.md`，清单E1/E2已勾选。
 - E实际后端源 `c549b25dd962554607ca10dc869326371c86b8c1` / run `8eef9cc7836a4a6698d84fae4587db2f`：scan102/1→unit102→focused102/82→full102/218全逐名零F/E/S；后续后端/设施树未变而获准沿用，不冒称后续SHA重跑。实际UI源3af82c4 / run `r03-local-78aa3de77a98483392c8f61b6a21043c`：完整五身份全部passed，1worker/0retry/0skip，真实S3/ClamAV和正式双SCRAM均通过。
 - 总管已独立核验后端62完整容器ID、浏览器4完整容器/1完整网络/3卷及run/project标签空，3秘密和37个PID+Created均消失，owned Java/Node0；Engine一致，保护47容器/22网络/45卷不变。证据 `integrate-audit/local-evidence/e-final-coordinator-cleanup.json`，worker最终索引 `feat-signature/local-evidence/signature/e3af82-final-window-review.json` 的14份哈希已复核匹配。
