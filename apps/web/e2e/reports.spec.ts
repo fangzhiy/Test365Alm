@@ -100,7 +100,8 @@ test('real Keycloak UI reports preserve historical FAIL after related PASS and p
    await dialog.screenshot({path:resolve(output,'test-set-report.png')});await page.pdf({path:resolve(output,'test-set-report.pdf'),preferCSSPageSize:true,printBackground:true,displayHeaderFooter:true,headerTemplate:'<span></span>',footerTemplate:'<div style="font-size:8px;text-align:center;width:100%">Test365Alm · <span class="pageNumber"></span> / <span class="totalPages"></span></div>'});await dialog.getByRole('button',{name:'返回业务页面'}).click()
    // Ordinary business length remains usable, independently of long-text stress evidence.
    await execution.getByRole('button',{name:'测试集汇总报告',exact:true}).click();await expect(dialog.getByRole('row')).toHaveCount(33)
-   await dialog.getByRole('row').filter({hasText:'合成演示实例 3'}).filter({has:dialog.getByRole('button',{name:'查看运行报告'})}).getByRole('button',{name:'查看运行报告'}).click()
+   const ordinaryRow=dialog.getByRole('row').filter({hasText:'合成演示实例 3'}).filter({has:page.getByRole('button',{name:'查看运行报告'})})
+   await expect(ordinaryRow).toHaveCount(1);await ordinaryRow.getByRole('button',{name:'查看运行报告'}).click()
    await expect(dialog.getByRole('heading',{name:'单次运行执行记录报告',exact:true})).toBeVisible()
    await page.pdf({path:resolve(output,'run-report-ordinary.pdf'),preferCSSPageSize:true,printBackground:true});await dialog.screenshot({path:resolve(output,'run-report-ordinary.png')});await dialog.getByRole('button',{name:'返回业务页面'}).click()
   })
