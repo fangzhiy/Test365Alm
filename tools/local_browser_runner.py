@@ -174,10 +174,13 @@ def wait_http(url: str, processes: list, seconds: int = 180) -> None:
     raise RuntimeError("Owned local service readiness timed out")
 
 
-def validate_results(report: dict) -> bool:
+OQ_SCENARIO = "real Keycloak UI SYNTHETIC OQ-DEMO-01 fourteen cases complete reviewed signed execution evidence"
+
+def validate_results(report: dict, scenario: str | None = None) -> bool:
     cases = report.get("cases", [])
     return (report.get("status") == "passed" and report.get("workers") == 1 and report.get("retries") == 0
-            and len(cases) == 6 and {c["name"] for c in cases} == EXPECTED
+            and {c["name"] for c in cases} == (EXPECTED | {OQ_SCENARIO} if scenario else EXPECTED)
+            and len(cases) == (7 if scenario else 6)
             and all(c["status"] == "passed" and c["expected"] == "passed" and c["retry"] == 0 for c in cases))
 
 
@@ -185,6 +188,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", required=True)
     parser.add_argument("--with-assets", action="store_true", help="Create owned real S3/ClamAV and provision a dedicated scanner LOGIN")
+    parser.add_argument("--scenario", choices=["oq-demo-01"], help="Add the complete synthetic fourteen-case flow; retain all original six flows")
     args = parser.parse_args()
     suffix = uuid.uuid4().hex
     run, project = f"r03-local-{suffix}", f"test365alm-r03-local-{suffix}"
@@ -315,13 +319,14 @@ def main() -> int:
             summary["scanner_provision"] = "PASSED"
         verify(resources, args.source, identities, env)
         command(["node", "node_modules/@playwright/test/cli.js", "test", "e2e/project-access.spec.ts", "e2e/manual-execution.spec.ts", "e2e/defects.spec.ts", "e2e/reports.spec.ts",
-                 "--config", "playwright.local.config.ts", "--grep", "real Keycloak UI (manual test case flow|manual execution creates|member creates defect|designated reviewer rejects approves|simulated signature rejects wrong credentials|reports preserve historical FAIL)",
-                 "--workers=1", "--retries=0"], root / "apps/web", "browser", timeout=960)
+                 *( ["e2e/oq-demo.spec.ts"] if args.scenario else [] ),
+                 "--config", "playwright.local.config.ts", "--grep", "real Keycloak UI (manual test case flow|manual execution creates|member creates defect|designated reviewer rejects approves|simulated signature rejects wrong credentials|reports preserve historical FAIL" + ("|SYNTHETIC OQ-DEMO-01" if args.scenario else "") + ")",
+                 "--workers=1", "--retries=0"], root / "apps/web", "browser", timeout=1560 if args.scenario else 960)
         import shutil
         if (root / "output/pdf").is_dir():
             shutil.copytree(root / "output/pdf", evidence / "pdf")
         report = json.loads((evidence / "results.json").read_text())
-        result = 0 if validate_results(report) else 1
+        result = 0 if validate_results(report,args.scenario) else 1
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         for stage in ("asset_preflight", "scanner_provision"):
             if summary[stage] == "RUNNING":

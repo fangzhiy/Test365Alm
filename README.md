@@ -11,7 +11,9 @@ python tools/demo_up.py
 
 成功后打开 <http://127.0.0.1:15173>，点击“登录 Test365Alm”。管理员为 `r03-user`，普通成员为 `r03-member`，只读用户为 `r03-viewer`；随机密码分别在被 Git 忽略的 `.env.demo` 的 `R03_TEST_USER_PASSWORD`、`R03_MEMBER_PASSWORD`、`R03_VIEWER_PASSWORD` 中，只在本机查看，不复制到仓库或报告。登录后选择“OQ 演示租户”及“jinsai 验证测试”项目。
 
-项目含合成 SAP 交货/退货 OQ 示例：`GS-VDZ50118-OQP-01-A03-1` 至 `A03-14` 共 14 条手工用例，每条 3 步；同名 A03 测试集和 14 个实例；11 条 PASS、2 条 FAIL、1 条进行中的运行，以及从 A03-12 失败步骤发起的偏差。A03-13 特意保留“实际结果：符合预期、步骤结论：FAIL”，演示实际文本和结论相互独立。这些是合成样例，不是客户历史数据，也不代表完整 OQ 验收。
+完整新版合成演示 OQ-DEMO-01（独立环境、十四修订先复核/模拟批准签署再执行、失败偏差/复测/关闭、三类报告）：见 [使用与证据](docs/reviews/OQ-DEMO-01.md)。启动 `python tools/demo_up.py --profile oq-demo-01`，显式创建/续跑 `python tools/oq_demo.py --profile oq-demo-01 --mode resume`，只读核查 `--mode inspect`，停止保留数据 `python tools/demo_down.py --profile oq-demo-01`。登录后选择 SYNTHETIC 项目及 v1.1 目录。本场景不是正式 G/A03。
+
+旧项目含合成 SAP 交货/退货 OQ 示例：`GS-VDZ50118-OQP-01-A03-1` 至 `A03-14` 共 14 条手工用例，每条 3 步；同名 A03 测试集和 14 个实例；11 条 PASS、2 条 FAIL、1 条进行中的运行，以及从 A03-12 失败步骤发起的偏差。A03-13 特意保留“实际结果：符合预期、步骤结论：FAIL”，演示实际文本和结论相互独立。这些是合成样例，不是客户历史数据，也不代表完整 OQ 验收。
 
 新建或中断续建的演示会在测试计划与测试实验室分别创建 `OQ运行确认 / GS-VDZ50118-OQP-01-A03`：14 条用例放入计划目录，测试集放入实验室目录。已有完成检查点的演示仍只读核对，不自动改变目录；可在界面中显式整理。中断续建时若对象已被人工移到其他目录，播种会拒绝覆盖。
 

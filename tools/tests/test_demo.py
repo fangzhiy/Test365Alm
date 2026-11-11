@@ -354,8 +354,8 @@ class DemoSeedTests(unittest.TestCase):
             demo_seed.seed(self.config, lambda ids: None, checkpoint)
             FakeApi.data['runs']['run-0']['currentAttempt'].update(status='RUNNING', conclusion=None)
             writes = FakeApi.writes
-            with self.assertRaisesRegex(RuntimeError, 'conclusions'):
-                demo_seed.seed(self.config, lambda ids: None, checkpoint)
+            result = demo_seed.seed(self.config, lambda ids: None, checkpoint)
+            self.assertEqual(result['runs']['RUNNING'], 2)
             self.assertEqual(FakeApi.writes, writes)
 
 

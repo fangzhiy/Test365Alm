@@ -572,6 +572,7 @@ jobs:
             local-evidence/r03/playwright-results.xml
             local-evidence/r03/project-browser-report.txt
             local-evidence/r03/reports-context.json
+            local-evidence/r03/oq-demo-01/*.json
             output/pdf/
             local-evidence/r03/import-permissions.txt
             local-evidence/r03/image-user.txt

@@ -156,7 +156,7 @@ def seed(config, bootstrap, checkpoint=None):
         completed = json.loads(checkpoint.read_text(encoding='utf-8'))
         if completed.get('projectId') == project['id']:
             print('Seed: completed demo preserved; checking existing data only')
-            return verify(admin, root, completed['setId'], sessions)
+            return verify(admin, root, completed['setId'], sessions, initial=False)
     members = {m['principalId']: m for m in admin.call(root + '/members')}
     for api, role in sessions[1:]:
         member = members.get(api.principal)
@@ -218,7 +218,7 @@ def seed(config, bootstrap, checkpoint=None):
                     key=f'finish-{number}', version=attempt['rowVersion'])
         if number == 12:
             failed_source = {'runId': runid, 'attemptId': attempt['id'], 'stepKey': attempt['steps'][1]['stepKey']}
-    defects = admin.call(root + '/defects?limit=100')['items']
+    defects = all_pages(admin, root + '/defects')
     title = 'A03-12 偏差：超量退货未被系统阻断'
     if not any(d['currentRevision']['title'] == title for d in defects):
         admin.call(root + '/defects/from-step', dict(failed_source, title=title,
@@ -231,11 +231,25 @@ def seed(config, bootstrap, checkpoint=None):
     return result
 
 
-def verify(admin, root, setid, sessions):
-    tests = admin.call(root + '/tests?limit=100')['items']
-    instances = admin.call(root + '/test-sets/' + setid + '/instances/page?limit=100')['items']
-    runs = admin.call(root + '/runs/page?testSetId=' + setid + '&limit=100')['items']
-    defects = admin.call(root + '/defects?limit=100')['items']
+def all_pages(api, path):
+    items, cursor, seen = [], None, set()
+    while True:
+        page = api.call(path + ('&' if '?' in path else '?') + 'limit=100' +
+                        ('&cursor=' + urllib.parse.quote(cursor, safe='') if cursor else ''))
+        items.extend(page['items'])
+        cursor = page.get('nextCursor')
+        if not cursor:
+            return items
+        if cursor in seen:
+            raise RuntimeError('Repeated pagination cursor; no data overwritten')
+        seen.add(cursor)
+
+
+def verify(admin, root, setid, sessions, initial=True):
+    tests = all_pages(admin, root + '/tests')
+    instances = all_pages(admin, root + '/test-sets/' + setid + '/instances/page')
+    runs = all_pages(admin, root + '/runs/page?testSetId=' + setid)
+    defects = all_pages(admin, root + '/defects')
     summary = admin.call(root + '/runs/summary?testSetId=' + setid)
     expected_titles = {command['title'] for command in cases()}
     if {test['title'] for test in tests} != expected_titles:
@@ -250,9 +264,9 @@ def verify(admin, root, setid, sessions):
         status = attempt['conclusion'] or attempt['status']
         conclusions[status] = conclusions.get(status, 0) + 1
         contradiction |= any(s['actualResult'] == '符合预期' and s['conclusion'] == 'FAIL' for s in attempt['steps'])
-    if len(tests) != 14 or len(instances) != 14 or len(runs) != 14 or len(defects) != 1:
+    if len(tests) != 14 or (initial and (len(instances) != 14 or len(runs) != 14 or len(defects) != 1)):
         raise RuntimeError('Demo object count mismatch; inspect the project instead of reseeding blindly')
-    if conclusions != {'PASS': 11, 'FAIL': 2, 'RUNNING': 1} or not contradiction:
+    if initial and (conclusions != {'PASS': 11, 'FAIL': 2, 'RUNNING': 1} or not contradiction):
         raise RuntimeError('Demo run conclusions or independent actual-result sample missing')
     for api, role in sessions:
         access = api.call('/api/v1/me/permissions?projectId=' + root.rsplit('/', 1)[1])

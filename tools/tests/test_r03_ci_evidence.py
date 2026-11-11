@@ -147,7 +147,7 @@ class R03CiEvidenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             report = Path(directory) / "results.xml"
             report.write_text(
-                '<testsuites><testsuite tests="11" failures="0" errors="0" skipped="0">'
+                '<testsuites><testsuite tests="12" failures="0" errors="0" skipped="0">'
                 f'<testcase name="{REQUIRED_PROJECT_BROWSER_TEST}" />'
                 f'<testcase name="{REQUIRED_PROJECT_UI_TEST}" />'
                 f'<testcase name="{REQUIRED_REQUIREMENT_UI_TEST}" />'
@@ -159,6 +159,7 @@ class R03CiEvidenceTests(unittest.TestCase):
                 f'<testcase name="{REQUIRED_ASSET_UI_TEST}" />'
                 f'<testcase name="{REQUIRED_REVIEW_UI_TEST}" />'
                 f'<testcase name="{REQUIRED_SIGNATURE_UI_TEST}" />'
+                f'<testcase name="real Keycloak UI SYNTHETIC OQ-DEMO-01 fourteen cases complete reviewed signed execution evidence" />'
                 '</testsuite></testsuites>'
             )
             valid, summary = verify_project_browser(report)

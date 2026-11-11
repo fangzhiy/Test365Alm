@@ -9,7 +9,7 @@
 - 不人工逐条核对测试名，不再逐轮申请独占窗口或编写资源清理的独立核验报告。既有自动化门禁继续保留，不删测试、不加retry。
 - 每个功能仅在docs/reviews留一份简短记录（做了什么、测试结果、已知限制）；值得留下的原因和取舍用trail note记录。
 - 保留权限/RLS/强版本/持久幂等与重放重新授权、不可变历史、审计/Outbox同事务；不提交秘密。不碰其他项目容器、test365alm-r02-postgres-1及5173/8080，不改Defender。
-- **用户已恢复 F-REPORT-01；三类只读报告已完成本地技术验证，见 [集中交付记录](reviews/F-REPORT-01.md)。只集成 dev，main 待独立审核。G/A03 仍暂停。**
+- **用户已恢复 F-REPORT-01；三类只读报告已完成本地技术验证，见 [集中交付记录](reviews/F-REPORT-01.md)。F 已按已审核 dd62943 合入 main@b8975e4；业务格式认可待确认。当前 OQ-DEMO-01 仅合成技术演示，新增代码只集成 dev、待独立审核；真实 G/A03 仍暂停。**
 
 ## 仅保留的工作区
 
@@ -20,7 +20,13 @@
 
 GitHub：[fangzhiy/Test365Alm](https://github.com/fangzhiy/Test365Alm)。main为默认主分支，dev为集成分支；本次整理前main/dev为d6a9479。旧分支全部保留，旧chore/r01-status-001不再是默认分支。新功能在codex-main开发，不再新建feat分支或Orca任务。
 
-## F-REPORT-01 当前轮次
+## 当前 OQ-DEMO-01
+
+F/FIX01/FIX02 已独立审核接受 dd62943，PR #12 合入 main 的实际提交为 b8975e4604295269c2c0e8efef461614fc4b37da。业务格式认可仍待确认，分页留白、历史登录逐例归因等限制保留。
+
+本轮新增版本化 SYNTHETIC 十四用例完整场景，独立持久环境、真实 Keycloak 再认证/正式业务 API 与界面、只读重启和显式续跑。命令、结果及证据见 [OQ-DEMO-01](reviews/OQ-DEMO-01.md)。旧演示项目/卷保持；新增代码只推进 dev，main 停在已接受 F 基线，G/A03 仍未验收。
+
+## F-REPORT-01 FIX02 交付时历史
 
 当前为 F-REPORT-01-FIX02：保留已审核 FIX01 语义，只修正 code-only 安全错误解析/分类及报告宿主清理链，补两个宿主与真实第二标签退出后的 401 回归。当前验证和最终结果见 [FIX02 集中记录](reviews/F-REPORT-01-FIX02.md)。仍只同步 dev、更新 PR #12，main 待独立审核；G/A03 暂停。FIX02 未改打印，沿用已审核 PR CI 42986595142 样张（运行12/汇总11/偏差8/普通3页）；FIX01 本地汇总12页是另一份来源。
 

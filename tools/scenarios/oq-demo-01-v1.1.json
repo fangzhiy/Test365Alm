@@ -1,0 +1,540 @@
+{
+  "schemaVersion": 1,
+  "scenario": "OQ-DEMO-01",
+  "version": "1.1",
+  "classification": "SYNTHETIC",
+  "notice": "合成技术演示；未执行 SAP，不是正式 OQ 或 G/A03 验收；所有签署为模拟。",
+  "roles": {
+    "author": "R03_MEMBER_USER",
+    "executor": "R03_MEMBER_USER",
+    "reviewer": "R03_TEST_USER",
+    "viewer": "R03_VIEWER_USER"
+  },
+  "relations": {
+    "rejectionAndRevision": "OQD-01",
+    "pauseResume": "OQD-14",
+    "fixedEvidence": "OQD-01",
+    "closedDefectRetest": "OQD-12",
+    "reopenedHistoricalPass": "OQD-13"
+  },
+  "cases": [
+    {
+      "testType": "MANUAL",
+      "title": "SYNTHETIC OQD-01 · 创建单行交货单",
+      "description": "创建单行交货单。合成 OQ 演示样例，不是客户历史记录。",
+      "preconditions": "合成演示：在 Test365Alm 隔离环境模拟 SAP 观察，未连接或操作真实 SAP。测试数据准备完毕。",
+      "steps": [
+        {
+          "ordinal": 1,
+          "action": "登录并准备：登录 SAP 验证环境，核对测试订单和物料。",
+          "expected": "成功登录，测试数据可用"
+        },
+        {
+          "ordinal": 2,
+          "action": "创建单行交货单：执行 VL01NO，录入单行交货数据并保存。",
+          "expected": "成功创建单行交货单"
+        },
+        {
+          "ordinal": 3,
+          "action": "复核记录：重新查询单据并记录单号及操作结果。",
+          "expected": "查询结果与操作记录一致"
+        }
+      ],
+      "purpose": "合成演示验证：创建单行交货单的记录、复核及执行证据链。",
+      "observations": [
+        "合成演示观察：步骤1符合预定样例；未实际操作 SAP。",
+        "合成演示观察：步骤2符合预定样例；未实际操作 SAP。",
+        "合成演示观察：步骤3符合预定样例；未实际操作 SAP。"
+      ],
+      "outcomes": [
+        "PASS",
+        "PASS",
+        "PASS"
+      ],
+      "initialConclusion": "PASS",
+      "finalConclusion": "PASS",
+      "id": "OQD-01"
+    },
+    {
+      "testType": "MANUAL",
+      "title": "SYNTHETIC OQD-02 · 创建多行交货单",
+      "description": "创建多行交货单。合成 OQ 演示样例，不是客户历史记录。",
+      "preconditions": "合成演示：在 Test365Alm 隔离环境模拟 SAP 观察，未连接或操作真实 SAP。测试数据准备完毕。",
+      "steps": [
+        {
+          "ordinal": 1,
+          "action": "登录并准备：登录 SAP 验证环境，核对测试订单和物料。",
+          "expected": "成功登录，测试数据可用"
+        },
+        {
+          "ordinal": 2,
+          "action": "创建多行交货单：执行 VL01NO，录入两行不同物料并保存。",
+          "expected": "两行物料数量和交货地点正确"
+        },
+        {
+          "ordinal": 3,
+          "action": "复核记录：重新查询单据并记录单号及操作结果。",
+          "expected": "查询结果与操作记录一致"
+        }
+      ],
+      "purpose": "合成演示验证：创建多行交货单的记录、复核及执行证据链。",
+      "observations": [
+        "合成演示观察：步骤1符合预定样例；未实际操作 SAP。",
+        "合成演示观察：步骤2符合预定样例；未实际操作 SAP。",
+        "合成演示观察：步骤3符合预定样例；未实际操作 SAP。"
+      ],
+      "outcomes": [
+        "PASS",
+        "PASS",
+        "PASS"
+      ],
+      "initialConclusion": "PASS",
+      "finalConclusion": "PASS",
+      "id": "OQD-02"
+    },
+    {
+      "testType": "MANUAL",
+      "title": "SYNTHETIC OQD-03 · 修改交货数量",
+      "description": "修改交货数量。合成 OQ 演示样例，不是客户历史记录。",
+      "preconditions": "合成演示：在 Test365Alm 隔离环境模拟 SAP 观察，未连接或操作真实 SAP。测试数据准备完毕。",
+      "steps": [
+        {
+          "ordinal": 1,
+          "action": "登录并准备：登录 SAP 验证环境，核对测试订单和物料。",
+          "expected": "成功登录，测试数据可用"
+        },
+        {
+          "ordinal": 2,
+          "action": "修改交货数量：执行 VL02N，修改未过账交货单的数量并保存。",
+          "expected": "交货数量更新且未超过订单可交数量"
+        },
+        {
+          "ordinal": 3,
+          "action": "复核记录：重新查询单据并记录单号及操作结果。",
+          "expected": "查询结果与操作记录一致"
+        }
+      ],
+      "purpose": "合成演示验证：修改交货数量的记录、复核及执行证据链。",
+      "observations": [
+        "合成演示观察：步骤1符合预定样例；未实际操作 SAP。",
+        "合成演示观察：步骤2符合预定样例；未实际操作 SAP。",
+        "合成演示观察：步骤3符合预定样例；未实际操作 SAP。"
+      ],
+      "outcomes": [
+        "PASS",
+        "PASS",
+        "PASS"
+      ],
+      "initialConclusion": "PASS",
+      "finalConclusion": "PASS",
+      "id": "OQD-03"
+    },
+    {
+      "testType": "MANUAL",
+      "title": "SYNTHETIC OQD-04 · 显示交货单",
+      "description": "显示交货单。合成 OQ 演示样例，不是客户历史记录。",
+      "preconditions": "合成演示：在 Test365Alm 隔离环境模拟 SAP 观察，未连接或操作真实 SAP。测试数据准备完毕。",
+      "steps": [
+        {
+          "ordinal": 1,
+          "action": "登录并准备：登录 SAP 验证环境，核对测试订单和物料。",
+          "expected": "成功登录，测试数据可用"
+        },
+        {
+          "ordinal": 2,
+          "action": "显示交货单：执行 VL03N，查询交货单抬头、项目和单据流。",
+          "expected": "抬头、物料与订单引用一致"
+        },
+        {
+          "ordinal": 3,
+          "action": "复核记录：重新查询单据并记录单号及操作结果。",
+          "expected": "查询结果与操作记录一致"
+        }
+      ],
+      "purpose": "合成演示验证：显示交货单的记录、复核及执行证据链。",
+      "observations": [
+        "合成演示观察：步骤1符合预定样例；未实际操作 SAP。",
+        "合成演示观察：步骤2符合预定样例；未实际操作 SAP。",
+        "合成演示观察：步骤3符合预定样例；未实际操作 SAP。"
+      ],
+      "outcomes": [
+        "PASS",
+        "PASS",
+        "PASS"
+      ],
+      "initialConclusion": "PASS",
+      "finalConclusion": "PASS",
+      "id": "OQD-04"
+    },
+    {
+      "testType": "MANUAL",
+      "title": "SYNTHETIC OQD-05 · 拣配确认",
+      "description": "拣配确认。合成 OQ 演示样例，不是客户历史记录。",
+      "preconditions": "合成演示：在 Test365Alm 隔离环境模拟 SAP 观察，未连接或操作真实 SAP。测试数据准备完毕。",
+      "steps": [
+        {
+          "ordinal": 1,
+          "action": "登录并准备：登录 SAP 验证环境，核对测试订单和物料。",
+          "expected": "成功登录，测试数据可用"
+        },
+        {
+          "ordinal": 2,
+          "action": "拣配确认：执行 VL02N，录入拣配数量并保存。",
+          "expected": "拣配状态显示已完成"
+        },
+        {
+          "ordinal": 3,
+          "action": "复核记录：重新查询单据并记录单号及操作结果。",
+          "expected": "查询结果与操作记录一致"
+        }
+      ],
+      "purpose": "合成演示验证：拣配确认的记录、复核及执行证据链。",
+      "observations": [
+        "合成演示观察：步骤1符合预定样例；未实际操作 SAP。",
+        "合成演示观察：步骤2符合预定样例；未实际操作 SAP。",
+        "合成演示观察：步骤3符合预定样例；未实际操作 SAP。"
+      ],
+      "outcomes": [
+        "PASS",
+        "PASS",
+        "PASS"
+      ],
+      "initialConclusion": "PASS",
+      "finalConclusion": "PASS",
+      "id": "OQD-05"
+    },
+    {
+      "testType": "MANUAL",
+      "title": "SYNTHETIC OQD-06 · 批次与有效期核对",
+      "description": "批次与有效期核对。合成 OQ 演示样例，不是客户历史记录。",
+      "preconditions": "合成演示：在 Test365Alm 隔离环境模拟 SAP 观察，未连接或操作真实 SAP。测试数据准备完毕。",
+      "steps": [
+        {
+          "ordinal": 1,
+          "action": "登录并准备：登录 SAP 验证环境，核对测试订单和物料。",
+          "expected": "成功登录，测试数据可用"
+        },
+        {
+          "ordinal": 2,
+          "action": "批次与有效期核对：执行 VL02N，选择已放行批次并核对有效期。",
+          "expected": "批次、有效期与交货要求一致"
+        },
+        {
+          "ordinal": 3,
+          "action": "复核记录：重新查询单据并记录单号及操作结果。",
+          "expected": "查询结果与操作记录一致"
+        }
+      ],
+      "purpose": "合成演示验证：批次与有效期核对的记录、复核及执行证据链。",
+      "observations": [
+        "合成演示观察：步骤1符合预定样例；未实际操作 SAP。",
+        "合成演示观察：步骤2符合预定样例；未实际操作 SAP。",
+        "合成演示观察：步骤3符合预定样例；未实际操作 SAP。"
+      ],
+      "outcomes": [
+        "PASS",
+        "PASS",
+        "PASS"
+      ],
+      "initialConclusion": "PASS",
+      "finalConclusion": "PASS",
+      "id": "OQD-06"
+    },
+    {
+      "testType": "MANUAL",
+      "title": "SYNTHETIC OQD-07 · 交货过账",
+      "description": "交货过账。合成 OQ 演示样例，不是客户历史记录。",
+      "preconditions": "合成演示：在 Test365Alm 隔离环境模拟 SAP 观察，未连接或操作真实 SAP。测试数据准备完毕。",
+      "steps": [
+        {
+          "ordinal": 1,
+          "action": "登录并准备：登录 SAP 验证环境，核对测试订单和物料。",
+          "expected": "成功登录，测试数据可用"
+        },
+        {
+          "ordinal": 2,
+          "action": "交货过账：执行 VL02N，对已完成拣配的交货单执行发货过账。",
+          "expected": "生成物料凭证并更新库存"
+        },
+        {
+          "ordinal": 3,
+          "action": "复核记录：重新查询单据并记录单号及操作结果。",
+          "expected": "查询结果与操作记录一致"
+        }
+      ],
+      "purpose": "合成演示验证：交货过账的记录、复核及执行证据链。",
+      "observations": [
+        "合成演示观察：步骤1符合预定样例；未实际操作 SAP。",
+        "合成演示观察：步骤2符合预定样例；未实际操作 SAP。",
+        "合成演示观察：步骤3符合预定样例；未实际操作 SAP。"
+      ],
+      "outcomes": [
+        "PASS",
+        "PASS",
+        "PASS"
+      ],
+      "initialConclusion": "PASS",
+      "finalConclusion": "PASS",
+      "id": "OQD-07"
+    },
+    {
+      "testType": "MANUAL",
+      "title": "SYNTHETIC OQD-08 · 交货凭证打印",
+      "description": "交货凭证打印。合成 OQ 演示样例，不是客户历史记录。",
+      "preconditions": "合成演示：在 Test365Alm 隔离环境模拟 SAP 观察，未连接或操作真实 SAP。测试数据准备完毕。",
+      "steps": [
+        {
+          "ordinal": 1,
+          "action": "登录并准备：登录 SAP 验证环境，核对测试订单和物料。",
+          "expected": "成功登录，测试数据可用"
+        },
+        {
+          "ordinal": 2,
+          "action": "交货凭证打印：执行 VL03N，预览并打印交货凭证。",
+          "expected": "打印内容含交货号、批次及数量"
+        },
+        {
+          "ordinal": 3,
+          "action": "复核记录：重新查询单据并记录单号及操作结果。",
+          "expected": "查询结果与操作记录一致"
+        }
+      ],
+      "purpose": "合成演示验证：交货凭证打印的记录、复核及执行证据链。",
+      "observations": [
+        "合成演示观察：步骤1符合预定样例；未实际操作 SAP。",
+        "合成演示观察：步骤2符合预定样例；未实际操作 SAP。",
+        "合成演示观察：步骤3符合预定样例；未实际操作 SAP。"
+      ],
+      "outcomes": [
+        "PASS",
+        "PASS",
+        "PASS"
+      ],
+      "initialConclusion": "PASS",
+      "finalConclusion": "PASS",
+      "id": "OQD-08"
+    },
+    {
+      "testType": "MANUAL",
+      "title": "SYNTHETIC OQD-09 · 退货订单创建",
+      "description": "退货订单创建。合成 OQ 演示样例，不是客户历史记录。",
+      "preconditions": "合成演示：在 Test365Alm 隔离环境模拟 SAP 观察，未连接或操作真实 SAP。测试数据准备完毕。",
+      "steps": [
+        {
+          "ordinal": 1,
+          "action": "登录并准备：登录 SAP 验证环境，核对测试订单和物料。",
+          "expected": "成功登录，测试数据可用"
+        },
+        {
+          "ordinal": 2,
+          "action": "退货订单创建：执行 VA01，参考原销售单创建退货订单。",
+          "expected": "退货订单引用原单且数量正确"
+        },
+        {
+          "ordinal": 3,
+          "action": "复核记录：重新查询单据并记录单号及操作结果。",
+          "expected": "查询结果与操作记录一致"
+        }
+      ],
+      "purpose": "合成演示验证：退货订单创建的记录、复核及执行证据链。",
+      "observations": [
+        "合成演示观察：步骤1符合预定样例；未实际操作 SAP。",
+        "合成演示观察：步骤2符合预定样例；未实际操作 SAP。",
+        "合成演示观察：步骤3符合预定样例；未实际操作 SAP。"
+      ],
+      "outcomes": [
+        "PASS",
+        "PASS",
+        "PASS"
+      ],
+      "initialConclusion": "PASS",
+      "finalConclusion": "PASS",
+      "id": "OQD-09"
+    },
+    {
+      "testType": "MANUAL",
+      "title": "SYNTHETIC OQD-10 · 退货交货创建",
+      "description": "退货交货创建。合成 OQ 演示样例，不是客户历史记录。",
+      "preconditions": "合成演示：在 Test365Alm 隔离环境模拟 SAP 观察，未连接或操作真实 SAP。测试数据准备完毕。",
+      "steps": [
+        {
+          "ordinal": 1,
+          "action": "登录并准备：登录 SAP 验证环境，核对测试订单和物料。",
+          "expected": "成功登录，测试数据可用"
+        },
+        {
+          "ordinal": 2,
+          "action": "退货交货创建：执行 VL01NO，参考退货订单创建退货交货单。",
+          "expected": "退货物料及数量与退货订单一致"
+        },
+        {
+          "ordinal": 3,
+          "action": "复核记录：重新查询单据并记录单号及操作结果。",
+          "expected": "查询结果与操作记录一致"
+        }
+      ],
+      "purpose": "合成演示验证：退货交货创建的记录、复核及执行证据链。",
+      "observations": [
+        "合成演示观察：步骤1符合预定样例；未实际操作 SAP。",
+        "合成演示观察：步骤2符合预定样例；未实际操作 SAP。",
+        "合成演示观察：步骤3符合预定样例；未实际操作 SAP。"
+      ],
+      "outcomes": [
+        "PASS",
+        "PASS",
+        "PASS"
+      ],
+      "initialConclusion": "PASS",
+      "finalConclusion": "PASS",
+      "id": "OQD-10"
+    },
+    {
+      "testType": "MANUAL",
+      "title": "SYNTHETIC OQD-11 · 退货收货过账",
+      "description": "退货收货过账。合成 OQ 演示样例，不是客户历史记录。",
+      "preconditions": "合成演示：在 Test365Alm 隔离环境模拟 SAP 观察，未连接或操作真实 SAP。测试数据准备完毕。",
+      "steps": [
+        {
+          "ordinal": 1,
+          "action": "登录并准备：登录 SAP 验证环境，核对测试订单和物料。",
+          "expected": "成功登录，测试数据可用"
+        },
+        {
+          "ordinal": 2,
+          "action": "退货收货过账：执行 VL02N，对退货交货单执行收货过账。",
+          "expected": "退货入库生成凭证且库存增加"
+        },
+        {
+          "ordinal": 3,
+          "action": "复核记录：重新查询单据并记录单号及操作结果。",
+          "expected": "查询结果与操作记录一致"
+        }
+      ],
+      "purpose": "合成演示验证：退货收货过账的记录、复核及执行证据链。",
+      "observations": [
+        "合成演示观察：步骤1符合预定样例；未实际操作 SAP。",
+        "合成演示观察：步骤2符合预定样例；未实际操作 SAP。",
+        "合成演示观察：步骤3符合预定样例；未实际操作 SAP。"
+      ],
+      "outcomes": [
+        "PASS",
+        "PASS",
+        "PASS"
+      ],
+      "initialConclusion": "PASS",
+      "finalConclusion": "PASS",
+      "id": "OQD-11"
+    },
+    {
+      "testType": "MANUAL",
+      "title": "SYNTHETIC OQD-12 · 超量退货校验",
+      "description": "超量退货校验。合成 OQ 演示样例，不是客户历史记录。",
+      "preconditions": "合成演示：在 Test365Alm 隔离环境模拟 SAP 观察，未连接或操作真实 SAP。测试数据准备完毕。",
+      "steps": [
+        {
+          "ordinal": 1,
+          "action": "登录并准备：登录 SAP 验证环境，核对测试订单和物料。",
+          "expected": "成功登录，测试数据可用"
+        },
+        {
+          "ordinal": 2,
+          "action": "超量退货校验：执行 VA01，录入超过原交货数量的退货数量。",
+          "expected": "系统拒绝超量并给出明确提示"
+        },
+        {
+          "ordinal": 3,
+          "action": "复核记录：重新查询单据并记录单号及操作结果。",
+          "expected": "查询结果与操作记录一致"
+        }
+      ],
+      "purpose": "合成演示验证：超量退货校验的记录、复核及执行证据链。",
+      "observations": [
+        "合成演示观察：步骤1符合预定样例；未实际操作 SAP。",
+        "合成异常：输入超量退货仍可保存；预定 FAIL，未实际操作 SAP。",
+        "合成演示观察：步骤3符合预定样例；未实际操作 SAP。"
+      ],
+      "outcomes": [
+        "PASS",
+        "FAIL",
+        "PASS"
+      ],
+      "initialConclusion": "FAIL",
+      "finalConclusion": "PASS",
+      "id": "OQD-12"
+    },
+    {
+      "testType": "MANUAL",
+      "title": "SYNTHETIC OQD-13 · 退货原因必填校验",
+      "description": "退货原因必填校验。合成 OQ 演示样例，不是客户历史记录。",
+      "preconditions": "合成演示：在 Test365Alm 隔离环境模拟 SAP 观察，未连接或操作真实 SAP。测试数据准备完毕。",
+      "steps": [
+        {
+          "ordinal": 1,
+          "action": "登录并准备：登录 SAP 验证环境，核对测试订单和物料。",
+          "expected": "成功登录，测试数据可用"
+        },
+        {
+          "ordinal": 2,
+          "action": "退货原因必填校验：执行 VA01，清空退货原因后尝试保存。",
+          "expected": "系统拒绝保存并提示退货原因必填"
+        },
+        {
+          "ordinal": 3,
+          "action": "复核记录：重新查询单据并记录单号及操作结果。",
+          "expected": "查询结果与操作记录一致"
+        }
+      ],
+      "purpose": "合成演示验证：退货原因必填校验的记录、复核及执行证据链。",
+      "observations": [
+        "合成演示观察：步骤1符合预定样例；未实际操作 SAP。",
+        "合成演示：界面显示“符合预期”文本，但核查缺少必填阻断；结论独立记为 FAIL。",
+        "合成演示观察：步骤3符合预定样例；未实际操作 SAP。"
+      ],
+      "outcomes": [
+        "PASS",
+        "FAIL",
+        "PASS"
+      ],
+      "initialConclusion": "FAIL",
+      "finalConclusion": "PASS",
+      "id": "OQD-13"
+    },
+    {
+      "testType": "MANUAL",
+      "title": "SYNTHETIC OQD-14 · 交货退货单据流复核",
+      "description": "交货退货单据流复核。合成 OQ 演示样例，不是客户历史记录。",
+      "preconditions": "合成演示：在 Test365Alm 隔离环境模拟 SAP 观察，未连接或操作真实 SAP。测试数据准备完毕。",
+      "steps": [
+        {
+          "ordinal": 1,
+          "action": "登录并准备：登录 SAP 验证环境，核对测试订单和物料。",
+          "expected": "成功登录，测试数据可用"
+        },
+        {
+          "ordinal": 2,
+          "action": "交货退货单据流复核：执行 VL03N，核对原订单、交货、退货及物料凭证链路。",
+          "expected": "单据链完整且数量对应"
+        },
+        {
+          "ordinal": 3,
+          "action": "复核记录：重新查询单据并记录单号及操作结果。",
+          "expected": "查询结果与操作记录一致"
+        }
+      ],
+      "purpose": "合成演示验证：交货退货单据流复核的记录、复核及执行证据链。",
+      "observations": [
+        "合成演示观察：步骤1符合预定样例；未实际操作 SAP。",
+        "合成演示观察：步骤2符合预定样例；未实际操作 SAP。",
+        "合成演示观察：步骤3符合预定样例；未实际操作 SAP。"
+      ],
+      "outcomes": [
+        "PASS",
+        "PASS",
+        "PASS"
+      ],
+      "initialConclusion": "PASS",
+      "finalConclusion": "PASS",
+      "id": "OQD-14"
+    }
+  ]
+}
