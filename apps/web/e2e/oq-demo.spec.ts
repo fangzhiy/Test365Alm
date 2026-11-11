@@ -76,14 +76,16 @@ test('real Keycloak UI SYNTHETIC OQ-DEMO-01 fourteen cases complete reviewed sig
   const set=found[0]??await write(page,root+'/test-sets',{name:'SYNTHETIC OQ-DEMO-01 v1.1',description:definition.notice})
   if(state.setId)expect(state.setId).toBe(set.id);state.setId=set.id;save()
  })
- async function place(kind:string,id:string){
+ async function place(kind:string,id:string,completed=false){
   const nodes=await get(page,root+'/folders?kind='+kind)
   let folder=nodes.find((n:{name:string;parentId:string|null})=>n.name==='SYNTHETIC OQ-DEMO-01 v1.1'&&n.parentId===null)
+  if(completed)expect(folder,'Completed directory was manually changed; preserve it').toBeDefined()
   folder??=await write(page,root+'/folders',{kind,parentId:null,name:'SYNTHETIC OQ-DEMO-01 v1.1',sortOrder:0})
   const location=await get(page,`${root}/folder-placements/${kind}/${id}`)
+  if(completed)expect(location.folderId,'Completed placement changed; preserve manual organization').toBe(folder.id)
   if(location.folderId!==folder.id){expect(location.folderId,'Manual folder placement preserved').toBeNull();await write(page,`${root}/folder-placements/${kind}/${id}`,{folderId:folder.id},'PUT',location.rowVersion)}
  }
- await place('TEST_LAB',state.setId!)
+ await place('TEST_LAB',state.setId!,state.stages.includes('organized'));state.stages=[...new Set([...state.stages,'organized'])];save()
  await choose(admin,scope.tenantId,project.id);await choose(page,scope.tenantId,project.id);await choose(viewer,scope.tenantId,project.id)
  for(const scenario of definition.cases){
   await stage(`${scenario.id}：不可变修订、指定人复核、批准模拟签署`,async()=>{
@@ -119,12 +121,13 @@ test('real Keycloak UI SYNTHETIC OQ-DEMO-01 fourteen cases complete reviewed sig
     await panel.locator('.test-case-list .requirement-row').filter({hasText:scenario.title}).click()
     await confirmSimulatedSignature(admin,'用例批准确认',env.R03_TEST_USER!,env.R03_TEST_USER_PASSWORD!)
    }
-   await place('TEST_PLAN',c.id)
+   await place('TEST_PLAN',c.id,item.stages.includes('approved-and-signed'))
    const instances=await pages(page,`${root}/test-sets/${state.setId}/instances/page`),existing=instances.filter(i=>i.testCaseId===c.id)
    expect(existing.length).toBeLessThan(2)
    const instance=existing[0]??await write(page,`${root}/test-sets/${state.setId}/instances`,{testCaseId:c.id,testRevisionId:item.revisionId})
    expect(instance.testRevisionId).toBe(item.revisionId);if(item.instanceId)expect(instance.id).toBe(item.instanceId);item.instanceId=instance.id;save()
    const grid=(await pages(page,`${root}/test-sets/${state.setId}/execution-grid`)).find(i=>i.instance.id===instance.id)
+   if(item.stages.includes('approved-and-signed'))expect(grid.assigneeId,'Completed assignment changed; preserve manual choice').toBe(mid)
    if(grid.assigneeId===null)await write(page,`${root}/test-instances/${instance.id}/assignee`,{assigneeId:mid,expectedVersion:grid.assignmentVersion},'PUT',grid.assignmentVersion)
    else expect(grid.assigneeId).toBe(mid)
    item.stages.push('approved-and-signed');item.stages=[...new Set(item.stages)];save()
