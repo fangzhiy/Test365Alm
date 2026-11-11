@@ -61,7 +61,7 @@ class ExecutionFocusTests(unittest.TestCase):
             self.assertFalse(inside.valid_report("focused", bad))
 
     def test_unit_method_substitution_cannot_hide_behind_the_exact_total(self):
-        for index in range(102):
+        for index in range(105):
             bad=self.report()
             bad["unit"]["cases"][index]["method"]="unapprovedReplacement"
             self.assertFalse(inside.valid_report("focused",bad))
@@ -71,9 +71,9 @@ class ExecutionFocusTests(unittest.TestCase):
         inventory=json.loads((Path(__file__).parents[1]/"linux-test/combined-methods.json").read_text(encoding="utf-8"))
         cases = [{"class": c, "method": m} for c, names in inventory["integration"].items() for m in names]
         good["integration"]["cases"] = cases
-        good["integration"]["tests"] = 218
+        good["integration"]["tests"] = 219
         self.assertTrue(inside.valid_report("integration", good))
-        for index in range(218):
+        for index in range(219):
             bad = copy.deepcopy(good)
             bad["integration"]["cases"][index]["method"] = "unapprovedReplacement"
             self.assertFalse(inside.valid_report("integration", bad))
@@ -90,8 +90,8 @@ class ExecutionFocusTests(unittest.TestCase):
             package=re.search(r"package\s+([\w.]+);",text)[1]
             actual["integration" if path.stem.endswith("IT") else "unit"][package+"."+path.stem]=sorted(names)
         self.assertEqual(frozen,actual)
-        self.assertEqual(102,sum(map(len,frozen["unit"].values())))
-        self.assertEqual(218,sum(map(len,frozen["integration"].values())))
+        self.assertEqual(105,sum(map(len,frozen["unit"].values())))
+        self.assertEqual(219,sum(map(len,frozen["integration"].values())))
 
     def test_stage_order_and_each_failure_short_circuits_without_retry(self):
         for failure_index in range(5):

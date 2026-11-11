@@ -1742,6 +1742,32 @@ class OidcCallbackSecurityIT {
         assertEquals(subjectPresent, after.has(targetIssuer(flow.scenario.variant), subject));
     }
 
+    @Test
+    void lateAnonymousMeResponseCannotReplaceAuthorizationSession() throws Exception {
+        // Both requests left the browser before either response supplied a cookie.
+        // Delay delivery of /me headers until after the authorization redirect.
+        HttpClient wire = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
+        HttpResponse<String> anonymous = get(wire, "/api/v1/me");
+        assertEquals(401, anonymous.statusCode());
+        ClientFixture browser = newClientFixture();
+        Scenario scenario = IDP.prepare(Variant.VALID, uniqueSubject("late-me"));
+        HttpResponse<String> start = get(browser.client(), "/oauth2/authorization/test365alm");
+        assertEquals(302, start.statusCode());
+        browser.cookies().put(URI.create("http://127.0.0.1:" + appPort + "/api/v1/me"), anonymous.headers().map());
+        URI authorization = URI.create(start.headers().firstValue("location").orElseThrow());
+        HttpResponse<String> grant = wire.send(HttpRequest.newBuilder(authorization).GET().build(), HttpResponse.BodyHandlers.ofString());
+        URI callback = URI.create(grant.headers().firstValue("location").orElseThrow());
+        HttpResponse<String> completed = browser.client().send(HttpRequest.newBuilder(callback).GET().build(), HttpResponse.BodyHandlers.ofString());
+        assertFalse(completed.headers().firstValue("location").orElse("").contains("login=failed"),
+                "late anonymous response must not lose the saved authorization request");
+        assertEquals(1, scenario.tokenRequests.get());
+        assertTrue(scenario.protocolValid);
+        assertEquals(200, get(browser.client(), "/api/v1/me").statusCode());
+        assertEquals("authenticated", completed.headers().firstValue("X-Auth-Category").orElseThrow());
+        assertEquals(start.headers().firstValue("X-Auth-Diagnostic-Id"), completed.headers().firstValue("X-Auth-Diagnostic-Id"));
+        assertTrue(anonymous.headers().allValues("set-cookie").isEmpty(), "anonymous API reads must not allocate sessions");
+    }
+
     private Flow runAuthorization(Variant variant, String subject) throws Exception {
         return runAuthorization(variant, subject, newClientFixture().client());
     }
