@@ -17,14 +17,19 @@ type CompletedStage = {
 }
 
 // The scene runner and isolated regression use this same boundary: every
-// completed identity must be read-verified before any remaining business work.
+// existing defect must be read-verified before any remaining business work,
+// including interrupted v1.1 checkpoints that predate completion markers.
 export async function resumeAfterDefectPreflight(stages:CompletedStage[], read:(id:string)=>Promise<DefectProof>, work:()=>Promise<void>) {
  const verified:Array<{stage:CompletedStage;marker:DefectCompletion}>=[]
  for(const stage of stages){
-  if(!stage.marker && !stage.completed)continue
-  if(!stage.defectId)throw new Error('演示恢复冲突：已完成偏差身份缺失；保留现场，不追加流转')
-  const marker=checkDefectCompletion(await read(stage.defectId),stage.expectedStatus,stage.marker,true)!
-  verified.push({stage,marker})
+  if(!stage.defectId){
+   if(stage.marker || stage.completed)throw new Error('演示恢复冲突：已完成偏差身份缺失；保留现场，不追加流转')
+   continue // A new scene has no defect yet; creation remains in the work phase.
+  }
+  const proof=await read(stage.defectId)
+  if(!stage.marker && proof.resolutionEntries.length>1)throw new Error(`演示恢复冲突：偏差 ${stage.defectId} 的旧检查点缺少原周期身份，服务端存在多个解决周期；保留现场，不追加流转`)
+  const marker=checkDefectCompletion(proof,stage.expectedStatus,stage.marker,stage.completed)
+  if(marker)verified.push({stage,marker})
  }
  for(const {stage,marker} of verified)stage.record(marker)
  await work()

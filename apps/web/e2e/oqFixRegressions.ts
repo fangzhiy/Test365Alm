@@ -40,12 +40,35 @@ export async function oqFixRegressions(page:Page, admin:Page, scope:{tenantId:st
   await transition('RESOLVED')
   phase='first-resolution'
   const oldCycle=(await proof(d.id)).resolutionId!
+  const singleCycleReads:{status:string;proofReads:number;continued:number;backfilled:boolean}[]=[]
+  const resumeSingleCycle=async()=>{
+   let proofReads=0,continued=0,backfilled:DefectCompletion|undefined
+   await resumeAfterDefectPreflight([{defectId:d.id,expectedStatus:'REOPENED',completed:false,record:m=>{backfilled=m}}],async id=>{proofReads++;return proof(id)},async()=>{continued++})
+   expect(proofReads).toBe(1);expect(continued).toBe(1)
+   singleCycleReads.push({status:d.currentRevision.status,proofReads,continued,backfilled:!!backfilled})
+   return backfilled
+  }
+  expect(await resumeSingleCycle()).toBeUndefined()
+  d=await put(`${root}/defects/${d.id}`,{title:d.currentRevision.title,description:'SYNTHETIC FIX03 原解决周期内编辑',severity:d.currentRevision.severity,priority:d.currentRevision.priority,businessFields:d.currentRevision.businessFields},'PATCH',d.rowVersion)
+  expect((await proof(d.id)).resolutionId).toBe(oldCycle)
+  expect(d.currentRevision.id).not.toBe(oldCycle)
+  expect(await resumeSingleCycle()).toBeUndefined()
   const rt=await put<{attemptId:string}>(`${root}/defects/${d.id}/retests`,{},'POST',d.rowVersion)
+  expect((await read<Attempt>(path(rt.attemptId))).status).toBe('RUNNING')
+  expect(await resumeSingleCycle()).toBeUndefined()
   await finish(await read<Attempt>(path(rt.attemptId)),'PASS');await transition('REOPENED')
   phase='completed-reopened'
   const completed=await proof(d.id),marker=checkDefectCompletion(completed,'REOPENED',undefined,true)!
   const checkpointFile=resolve(diagnostics,'fix02-recovery-checkpoint.json')
   writeFileSync(checkpointFile,JSON.stringify({version:'1.1',projectId:project.id,defectCompletion:marker},null,2))
+  type LegacyCase={testId:string;revisionId:string;instanceId:string;runId:string;originalAttemptId:string;defectId:string;stages:string[];defectCompletion?:DefectCompletion;resolutionId?:string}
+  type LegacyCheckpoint={scenario:string;version:string;projectId:string;tenantId:string;setId:string;cases:Record<string,LegacyCase>;stages:string[]}
+  const legacyFile=resolve(diagnostics,'fix03-legacy-checkpoint.json')
+  // Save the actual interrupted shape before the manual new cycle. Never
+  // backfill this checkpoint or manufacture completed=true for its preflight.
+  const legacy:LegacyCheckpoint={scenario:'OQ-DEMO-01',version:'1.1',projectId:project.id,tenantId:scope.tenantId,setId:set.id,
+   cases:{'OQD-13':{testId:c.id,revisionId:c.currentRevision.id,instanceId:instance.id,runId:run.run.id,originalAttemptId:original.id,defectId:d.id,stages:[]}},stages:['fourteen-reviewed-signed-executed']}
+  writeFileSync(legacyFile,JSON.stringify(legacy,null,2))
   // Lost local marker after a successful terminal response is recovered by read-only proof.
   expect(checkDefectCompletion(completed,'REOPENED')).toEqual(marker)
   const snapshot=async()=>{
@@ -57,6 +80,7 @@ export async function oqFixRegressions(page:Page, admin:Page, scope:{tenantId:st
      approval:await read(`${root}/signatures/TEST_APPROVAL/${c.id}/${c.currentRevision.id}`)}}
   }
   const stable=await snapshot()
+  expect(await resumeSingleCycle()).toEqual(marker)
   expect(checkDefectCompletion(await proof(d.id),'REOPENED',marker,true)).toEqual(marker)
   expect(checkDefectCompletion(await proof(d.id),'REOPENED',marker,true)).toEqual(marker)
   expect(await snapshot()).toEqual(stable)
@@ -66,6 +90,7 @@ export async function oqFixRegressions(page:Page, admin:Page, scope:{tenantId:st
   let conflict='',actionsExecuted=0
   let before:Awaited<ReturnType<typeof snapshot>>,after:Awaited<ReturnType<typeof snapshot>>
   let probeWrites:string[]=[]
+  let legacyRecovery:Record<string,unknown>|undefined
   try{
    // Genuine, isolated business write proves this observes APIRequestContext.
    // It is not blocked/intercepted and its real 2xx response is required.
@@ -83,6 +108,32 @@ export async function oqFixRegressions(page:Page, admin:Page, scope:{tenantId:st
     })
    }catch(e){conflict=(e as Error).message}
    after=await snapshot()
+   expect(actionsExecuted).toBe(0);expect(audit.writes).toEqual([]);expect(after).toEqual(before)
+   audit.clear()
+   const legacyText=readFileSync(legacyFile,'utf8'),checkpoint=JSON.parse(legacyText) as LegacyCheckpoint
+   const item=checkpoint.cases['OQD-13'],completed=checkpoint.stages.includes('closed-and-reopened-defects')
+   const checkpointHasDefectCompletion=Object.hasOwn(item,'defectCompletion')
+   const checkpointHasResolutionId=Object.hasOwn(item,'resolutionId')
+   const checkpointHasGlobalCompletion=completed
+   expect(checkpoint.projectId).toBe(project.id)
+   expect(item).toMatchObject({testId:c.id,revisionId:c.currentRevision.id,instanceId:instance.id,runId:run.run.id,originalAttemptId:original.id,defectId:d.id})
+   expect(checkpointHasDefectCompletion).toBe(false);expect(checkpointHasResolutionId).toBe(false);expect(checkpointHasGlobalCompletion).toBe(false)
+   let proofReads=0,legacyActions=0,backfills=0,legacyConflict=''
+   let resolutionEntries:string[]=[]
+   const legacyBefore=await snapshot()
+   try{
+    await resumeAfterDefectPreflight([{defectId:item.defectId,expectedStatus:'REOPENED',marker:item.defectCompletion,completed,record:m=>{
+     backfills++;item.defectCompletion=m;writeFileSync(legacyFile,JSON.stringify(checkpoint,null,2))
+    }}],async id=>{proofReads++;const p=await proof(id);resolutionEntries=p.resolutionEntries;return p},async()=>{
+     legacyActions++;await transition('REOPENED')
+    })
+   }catch(e){legacyConflict=(e as Error).message}
+   const legacyAfter=await snapshot(),writes=[...audit.writes],checkpointUnchanged=readFileSync(legacyFile,'utf8')===legacyText
+   expect(proofReads).toBe(1);expect(resolutionEntries).toHaveLength(2)
+   expect(legacyConflict).toContain('多个解决周期');expect(legacyActions).toBe(0);expect(backfills).toBe(0)
+   expect(writes).toEqual([]);expect(legacyAfter).toEqual(legacyBefore);expect(checkpointUnchanged).toBe(true)
+   legacyRecovery={checkpointHasDefectCompletion,checkpointHasResolutionId,checkpointHasGlobalCompletion,proofReads,resolutionEntries,
+    actionsExecuted:legacyActions,backfills,writes,before:legacyBefore,after:legacyAfter,checkpointUnchanged,conflict:legacyConflict}
   }finally{audit.stop()}
   const current=await proof(d.id),writes=[...audit.writes]
   expect(conflict).toContain('演示恢复冲突');expect(actionsExecuted).toBe(0);expect(writes).toEqual([]);expect(after!).toEqual(before!)
@@ -95,6 +146,8 @@ export async function oqFixRegressions(page:Page, admin:Page, scope:{tenantId:st
   expect(edited.resolutionId).toBe(current.resolutionId);expect(edited.revisionId).not.toBe(edited.resolutionId)
   expect(selected.attemptId).toBe(currentRetest.attemptId);expect(selected.resolvedRevisionId).not.toBe(oldCycle)
   evidence.recovery={defectId:d.id,marker,newCycle:current.resolutionId,editedRevision:edited.revisionId,oldCycle,selected,conflict,writes,probeWrites,actionsExecuted,before:before!,after:after!}
+  evidence.legacyRecovery=legacyRecovery
+  evidence.singleCycleRecovery=singleCycleReads
   writeFileSync(resolve(diagnostics,'fix01-regressions.json'),JSON.stringify(evidence,null,2))
   await finish(await read<Attempt>(path(currentRetest.attemptId)),'PASS')
   phase='current-cycle-retest-finished'
