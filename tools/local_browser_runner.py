@@ -1,6 +1,6 @@
 """Explicit one-use local-owned Keycloak acceptance. Never opts into CI identity.
 
-The five required flows use a committed snapshot and fresh localhost services.
+The six required flows use a committed snapshot and fresh localhost services.
 Only exact manifest resources and directly created process handles are cleaned.
 """
 from __future__ import annotations
@@ -34,6 +34,7 @@ from tools.redact_r03_logs import redact
 SOURCE_LABEL = "test365alm.local.source"
 RUN_LABEL = "test365alm.r03.run"
 EXPECTED = {
+    "real Keycloak UI reports preserve historical FAIL after related PASS and print three complete Chinese reports",
     "real Keycloak UI manual test case flow creates steps, edits order, and keeps viewer read-only",
     "real Keycloak UI manual execution creates, resumes, finishes and reruns a two-step run",
     "real Keycloak UI member creates defect from FAIL retests PASS closes and preserves history",
@@ -176,7 +177,7 @@ def wait_http(url: str, processes: list, seconds: int = 180) -> None:
 def validate_results(report: dict) -> bool:
     cases = report.get("cases", [])
     return (report.get("status") == "passed" and report.get("workers") == 1 and report.get("retries") == 0
-            and len(cases) == 5 and {c["name"] for c in cases} == EXPECTED
+            and len(cases) == 6 and {c["name"] for c in cases} == EXPECTED
             and all(c["status"] == "passed" and c["expected"] == "passed" and c["retry"] == 0 for c in cases))
 
 
@@ -313,9 +314,12 @@ def main() -> int:
             local_browser_assets.provision(values, services, env, asset_guard)
             summary["scanner_provision"] = "PASSED"
         verify(resources, args.source, identities, env)
-        command(["node", "node_modules/@playwright/test/cli.js", "test", "e2e/project-access.spec.ts", "e2e/manual-execution.spec.ts", "e2e/defects.spec.ts",
-                 "--config", "playwright.local.config.ts", "--grep", "real Keycloak UI (manual test case flow|manual execution creates|member creates defect|designated reviewer rejects approves|simulated signature rejects wrong credentials)",
-                 "--workers=1", "--retries=0"], root / "apps/web", "browser", timeout=720)
+        command(["node", "node_modules/@playwright/test/cli.js", "test", "e2e/project-access.spec.ts", "e2e/manual-execution.spec.ts", "e2e/defects.spec.ts", "e2e/reports.spec.ts",
+                 "--config", "playwright.local.config.ts", "--grep", "real Keycloak UI (manual test case flow|manual execution creates|member creates defect|designated reviewer rejects approves|simulated signature rejects wrong credentials|reports preserve historical FAIL)",
+                 "--workers=1", "--retries=0"], root / "apps/web", "browser", timeout=960)
+        import shutil
+        if (root / "output/pdf").is_dir():
+            shutil.copytree(root / "output/pdf", evidence / "pdf")
         report = json.loads((evidence / "results.json").read_text())
         result = 0 if validate_results(report) else 1
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
