@@ -4,7 +4,7 @@
 
 | 问题编号 | 原失败证据 | 改动及相邻检查 | 修复后证据 | 被测 SHA | 自验结果与限制 |
 |---|---|---|---|---|---|
-| CI-PREP-01-A | [dev 43057338879](https://github.com/fangzhiy/Test365Alm/actions/runs/43057338879)、[PR 43057350036](https://github.com/fangzhiy/Test365Alm/actions/runs/43057350036) 的 attempt 1/2 均在字体 apt 安装 DNS 失败、退出100；浏览器 NOT_RUN，只有 checkout 制品，无 XML/OQ/PDF。旧日志及制品保留。 | 仅浏览器 Job 固定 Ubuntu24.04；官方 Noto 固定提交下载，Regular/Bold/OFL 全部 SHA256 通过才安装。核验实际家族、字重、文件及中文覆盖；保留锁定 Playwright 的 `--with-deps`，增加正式 dry-run 依赖复核及真实 Chromium/CDP 字体与中文 PDF 预检。准备诊断 always 上传。 | 本地 Ubuntu24.04 受控容器中下载、匹配、系统依赖安装和复核、Chromium153.0.8010.12 启动与中文 PDF 均通过；工具229通过。最终两路 CI、checkout、原始计数、OQ/FIX03 与同来源 PDF 核对结果集中附于 PR。 | 本地为本提交的相同准备源码（提交前）；最终 head/PR merge-ref 以 PR 原始 CI 制品清单为准，不用基线结果代替。 | 本地准备链自验通过；完整 CI 的实际状态以 PR 最终交付为准。固定 runner 不等于证明 DNS 已修复；下载/安装/校验失败仍阻塞，不生成空报告或改门禁。 |
+| CI-PREP-01-A | [dev 43057338879](https://github.com/fangzhiy/Test365Alm/actions/runs/43057338879)、[PR 43057350036](https://github.com/fangzhiy/Test365Alm/actions/runs/43057350036) 的 attempt 1/2 均在字体 apt 安装 DNS 失败、退出100；浏览器 NOT_RUN，只有 checkout 制品，无 XML/OQ/PDF。旧日志及制品保留。 | 仅浏览器 Job 固定 Ubuntu24.04；官方 Noto 固定提交下载，Regular/Bold/OFL 全部 SHA256 通过才安装。核验实际家族、字重、文件及中文覆盖；保留锁定 Playwright 的 `--with-deps`，增加正式 dry-run 依赖复核及真实 Chromium/CDP 字体与中文 PDF 预检。准备诊断 always 上传。 | 本地 Ubuntu24.04 受控容器中下载、匹配、系统依赖安装和复核、Chromium153.0.8010.12 启动与中文 PDF 均通过；工具229通过。实现提交两路正常 CI（43145069688/43145075758）attempt1 六 Job 全成功；原始计数与同来源 OQ/FIX03/PDF 已核对，详见下文。文档收尾最终 head 的 CI 另附 PR。 | 实现被测 SHA `633732e77f6965b436b1b35c5e7c4882afc12c27`；PR checkout `00ada51c4037ee80c0e79c11bdbd3ef6b301b776`。本地提交前同源；文档收尾最终版本另记 PR。 | 实现版本完整 CI 自验通过；文档收尾最终 head 的实际状态以 PR 最终交付为准。固定 runner 不等于证明 DNS 已修复；下载/安装/校验失败仍阻塞，不生成空报告或改门禁。 |
 
 ## 来源、验证及边界
 
@@ -19,9 +19,19 @@
 
 | 项目 | 状态 | 依据 |
 |---|---|---|
-| 原问题对应 | 已验证（本地）；完整 CI 见 PR | 保留原 DNS/apt100 RED；字体获取改为固定官方内容校验，正常链实际运行。 |
-| 相邻路径 | 已验证（本地）；完整 CI 见 PR | 正式系统依赖安装、dry-run、默认 Chromium 启动及 CDP/PDF。 |
+| 原问题对应 | 已验证 | 保留原 DNS/apt100 RED；字体获取改为固定官方内容校验，正常链实际运行。 |
+| 相邻路径 | 已验证 | 正式系统依赖安装、dry-run、默认 Chromium 启动及 CDP/PDF。 |
 | 失败语义 | 已验证 | 工具反例；脚本返回非零并保留 BLOCKED/NOT_RUN，缺报告仍失败。 |
-| 正常完整业务路径 | 未完成，待新 head CI 原始结果核对后在 PR 更新 | 不以本地准备 PDF 或旧七条流程替代完整套件。 |
-| 来源一致 | 本地已验证；最终 CI 见 PR | 原始 checkout/OQ/index/字体诊断/PDF 同一浏览器制品；最终 head 与 merge-ref 分别核对。 |
+| 正常完整业务路径 | 已验证 | 两路实现提交完整浏览器18/18、独立UI1/1，OQ/FIX03原始证据齐全；文档收尾最终CI另核。 |
+| 来源一致 | 已验证 | 实现633732e及PR merge00ada51c父提交/树已核对；同一制品的OQ/index/字体诊断/PDF，最终文档提交另记PR。 |
 | 变更边界 | 已有覆盖并核对差异 | 无业务源码/依赖升级；原门禁与清理保留。 |
+
+
+## 实现提交的完整 CI 与样张
+
+- dev push [43145069688](https://github.com/fangzhiy/Test365Alm/actions/runs/43145069688)、PR [43145075758](https://github.com/fangzhiy/Test365Alm/actions/runs/43145075758)：attempt1，六 Job 均成功，无复跑。实际 head 为633732e，push checkout=head；PR checkout为00ada51c，parents为main b8975e4及head633732e，tree与head一致。原始报告均为Java21单元107、完整集成226，前端521、Python229、完整浏览器18、独立项目UI1，零失败/错误/跳过；报告门禁成功。
+- Ubuntu24.04字体和系统准备、dry-run、Chromium153.0.8010.12均通过；CDP实际字体为NotoSansCJKsc-Regular/Bold。PR浏览器原制品artifact13911895674，dev artifact及完整来源清单保存在`local-evidence/ci-prep/{run}/verification.json`，原ZIP、解包及逐页渲染同目录保留。未用旧head或本地七条替代。
+- FIX03真实保存/重读的旧检查点三个标记false、proofReads=1、actions/backfills=0、writes=[]，checkpoint及完整前后快照不变；单周期及导航回归保留。标准场景14实例、16Attempt、29模拟签署，原始12PASS/2FAIL，独立两次PASS复测均未签署，CLOSED/REOPENED各一项；历史附件固定v1。故障数据仍为隔离项目。
+- 逐页渲染并检查PR原始业务PDF：OQ普通运行/原FAIL/复测/汇总/偏差为5/6/6/6/6页；F长文本运行/汇总/偏差/普通运行为12/11/8/3页。中文、字重、长文本跨页、表头重复及末页内容正常；原有分页留白、尾注单页保持为已知限制，不改布局凑旧页数。样张明确合成数据，技术检查不是业务格式认可。
+- 两路准备失败的原始历史记录保持不变；新实现没有删除字体或系统安装、放松超时/retry、忽略错误或补空报告。原归属清理及流程退出成功；本地一次性容器已移除，持久演示/旧项目/检查点未操作。
+- 此记录收尾仅追加文档；其最终提交、正常触发的新CI及实际checkout/原始制品再在PR核对，不能将上述实现提交结果冒称为后续提交的运行。
