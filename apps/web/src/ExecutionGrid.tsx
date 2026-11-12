@@ -3,9 +3,11 @@ import { executionApi, type Assignment, type Assignee, type GridFilters, type Pa
 import { useCoreRequest } from './useCoreRequest'
 import { newIdempotencyKey } from './requirements'
 import './ExecutionGrid.css'
+import InstanceNavigator from './InstanceNavigator'
 
 type Props = {
   projectId: string; instances: TestInstance[]; writable: boolean; disabled: boolean; nextCursor: string | null; filters: GridFilters
+  refreshing?: boolean
   onFilter: (filters: GridFilters) => void; onMore: () => void; onRefresh: () => void
   onOpen: (instance: TestInstance) => void; onStart: (instance: TestInstance) => void
   onAssigned: (assignment: Assignment) => void; onLock: (locked: boolean) => void; onDenied: () => void
@@ -17,6 +19,14 @@ export default function ExecutionGrid(props: Props) {
   const {projectId,instances,writable,disabled,nextCursor,onLock,onDenied} = props
   const read = useCoreRequest(), write = useCoreRequest()
   const [people,setPeople] = useState<Page<Assignee>>({items:[],nextCursor:null})
+  const [selection,setSelection] = useState<{id:string;projectId:string;setId:string;filters:string} | null>(null)
+  const filterScope = JSON.stringify([props.filters.status ?? '',props.filters.assigneeId ?? ''])
+  const navigation = selection?.projectId === projectId && selection.filters === filterScope
+    ? instances.find(item=>item.id === selection.id && item.setId === selection.setId) : undefined
+  // A removed/foreign selection is invalid immediately, including during a
+  // refresh render. Forget its identity so it cannot reopen if rows reappear.
+  if(selection && !navigation)setSelection(null)
+  const navigationDenied = () => { setSelection(null); onDenied() }
   const [editing,setEditing] = useState<TestInstance | null>(null)
   const [assignee,setAssignee] = useState('')
   const [status,setStatus] = useState(props.filters.status ?? '')
@@ -55,13 +65,14 @@ export default function ExecutionGrid(props: Props) {
       <th scope="row">{item.displayNumber ? `${item.displayNumber} · ` : ''}{item.title}</th><td>修订 {item.revisionNumber}</td>
       <td>{item.status ? statuses[item.status] : '状态未知'}{item.conclusion ? ` · ${item.conclusion}` : ''}</td>
       <td>{item.assigneeName ?? '未分配'}</td><td>{item.executionDate ? <time dateTime={item.executionDate}>{item.executionDate}</time> : '尚无执行日期'}</td>
-      <td><div className="execution-grid-actions">{item.runId && <button type="button" className="secondary-button" aria-label={`进入运行 ${item.title}`} disabled={locked} onClick={()=>props.onOpen(item)}>进入运行</button>}
+      <td><div className="execution-grid-actions"><button type="button" disabled={locked} aria-label={`查看绑定修订 ${item.title}`} onClick={()=>setSelection({id:item.id,projectId,setId:item.setId,filters:filterScope})}>修订与闭环进度</button>{item.runId && <button type="button" className="secondary-button" aria-label={`进入运行 ${item.title}`} disabled={locked} onClick={()=>props.onOpen(item)}>进入运行</button>}
         {writable && <><button type="button" className="secondary-button" disabled={locked} onClick={()=>props.onStart(item)}>启动手工运行</button>
           <button type="button" className="secondary-button" aria-label={`分配负责人 ${item.title}`} disabled={locked || !item.assignmentVersion} onClick={()=>{setEditing(item);setAssignee(item.assigneeId ?? '');write.setMessage('');void loadPeople()}}>分配负责人</button></>}
       </div></td>
     </tr>)}</tbody></table></div>
     {!instances.length && <p>当前筛选没有实例。</p>}
     {nextCursor && <button type="button" className="secondary-button" disabled={locked} onClick={props.onMore}>加载更多实例</button>}
+    {navigation && <InstanceNavigator key={`${projectId}:${navigation.id}:${navigation.testRevisionId}`} projectId={projectId} instance={navigation} refreshing={props.refreshing} onDenied={navigationDenied} onClose={()=>setSelection(null)}/>}
     {editing && <form className="execution-assignment" onSubmit={e=>{e.preventDefault();void save()}} aria-label="分配实例负责人">
       <strong>{editing.title}</strong><label>实例负责人<select aria-label="实例负责人" value={assignee} disabled={locked} onChange={e=>setAssignee(e.target.value)}>
         <option value="">未分配</option>{editing.assigneeId && !people.items.some(p=>p.id===editing.assigneeId) && <option value={editing.assigneeId}>{editing.assigneeName}（待核验）</option>}

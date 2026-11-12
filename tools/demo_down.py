@@ -4,6 +4,10 @@ import os
 import signal
 import sys
 
+import demo_up
+if __name__ == '__main__':
+    demo_up.select_profile_args()
+
 from demo_up import (ENV, STATE, entrypoint, inventory, load_env, process_owned, run, save_state, validate_state)
 
 
@@ -39,7 +43,7 @@ def main():
             for volume in resources['volumes']:
                 run(['docker', 'volume', 'rm', volume['Name']], capture=True)
         save_state(config, {})
-        print('Stopped test365alm-demo; ' + ('demo data volumes deleted explicitly' if args.delete_data else 'data volumes retained'))
+        print('Stopped ' + demo_up.PROJECT + '; ' + ('demo data volumes deleted explicitly' if args.delete_data else 'data volumes retained'))
         return 0
     except (OSError, ValueError, KeyError, RuntimeError) as error:
         print('FAIL: ' + str(error), file=sys.stderr)

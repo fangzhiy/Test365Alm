@@ -39,7 +39,9 @@ it.each([[401,'UNAUTHENTICATED'],[403,'FORBIDDEN']] as const)('clears defect hos
  const sets=vi.spyOn(executionApi,'pageSets').mockImplementation(()=>new Promise(r=>{names=r}))
  try{
   render(<DefectsPanel projectId="p" access={access}/>);fireEvent.click(await screen.findByRole('button',{name:/BUG-1/}));await screen.findByDisplayValue('Bug')
+  await waitFor(()=>expect(screen.getByRole('button',{name:'刷新缺陷详情'})).toBeEnabled())
   vi.mocked(defectsApi.get).mockImplementationOnce(()=>new Promise(r=>{detail=r}));fireEvent.click(screen.getByRole('button',{name:'刷新缺陷详情'}))
+  expect(detail).toBeTypeOf('function')
   const signal=vi.mocked(defectsApi.get).mock.calls.at(-1)?.[2]?.signal
   fireEvent.click(screen.getByRole('button',{name:'偏差清单报告'}));await screen.findByText(/数据完整加载/)
   const nameSignal=sets.mock.calls.at(-1)?.[3]?.signal

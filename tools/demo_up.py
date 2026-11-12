@@ -15,6 +15,8 @@ import time
 import urllib.request
 import uuid
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 import prepare_r03_dev
 from demo_seed import DOMAIN, TENANT, seed
 from verify_r11_services import check as assets_ready
@@ -28,6 +30,22 @@ STATE = LOCAL / 'state.json'
 PROJECT = 'test365alm-demo'
 SERVICES = ('postgres', 'keycloak', 'asset-store', 'asset-scanner')
 JAVA_HOME = Path('D:/code/ProOrca/Wetest365ALM/.tools/jdk-21')
+
+
+
+def select_profile_args():
+    """Select a separate owned environment before locks, secrets or resources are read."""
+    global LOCAL, ENV, REALM, COMPOSE, STATE, PROJECT
+    if '--profile' not in sys.argv:
+        return
+    index = sys.argv.index('--profile')
+    if index + 1 >= len(sys.argv) or sys.argv[index + 1] != 'oq-demo-01':
+        raise RuntimeError('Supported demo profile: oq-demo-01; legacy is the default')
+    del sys.argv[index:index + 2]
+    LOCAL = ROOT / 'local-evidence/demo-oq-demo-01'
+    ENV = ROOT / '.env.demo-oq-demo-01'
+    REALM, COMPOSE, STATE = (LOCAL / name for name in ('realm.json', 'compose.json', 'state.json'))
+    PROJECT = 'test365alm-demo-oq-demo-01'
 
 
 def run(args, *, env=None, cwd=ROOT, data=None, capture=False):
@@ -122,7 +140,7 @@ def validate_config(config):
         'TEST365ALM_ASSETS_S3_ENDPOINT': f"http://127.0.0.1:{ports['R11_S3_PORT']}",
         'TEST365ALM_ASSETS_CLAMD_HOST': '127.0.0.1', 'TEST365ALM_ASSETS_CLAMD_PORT': str(ports['R11_CLAMD_PORT']),
         'TEST365ALM_DATASOURCE_USERNAME': 'test365alm_runtime',
-        'TEST365ALM_ASSETS_SCANNER_DB_USERNAME': 'test365alm_scanner', 'SPRING_PROFILES_ACTIVE': 'oidc'}
+        'TEST365ALM_ASSETS_SCANNER_DB_USERNAME': ('oq_demo_scanner_login' if PROJECT.endswith('oq-demo-01') else 'test365alm_scanner'), 'SPRING_PROFILES_ACTIVE': 'oidc'}
     if any(config.get(k) != v for k, v in expected.items()):
         raise RuntimeError('Demo config must use consistent dedicated loopback endpoints, demo database and restricted roles')
     if config.get('TEST365ALM_SERVER_ADDRESS', '127.0.0.1') != '127.0.0.1':
@@ -150,7 +168,7 @@ def prepare(web_port, server_port):
         prepared = prepare_r03_dev.main()
     if prepared != 0:
         raise RuntimeError('Demo credential preparation failed')
-    print('Created ignored .env.demo and local-evidence/demo/realm.json; R03 config preserved')
+    print('Created ignored profile credentials and realm; old demo/R03 config preserved')
     config = load_env()
     config.update({'DEMO_WEB_PORT': str(web_port), 'TEST365ALM_SERVER_PORT': str(server_port),
         'TEST365ALM_WEB_ORIGIN': f'http://127.0.0.1:{web_port}',
@@ -159,6 +177,13 @@ def prepare(web_port, server_port):
         'R03_DB_NAME': 'test365alm_demo',
         'TEST365ALM_DATASOURCE_URL': 'jdbc:postgresql://127.0.0.1:54339/test365alm_demo',
         'SPRING_FLYWAY_URL': 'jdbc:postgresql://127.0.0.1:54339/test365alm_demo'})
+    if PROJECT.endswith('oq-demo-01'):
+        config.update(R03_POSTGRES_PORT='54349', R03_KEYCLOAK_PORT='18190', R11_S3_PORT='18433', R11_CLAMD_PORT='13410',
+            TEST365ALM_DATASOURCE_URL='jdbc:postgresql://127.0.0.1:54349/test365alm_demo',
+            SPRING_FLYWAY_URL='jdbc:postgresql://127.0.0.1:54349/test365alm_demo',
+            TEST365ALM_OIDC_ISSUER='http://127.0.0.1:18190/realms/test365alm',
+            TEST365ALM_ASSETS_S3_ENDPOINT='http://127.0.0.1:18433', TEST365ALM_ASSETS_CLAMD_PORT='13410',
+            TEST365ALM_ASSETS_SCANNER_DB_USERNAME='oq_demo_scanner_login')
     ENV.write_text(''.join(f'{k}={v}\n' for k, v in config.items()), encoding='utf-8')
     realm = json.loads(REALM.read_text(encoding='utf-8'))
     realm['clients'][0]['redirectUris'] = [config['TEST365ALM_OIDC_REDIRECT_URI']]
@@ -199,6 +224,9 @@ def make_compose(config):
               capture=True, env=child_env())
     document = json.loads(raw)
     document['name'] = PROJECT
+    if PROJECT.endswith('oq-demo-01'):
+        from local_browser_assets import prepare_document
+        prepare_document(document)  # Only this fresh profile uses SCRAM host initialization.
     # Windows Git checkouts may use CRLF. A Linux shebang with CRLF cannot execute.
     init_script = LOCAL / 'init-db.sh'
     init_script.write_bytes((ROOT / 'tools/r03_init_db.sh').read_bytes().replace(b'\r\n', b'\n'))
@@ -353,8 +381,8 @@ def port_number(value):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--web-port', type=port_number, default=15173)
-    parser.add_argument('--server-port', type=port_number, default=18083)
+    parser.add_argument('--web-port', type=port_number, default=15273 if PROJECT.endswith('oq-demo-01') else 15173)
+    parser.add_argument('--server-port', type=port_number, default=18183 if PROJECT.endswith('oq-demo-01') else 18083)
     args = parser.parse_args()
     try:
         if not (JAVA_HOME / 'bin' / 'java.exe').exists() and os.name == 'nt':
@@ -399,10 +427,25 @@ def main():
             processes['web'] = start_process('web', config)
             save_state(config, processes)
         wait_for('frontend and API proxy', lambda: http_ready(config['TEST365ALM_WEB_ORIGIN']) and http_ready(config['TEST365ALM_WEB_ORIGIN'] + '/health/ready'))
-        result = seed(config, lambda ids: bootstrap(config, ids), LOCAL / 'seed-complete.json')
+        if PROJECT.endswith('oq-demo-01'):
+            # Official operator tool, both real SCRAM connections, no role/password/HBA reset.
+            from local_browser_assets import provision
+            services = {c['Config']['Labels']['com.docker.compose.service']: {'id': c['Id']} for c in inventory(config)['containers']}
+            provision(config, services, dict(env, TEST365ALM_DOCKER_CONTEXT=identity()['context']), lambda: validate_state(config))
+            checkpoint = LOCAL / 'scenario.json'
+            if checkpoint.exists():
+                from oq_demo import inspect
+                from demo_seed import Api
+                api = Api(config['TEST365ALM_WEB_ORIGIN'], config['TEST365ALM_OIDC_ISSUER'])
+                api.login(config['R03_TEST_USER'], config['R03_TEST_USER_PASSWORD'])
+                result = inspect(api, json.loads(checkpoint.read_text(encoding='utf-8')))
+            else:
+                result = {'scenario': 'OQ-DEMO-01', 'mode': 'read-only startup', 'checkpointPresent': False}
+        else:
+            result = seed(config, lambda ids: bootstrap(config, ids), LOCAL / 'seed-complete.json')
         (LOCAL / 'verification.json').write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
         print('Demo ready: ' + config['TEST365ALM_WEB_ORIGIN'])
-        print('Accounts: r03-user (admin), r03-member, r03-viewer; passwords only in ignored .env.demo')
+        print('Accounts: r03-user (reviewer/admin), r03-member (author/executor), r03-viewer; passwords only in ignored ' + ENV.name)
         return 0
     except (OSError, ValueError, KeyError, RuntimeError) as error:
         print('FAIL: ' + str(error), file=sys.stderr)
@@ -418,4 +461,5 @@ def postgres_ready(config):
 
 
 if __name__ == '__main__':
+    select_profile_args()
     raise SystemExit(entrypoint(main))

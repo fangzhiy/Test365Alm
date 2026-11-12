@@ -396,7 +396,7 @@ jobs:
           python tools/cleanup_r02_resources.py --root local-evidence/r02-migration-failure
 
   oidc-browser:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - name: Record checkout identity
@@ -417,7 +417,15 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install Chinese print fonts
-        run: sudo apt-get update && sudo apt-get install -y fonts-noto-cjk
+        run: |
+          set -euo pipefail
+          mkdir -p local-evidence/r03/preparation
+          cat /etc/os-release | tee local-evidence/r03/preparation/os-release.txt
+          for source in /etc/apt/sources.list /etc/apt/sources.list.d/*; do
+            if [ -f "$source" ]; then cat "$source"; fi
+          done | tee local-evidence/r03/preparation/package-sources.txt
+          python tools/prepare_ci_fonts.py --evidence local-evidence/r03/preparation \
+            2>&1 | tee local-evidence/r03/preparation/fonts.log
       - name: Install browser and build application
         run: |
           set -euo pipefail
@@ -430,6 +438,10 @@ jobs:
             2>&1 | tee local-evidence/r03/server-build.txt
           (cd apps/web && npm ci && npx playwright install --with-deps chromium) \
             2>&1 | tee local-evidence/r03/browser-install.txt
+          (cd apps/web && npx playwright install-deps --dry-run chromium) \
+            2>&1 | tee local-evidence/r03/preparation/system-dependencies.txt
+          node tools/verify_ci_browser.cjs local-evidence/r03/preparation \
+            2>&1 | tee local-evidence/r03/preparation/chromium.log
       - name: Real Keycloak browser login, me and logout
         run: |
           set -euo pipefail
@@ -556,6 +568,7 @@ jobs:
             local-evidence/r03/python-version.txt
             local-evidence/r03/server-build.txt
             local-evidence/r03/browser-install.txt
+            local-evidence/r03/preparation/
             local-evidence/r03/browser-status.txt
             local-evidence/r03/project-ui-isolated.log
             local-evidence/r03/e2e.log
@@ -572,6 +585,7 @@ jobs:
             local-evidence/r03/playwright-results.xml
             local-evidence/r03/project-browser-report.txt
             local-evidence/r03/reports-context.json
+            local-evidence/r03/oq-demo-01/*.json
             output/pdf/
             local-evidence/r03/import-permissions.txt
             local-evidence/r03/image-user.txt

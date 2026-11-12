@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 from tools.r02_resource_guard import ResourceManifest, verify_manifest
-from tools.local_browser_runner import EXPECTED, capture, fresh_config, validate_results, verify
+from tools.local_browser_runner import EXPECTED, OQ_SCENARIO, capture, fresh_config, validate_results, verify
 from tools.r02_resource_guard import ResourceOwnershipError, assert_project_available
 from pathlib import Path
 import tempfile
@@ -116,6 +116,15 @@ class BrowserResourceGuardTests(unittest.TestCase):
                 report = json.loads((evidence / "run.json").read_text())
                 self.assertTrue(report["cleanup"])
                 self.assertEqual(1, report["exit_code"])
+
+    def test_oq_scenario_requires_all_original_six_and_one_exact_new_flow(self):
+        report = {"status":"passed", "workers":1, "retries":0,
+                  "cases":[{"name":n,"status":"passed","expected":"passed","retry":0} for n in EXPECTED | {OQ_SCENARIO}]}
+        self.assertTrue(validate_results(report, "oq-demo-01"))
+        self.assertFalse(validate_results(report))
+        for i in range(7):
+            self.assertFalse(validate_results({**report, "cases":report["cases"][:i]+report["cases"][i+1:]}, "oq-demo-01"))
+        self.assertFalse(validate_results({**report,"retries":1}, "oq-demo-01"))
 
     def test_only_five_exact_passes_without_retries_satisfy_browser_acceptance(self):
         report = {"status": "passed", "workers": 1, "retries": 0,
