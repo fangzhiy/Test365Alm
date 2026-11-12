@@ -14,6 +14,17 @@ CLEANUP = ROOT / "tools" / "cleanup_r02_resources.py"
 
 
 class CiWorkflowTests(unittest.TestCase):
+    def test_browser_preparation_is_pinned_verified_and_keeps_system_install(self):
+        workflow = WORKFLOW.read_text(encoding="utf-8")
+        browser = workflow.split("  oidc-browser:", 1)[1]
+        self.assertIn("runs-on: ubuntu-24.04", browser)
+        self.assertIn("prepare_ci_fonts.py --evidence", browser)
+        self.assertIn("playwright install --with-deps chromium", browser)
+        self.assertIn("playwright install-deps --dry-run chromium", browser)
+        self.assertLess(browser.index("verify_ci_browser.cjs"), browser.index("Real Keycloak browser"))
+        self.assertIn("local-evidence/r03/preparation/", browser)
+        self.assertIn("if: always()", browser.split("Upload R03 browser evidence", 1)[1])
+
     def test_ci_uses_owned_cleanup_and_never_project_down_volumes(self):
         workflow = WORKFLOW.read_text(encoding="utf-8")
         self.assertNotIn("down --volumes", workflow)
