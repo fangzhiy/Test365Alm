@@ -125,6 +125,6 @@ M13 可配置工作流脚本、M14 版本控制与基线、M15 跨项目报表�
 | 0 环境与流程 | W1一键演示与A03演示数据已集成；Linux固定快照85单元/167完整集成含真实S3/ClamAV/EICAR通过，三条真实Keycloak业务UI通过；仍不等于所有现有功能实测完成 |
 | 1 主链路 | 1a 通用目录树已集成，完整目录浏览器回归仍待验收；1c三实体业务字段已验收，见docs/reviews/business-fields-coordinator-review.md；1b/1d网格/运行器已通过组合93单元/187真实集成和含真实步骤附件的三条Keycloak流程，总管批准本地集成，见docs/reviews/execution-grid-coordinator-review.md；A03十四用例全集仍未完成，不将整个阶段标完成 |
 | 2 复核/签署/审计 | 2c审计已验收，见docs/reviews/audit-history-coordinator-review.md；2a指定身份复核已通过95单元/202完整集成及含复核的四条真实Keycloak UI，总管独立核对逐名报告与精确清理，批准本地集成，见docs/reviews/test-case-review-coordinator-review.md；2b/2d模拟签署与锁定已通过实际后端102单元/218完整集成及完整五条真实Keycloak UI，总管独立核验与清理并验收，见docs/reviews/signature-coordinator-review.md；仅模拟提供方，不代表外部签名厂商或合规认证。A03跨阶段全集仍未验收 |
-| 3 报告 | F-REPORT-01 三类只读报告与中文 PDF 已技术交付，见 docs/reviews/F-REPORT-01.md；已审核 dd62943 合入 main@b8975e4，业务格式认可待确认；OQ-DEMO-01 合成演示新增代码待审核，真实 G/A03 未验收 |
+| 3 报告 | F-REPORT-01 三类只读报告与中文 PDF 已技术交付，见 docs/reviews/F-REPORT-01.md；已审核 dd62943 合入 main@b8975e4，业务格式认可待确认；OQ-DEMO-01 合成技术演示已独立审核接受 ec71d66、PR #13 合入 main@5808d42（见 docs/reviews/OQ-DEMO-01.md#oq-demo-01-close），真实 G/A03 未验收 |
 | 4 迁移 | 演示之后（等问题 6） |
 | 5 试运行与切换 | 未开始 |

@@ -53,3 +53,43 @@ python tools/demo_down.py --profile oq-demo-01
 样张及截图：`output/pdf/oq-demo-01/` 下 ordinary-run、original-fail、retest-pass、test-set-summary、deviation-list 的 PDF/PNG。本地v1.1来源页数依次5/6/6/6/6，已渲染检查全部29页、中文/跨页/表头/附件/签署/末页完整，保留既有留白与字段跨页限制，不在本批重设计打印。逐页缩略图和提取核对见 `local-evidence/oq-pdf-review/`。历史F样张来源不改写。技术排版通过不等于业务格式认可，模拟签署不等于正式电子签名认证。
 
 真实 G/A03 仍暂停。缺口：正式十四用例原文/版本/步骤/预期；正式执行环境和资料；执行/复核/签署角色安排；业务认可报告格式；恢复真实验收的明确授权。本批不连接SAP/旧ALM/生产，不迁移、部署或接第三方签名。
+
+## OQ-DEMO-01-CLOSE
+
+2026-11-12。合成技术演示已独立审核接受，等待业务评审与真实 G/A03 输入。仅合入已审核内容及集中更新现行文档，无产品、依赖、测试或门禁改动。
+
+### 合入与验证
+
+- 已审核 head：`ec71d66dc8827d6455a895996109f223e6ccc77e`。PR #13 合并时以 sha 条件锁定；当时 base 为 `b8975e4604295269c2c0e8efef461614fc4b37da`，六 Job 必要检查成功。
+- 实际合入 M：`5808d426a397da85b8d7152085a2cd32025e77b0`。父提交依次为上述 base/head；树 `bd7cb51729f8109ac29478598521856420a049f7` 与审核 head 相同。dev/codex-main 安全快进同步，无强推。
+- M 的 main push [43153344580](https://github.com/fangzhiy/Test365Alm/actions/runs/43153344580)、dev push [43153415771](https://github.com/fangzhiy/Test365Alm/actions/runs/43153415771)：均 attempt1、六 Job 成功；原始制品 checkout 均为 M，非旧 PR merge ref。Java21 单元107、完整集成226、前端521、工具229、完整浏览器18、独立项目UI1，零失败/错误/跳过；报告门禁和正常资源清理成功。来源及原制品校验：`local-evidence/ci-prep/{run}/verification.json`。
+- OQ 索引及 FIX03 真实旧文件回归同源核对：三个完成标记均缺失、proofReads=1、actions/backfills=0、writes=[]、检查点及完整前后快照不变。标准14实例、16Attempt、29模拟签署，原始12PASS/2FAIL、两个独立PASS复测未签署、CLOSED/REOPENED各一项、历史附件固定v1。
+- CI-PREP-01-A 已关闭，字体准备/系统依赖/Chromium/完整业务与报告产出实际通过；FIX03 最终真实 CI 证据已补齐。旧 DNS 故障两路43057338879/43057350036的attempt1/2仍为历史失败/浏览器NOT_RUN，不改写。
+- 本批本地仅执行只读 `python tools/oq_demo.py --profile oq-demo-01 --mode inspect`（14个最新Attempt均FINISHED/PASS）、文档检查、`git diff --check`、`trail build`/`trail check`；未重复本地Docker/浏览器全集，未运行resume或修改持久业务。用户工具配置、旧项目/卷/检查点保留。
+- 本次文档提交后正常CI的最终结果只附PR #13交付记录，不为补编号再生成文档提交。
+
+### 演示评审入口
+
+项目 **SYNTHETIC · OQ-DEMO-01 十四用例完整演示**，测试计划/实验室目录及测试集均为 **SYNTHETIC OQ-DEMO-01 v1.1**。在仓库根执行：
+
+```bash
+python tools/demo_up.py --profile oq-demo-01
+python tools/oq_demo.py --profile oq-demo-01 --mode inspect
+python tools/demo_down.py --profile oq-demo-01
+```
+
+启动归属核验后的既有服务；inspect只读核对记录的对象；停止保留数据。浏览器 http://127.0.0.1:15273 ，账户为r03-user/r03-member/r03-viewer，秘密仅在忽略配置 `.env.demo-oq-demo-01`。检查点及本机材料在 `local-evidence/demo-oq-demo-01/`（以现有工具profile路径为准）；不要删除检查点或自动resume来恢复预设状态。详细逐步入口见 [FIX01演示操作](OQ-DEMO-01-FIX01.md#演示操作)。
+
+最终已审核样张和十四条证据索引来自 [PR CI 43146324025 / artifact13912121671](https://github.com/fangzhiy/Test365Alm/actions/runs/43146324025/artifacts/13912121671)，head ec71d66、实际merge-ref checkout 1f8cee6d5905a70ed0a431730ab9962ea5e547e0。原ZIP、索引与PDF保留于 `local-evidence/ci-prep/43146324025/`：解包后 `extracted/local-evidence/r03/oq-demo-01/evidence-index.json` 和 `extracted/output/pdf/`。OQ普通/原FAIL/复测/汇总/偏差分别5/6/6/6/6页；F长运行/汇总/偏差/普通为12/11/8/3页。已审核逐页技术检查沿用，本批不重复生成样张；M的新CI制品单独核对来源，不冒称重新逐页审核。
+
+建议从实例网格“修订与闭环进度”及“进入运行”查看：
+
+1. OQD-01修订1被拒绝，新修订2重新批准及批准模拟签署；暂停/继续过程查看执行历史，终态不伪装为仍暂停。
+2. OQD-12/13尝试1原FAIL保留，尝试2另记PASS复测，两个复测均未运行签署。
+3. OQD-12 CLOSED及确切关闭修订签署；OQD-13 REOPENED的旧PASS仅属历史周期，不代表当前问题已通过。
+4. OQD-01附件资产v2已发布，但历史Attempt仍固定v1。三种模拟签署分别核对确切用例修订、Attempt和关闭修订，不能相互替代。
+5. VIEWER可读/打印，不可写；汇总最新14PASS与历史16Attempt分别解释。人工变更后的恢复冲突应保留现场人工核对，不能清空历史绕过。
+
+### 待业务方确认与限制
+
+真实G/A03继续暂停；正式十四用例原文/版本/步骤/预期、真实环境及执行资料、执行/复核/签署角色、业务认可的报告格式，以及明确恢复真实验收授权均待确认。不把合成观察当作SAP实际操作，不把模拟签署当正式电子签名认证；迁移、部署及第三方厂商对接未启动。历史登录逐例归因仍不确定；已接受的分页留白/尾注单页保留。技术验收不代替业务格式认可。

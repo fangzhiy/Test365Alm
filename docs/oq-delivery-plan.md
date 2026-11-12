@@ -4,7 +4,7 @@
 
 ## 当前执行边界与工作方式
 
-2026-11-11用户已改为单Codex直接开发，只保留主目录与codex-main，取代原总管/worker/独立审查流程。每功能完成后执行后端单元、Linux容器完整集成、前端lint/test/build及trail check，通过后合入dev，验收成果推进main并推送。不人工逐名核对，不再逐轮独占窗口或独立清理报告；每功能仅保留一份简短review与必要learning。F-REPORT-01 已技术验收，已审核 dd62943 经 PR #12 合入 main@b8975e4。业务格式认可待确认；当前 OQ-DEMO-01 为合成技术演示，只集成 dev、待独立审核，真实 G/A03 仍暂停。
+2026-11-11用户已改为单Codex直接开发，只保留主目录与codex-main，取代原总管/worker/独立审查流程。每功能完成后执行后端单元、Linux容器完整集成、前端lint/test/build及trail check，通过后合入dev，验收成果推进main并推送。不人工逐名核对，不再逐轮独占窗口或独立清理报告；每功能仅保留一份简短review与必要learning。F-REPORT-01 已技术验收，已审核 dd62943 经 PR #12 合入 main@b8975e4。业务格式认可待确认；OQ-DEMO-01 合成技术演示已独立审核接受 ec71d66，经 PR #13 合入 main@5808d42，真实 G/A03 仍暂停。
 
 ## 已有基线与验收事实
 
@@ -16,7 +16,7 @@
 
 ## 工作线和依赖
 
-下段保留 E 交付时的历史快照，其中 F/G 暂停及测试库存是当时状态。F/FIX01/FIX02 已审核并合入 main@b8975e4，见 `docs/reviews/F-REPORT-01-FIX02.md`；当前 OQ-DEMO-01 新增代码待审核，G/A03 仍暂停，不沿用旧快照中的 F 暂停说明。
+下段保留 E 交付时的历史快照，其中 F/G 暂停及测试库存是当时状态。F/FIX01/FIX02 已审核并合入 main@b8975e4，见 `docs/reviews/F-REPORT-01-FIX02.md`；OQ-DEMO-01 合成技术演示已审核合入 main@5808d42，G/A03 仍暂停，不沿用旧快照中的 F 暂停说明。
 
 2026-11-11：A/B/C/D/E 均已获总管对应切片验收。E 实际后端源 c549b25/run8eef9cc7 的 scan102/1→unit102→focused102/82→full102/218 逐名零 F/E/S；实际 UI 源 3af82c4/run78aa3de7 的完整五条真实 Keycloak UI 全 passed，单 worker、零 retry/skip，真实扫描及双 SCRAM 通过。最终交接 6c7b117 仅文档变化，后续未重跑后端。正式迁移实际 V1..V26，旧 V1..V25 未改；V27 独立故障探针、完整16条浏览器全集和 A03 仍 NOT_RUN。证据边界和历史失败见 `docs/reviews/signature-coordinator-review.md`，F/G 暂停。
 

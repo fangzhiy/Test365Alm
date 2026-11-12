@@ -9,7 +9,7 @@
 - 不人工逐条核对测试名，不再逐轮申请独占窗口或编写资源清理的独立核验报告。既有自动化门禁继续保留，不删测试、不加retry。
 - 每个功能仅在docs/reviews留一份简短记录（做了什么、测试结果、已知限制）；值得留下的原因和取舍用trail note记录。
 - 保留权限/RLS/强版本/持久幂等与重放重新授权、不可变历史、审计/Outbox同事务；不提交秘密。不碰其他项目容器、test365alm-r02-postgres-1及5173/8080，不改Defender。
-- **用户已恢复 F-REPORT-01；三类只读报告已完成本地技术验证，见 [集中交付记录](reviews/F-REPORT-01.md)。F 已按已审核 dd62943 合入 main@b8975e4；业务格式认可待确认。当前 OQ-DEMO-01 仅合成技术演示，新增代码只集成 dev、待独立审核；真实 G/A03 仍暂停。**
+- **用户已恢复 F-REPORT-01；三类只读报告已完成本地技术验证，见 [集中交付记录](reviews/F-REPORT-01.md)。F 已按已审核 dd62943 合入 main@b8975e4；业务格式认可待确认。OQ-DEMO-01 合成技术演示已独立审核接受 ec71d66，经 PR #13 合入 main@5808d42；真实 G/A03 仍暂停。**
 
 ## 仅保留的工作区
 
@@ -24,15 +24,11 @@ GitHub：[fangzhiy/Test365Alm](https://github.com/fangzhiy/Test365Alm)。main为
 
 F/FIX01/FIX02 已独立审核接受 dd62943，PR #12 合入 main 的实际提交为 b8975e4604295269c2c0e8efef461614fc4b37da。业务格式认可仍待确认，分页留白、历史登录逐例归因等限制保留。
 
-本轮新增版本化 SYNTHETIC 十四用例完整场景，独立持久环境、真实 Keycloak 再认证/正式业务 API 与界面、只读重启和显式续跑。命令、结果及证据见 [OQ-DEMO-01](reviews/OQ-DEMO-01.md)。旧演示项目/卷保持；新增代码只推进 dev，main 停在已接受 F 基线，G/A03 仍未验收。
+OQ-DEMO-01 合成技术演示已独立审核接受 head `ec71d66dc8827d6455a895996109f223e6ccc77e`。PR #13 实际合入提交 `5808d426a397da85b8d7152085a2cd32025e77b0`，父提交为原 main b8975e4 与审核 head，树与审核 head 一致。main/dev 的实际合入 CI、演示评审入口及材料见 [收口记录](reviews/OQ-DEMO-01.md#oq-demo-01-close)。CI-PREP-01-A 已关闭，FIX03 准确旧无标记恢复的最终真实 CI 已补齐；网格、认证、签署及历史语义保持。
 
-当前 OQ-DEMO-01-FIX01 修复完成偏差的人工新周期恢复保护及实例导航旧状态缓存；使用说明、专项与真实回归见 [FIX01](reviews/OQ-DEMO-01-FIX01.md)。继续同一 PR #13，新增代码待独立审核，不推进 main。
+当前停在“合成技术演示已验收，等待业务评审与真实 G/A03 输入”。业务报告格式认可待确认，真实 G1/G2 未验收；不接 SAP/旧 ALM/生产，不迁移部署或对接正式电子签名。历史 DNS/NOT_RUN、登录逐例归因不确定性及已接受分页限制保留。
 
-OQ-DEMO-01-FIX02 继续同一 PR #13，补网格超时后列表重试不能恢复旧报告资格，以及实际 resume 编排/APIRequestContext 的零写回归。当前验证与来源见 [FIX02](reviews/OQ-DEMO-01-FIX02.md)，不推进 main；真实 G/A03 和报告业务格式认可仍待后续。
-
-OQ-DEMO-01-FIX03 保留已接受网格修复，只补旧v1.1已有defectId、无完成标记时也必须读取历史的预检；多解决周期在回填及后续写入前拒绝。准确RED、真实旧文件与单周期恢复证据见[FIX03](reviews/OQ-DEMO-01-FIX03.md)，继续PR #13、只集成dev/codex-main，G/A03仍暂停。
-
-CI-PREP-01 从已审核 fed6024 继续 PR #13，仅修复字体/浏览器环境准备并核对新最终提交的完整 CI。已接受 FIX03 和网格逻辑保持；[准备链记录](reviews/CI-PREP-01.md)与 PR 附最终实际结果，旧 DNS 失败仍保留为 NOT_RUN，不合 main，真实 G/A03 暂停。
+原实现与修复轮次作为历史证据保留：[原始演示](reviews/OQ-DEMO-01.md)、[FIX01/操作说明](reviews/OQ-DEMO-01-FIX01.md)、[FIX02](reviews/OQ-DEMO-01-FIX02.md)、[FIX03](reviews/OQ-DEMO-01-FIX03.md)、[CI-PREP-01](reviews/CI-PREP-01.md)。其中交付当时的待审核/main 未推进描述为历史状态。
 
 ## F-REPORT-01 FIX02 交付时历史
 
