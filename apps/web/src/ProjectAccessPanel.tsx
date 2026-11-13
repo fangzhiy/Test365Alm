@@ -4,7 +4,7 @@ import { accessApi } from './projectAccess'
 import type { Domain, MemberCandidate, Project, ProjectAccess, ProjectMember, ProjectRole, Tenant } from './projectAccess'
 
 type PanelState = 'idle' | 'loading' | 'ready' | 'error'
-type ProjectAccessPanelProps = { resetSignal?: number; onSelectionChange?: (selection: { projectId: string; access: ProjectAccess | null }) => void }
+type ProjectAccessPanelProps = { compact?: boolean; resetSignal?: number; onSelectionChange?: (selection: { projectId: string; access: ProjectAccess | null; projectName?: string }) => void }
 const roles: ProjectRole[] = ['PROJECT_ADMIN', 'PROJECT_MEMBER', 'PROJECT_VIEWER']
 const roleLabel: Record<ProjectRole, string> = { PROJECT_ADMIN: '项目管理员', PROJECT_MEMBER: '项目成员', PROJECT_VIEWER: '项目查看者' }
 const messageFor = (error: unknown) => {
@@ -16,7 +16,7 @@ const canManageMembers = (value: ProjectAccess) => value.roles.includes('PROJECT
 
 type RequestRound = { round: number; signal: AbortSignal; isCurrent: () => boolean }
 
-export default function ProjectAccessPanel({ resetSignal = 0, onSelectionChange }: ProjectAccessPanelProps) {
+export default function ProjectAccessPanel({ compact = false, resetSignal = 0, onSelectionChange }: ProjectAccessPanelProps) {
   const [state, setState] = useState<PanelState>('idle')
   const [tenants, setTenants] = useState<Tenant[]>([])
   const [domains, setDomains] = useState<Domain[]>([])
@@ -40,7 +40,7 @@ export default function ProjectAccessPanel({ resetSignal = 0, onSelectionChange 
   const timeoutRef = useRef<number | null>(null)
   const lastResetSignalRef = useRef(resetSignal)
 
-  useEffect(() => { onSelectionChange?.({ projectId, access }) }, [projectId, access, onSelectionChange])
+  useEffect(() => { onSelectionChange?.({ projectId, access, projectName: selectedProject?.name }) }, [projectId, access, selectedProject?.name, onSelectionChange])
 
   const clearRequest = () => {
     controllerRef.current?.abort()
@@ -332,7 +332,7 @@ export default function ProjectAccessPanel({ resetSignal = 0, onSelectionChange 
   const selectedTenant = tenants.find((tenant) => tenant.id === tenantId)
   const canCreateProject = selectedTenant?.canCreateProject === true
 
-  return <section className="access-panel" aria-labelledby="access-heading">
+  return <section className={compact ? "access-panel access-panel-compact" : "access-panel"} aria-labelledby="access-heading">
     <div className="access-panel-header"><div><span className="panel-label">项目访问管理</span><h2 id="access-heading">租户、项目与成员</h2><p>所有列表和授权动作都由服务端按当前会话过滤。</p></div><button type="button" className="secondary-button" onClick={() => void load()} disabled={state === 'loading'}>{state === 'loading' ? '加载中…' : '加载访问范围'}</button></div>
     {state === 'idle' && <p className="access-empty" role="status">登录后加载你有权查看的租户和项目。</p>}
     {state === 'error' && <p className="access-error" role="alert">{notice}</p>}

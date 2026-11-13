@@ -1,3 +1,4 @@
+import { openModule } from './moduleNavigation'
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
@@ -35,7 +36,7 @@ test('real Keycloak UI field metadata validates and member trace coverage change
     for(const [id,role]of[[memberId,'PROJECT_MEMBER'],[viewerId,'PROJECT_VIEWER']])expect((await write(page,`${root}/members/${id}`,{roles:[role],authorizationVersion:0},'PUT')).status()).toBe(200)
     await select(page,tenantId,project)
     await test.step('Admin creates persisted field and server rejects invalid value',async()=>{
-      const fields=page.getByRole('region',{name:'字段元数据'})
+      await openModule(page,'业务字段');const fields=page.getByRole('region',{name:'字段元数据'})
       await fields.getByLabel('字段键').fill('estimate');await fields.getByLabel('字段类型').selectOption('NUMBER')
       await fields.getByLabel('数字精度').fill('5');await fields.getByLabel('数字小数位').fill('2');await fields.getByLabel('数字上界').fill('100.00')
       await fields.getByRole('button',{name:'创建字段',exact:true}).click();await expect(fields).toContainText('字段修订已保存')
@@ -46,9 +47,9 @@ test('real Keycloak UI field metadata validates and member trace coverage change
     const permissions=await member.request.get(`/api/v1/me/permissions?projectId=${project}`);expect((await permissions.json()).roles).toEqual(['PROJECT_MEMBER'])
     const req=member.locator('section.requirements-panel'),cases=member.locator('section.test-cases-panel'),title=`R08 requirement ${randomUUID()}`,caseTitle=`R08 test ${randomUUID()}`
     await test.step('Ordinary member creates requirement and manual test through DOM',async()=>{
-      await req.getByLabel('需求标题').fill(title);await req.getByLabel('需求正文').fill('R08 text');await req.getByRole('button',{name:'创建需求'}).click();await expect(req).toContainText('需求已创建')
-      await cases.getByLabel('测试用例标题').fill(caseTitle);await cases.getByRole('button',{name:'新增步骤'}).click();await cases.getByLabel('步骤 1 操作').fill('Check');await cases.getByLabel('步骤 1 预期结果').fill('Correct');await cases.getByRole('button',{name:'创建用例'}).click();await expect(cases).toContainText('测试用例已创建')
-      await req.getByRole('button',{name:new RegExp(title)}).click()
+      await openModule(member,'需求管理');await req.getByLabel('需求标题').fill(title);await req.getByLabel('需求正文').fill('R08 text');await req.getByRole('button',{name:'创建需求'}).click();await expect(req).toContainText('需求已创建')
+      await openModule(member,'测试计划');await cases.getByLabel('测试用例标题').fill(caseTitle);await cases.getByRole('button',{name:'新增步骤'}).click();await cases.getByLabel('步骤 1 操作').fill('Check');await cases.getByLabel('步骤 1 预期结果').fill('Correct');await cases.getByRole('button',{name:'创建用例'}).click();await expect(cases).toContainText('测试用例已创建')
+      await openModule(member,'需求管理');await req.getByRole('button',{name:new RegExp(title)}).click()
     },{timeout:30_000})
     const trace=member.getByRole('region',{name:'需求测试追踪'})
     await test.step('Persist link and prove unexecuted association is not PASS',async()=>{
@@ -58,15 +59,15 @@ test('real Keycloak UI field metadata validates and member trace coverage change
     const testResponse=await member.request.get(`${root}/tests?q=${encodeURIComponent(caseTitle)}`);expect(testResponse.status()).toBe(200);const tc=(await testResponse.json()).items[0]
     const execution=member.locator('section.execution-panel'),set=`R08 set ${randomUUID()}`
     await test.step('Complete actual manual execution and observe synchronous coverage',async()=>{
-      await execution.getByLabel('测试集名称').fill(set);await execution.getByRole('button',{name:'创建测试集'}).click();await expect(execution).toContainText('测试集已创建')
+      await openModule(member,'测试实验室');await execution.getByLabel('测试集名称').fill(set);await execution.getByRole('button',{name:'创建测试集'}).click();await expect(execution).toContainText('测试集已创建')
       await execution.getByRole('button',{name:new RegExp(set)}).click();await execution.getByRole('button',{name:'加载已保存用例'}).click();await execution.getByLabel('已保存用例').selectOption(tc.id);await execution.getByLabel('已保存修订').selectOption(tc.currentRevisionId)
       await execution.getByRole('button',{name:'加入实例'}).click();await execution.getByRole('button',{name:'启动手工运行'}).click()
       await execution.getByLabel('步骤 1 实际结果').fill('Confirmed correct');await execution.getByLabel('步骤 1 结论').selectOption('PASS');await execution.getByRole('button',{name:'保存步骤结果'}).click();await expect(execution).toContainText('步骤结果已保存')
       await execution.getByRole('button',{name:'完成运行'}).click();await expect(execution).toContainText('已完成 · PASS')
-      await trace.getByRole('button',{name:'刷新覆盖统计'}).click();await expect(trace).toContainText('PASS 覆盖 1/1')
+      await openModule(member,'需求管理');await req.getByRole('button',{name:new RegExp(title)}).click();await trace.getByRole('button',{name:'刷新覆盖统计'}).click();await expect(trace).toContainText('PASS 覆盖 1/1')
     },{timeout:30_000})
     await select(viewer,tenantId,project)
-    await viewer.locator('section.requirements-panel').getByRole('button',{name:new RegExp(title)}).click()
+    await openModule(viewer,'需求管理');await viewer.locator('section.requirements-panel').getByRole('button',{name:new RegExp(title)}).click()
     await expect(viewer.getByRole('region',{name:'需求测试追踪'})).toContainText('PASS 覆盖 1/1')
     await expect(viewer.getByRole('button',{name:'建立追踪关联'})).toHaveCount(0);await expect(viewer.getByRole('button',{name:'创建字段',exact:true})).toHaveCount(0)
     expect((await write(viewer,`${root}/field-definitions`,{key:'forbidden',type:'TEXT',required:false,maxLength:10})).status()).toBe(403)

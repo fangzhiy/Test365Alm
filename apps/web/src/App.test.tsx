@@ -1,6 +1,6 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup, fireEvent, render, screen, waitFor, act } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode } from 'react'
 vi.mock('./AuthPanel', () => ({ default: () => null }))
 import App from './App'
@@ -14,6 +14,7 @@ const deferred = <T,>() => {
   return { promise, resolve, reject }
 }
 
+beforeEach(() => { window.history.replaceState(null, '', '#system') })
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.useRealTimers() })
 describe('Test365Alm workbench', () => {
   it('shows real version and healthy status', async () => { healthyResponses(); render(<App />); expect(await screen.findByText('0.0.1')).toBeVisible(); expect(screen.getAllByText('正常')).toHaveLength(3); expect(screen.getByText('abc123')).toBeVisible() })

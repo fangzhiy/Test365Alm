@@ -1,3 +1,4 @@
+import { openModule } from './moduleNavigation'
 import { expect, test } from '@playwright/test'
 import { confirmSimulatedSignature } from './signatureUi'
 import { ExecutionDiagnostics } from './executionDiagnostics'
@@ -86,6 +87,7 @@ test('real Keycloak UI manual execution creates, resumes, finishes and reruns a 
     expect(permissions.status()).toBe(200)
     expect(await permissions.json()).toMatchObject({ roles: ['PROJECT_MEMBER'], permissions: expect.arrayContaining(['test:read', 'test:create', 'test:update', 'test:run']) })
 
+    await openModule(memberPage,'测试计划')
     const testCases = memberPage.locator('section.test-cases-panel')
     const title = `M09 manual ${Date.now()}`
     await testCases.getByLabel('测试用例标题').fill(title)
@@ -103,6 +105,7 @@ test('real Keycloak UI manual execution creates, resumes, finishes and reruns a 
     const testItem = ((await listed.json()) as { items: Array<{ id: string, title: string, currentRevisionId: string }> }).items.find((item) => item.title === title)
     expect(testItem).toBeTruthy()
 
+    await openModule(memberPage,'测试实验室')
     const execution = memberPage.locator('section.execution-panel')
     let evidenceStepId=''
     const evidenceName='oq-step-evidence.txt'
@@ -202,6 +205,7 @@ test('real Keycloak UI manual execution creates, resumes, finishes and reruns a 
     // the previous React tree.
     await memberPage.reload()
     await selectProject(memberPage, tenantId, projectId)
+    await openModule(memberPage,'测试实验室')
     const reopenedExecution = memberPage.locator('section.execution-panel')
     await reopenedExecution.getByRole('button', { name: new RegExp(setName) }).click()
     const persistedRun = reopenedExecution.getByRole('button', { name: /运行 .*FINISHED/ }).first()
@@ -226,6 +230,7 @@ test('real Keycloak UI manual execution creates, resumes, finishes and reruns a 
     })
     await diagnostics.step(viewerPage, 'VIEWER 读取历史并拒绝直接写入', async () => {
     await selectProject(viewerPage, tenantId, projectId)
+    await openModule(viewerPage,'测试实验室')
     const viewerExecution = viewerPage.locator('section.execution-panel')
     await expect(viewerExecution).toContainText(setName)
     await expect(viewerExecution.getByRole('button', { name: '启动手工运行' })).not.toBeVisible()

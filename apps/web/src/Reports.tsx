@@ -104,8 +104,8 @@ function ReportDialog({ projectId, target: initial, onClose, onDenied }: Props) 
     {report && !loading && !error && !denied && <main className="report-document"><ReportBody report={report} onTarget={navigate} /></main>}
   </div>, document.body)
 }
-export default function ReportLauncher({ projectId, target, label: title, onDenied }: Omit<Props, 'onClose'> & { label: string }) {
+export default function ReportLauncher({ projectId, target, label: title, ariaLabel, onDenied }: Omit<Props, 'onClose'> & { label: string; ariaLabel?: string }) {
   const [open, setOpen] = useState(false)
-  return <><button type="button" onClick={() => setOpen(true)}>{title}</button>
+  return <><button type="button" aria-label={ariaLabel} onClick={() => setOpen(true)}>{title}</button>
     {open && <ReportDialog key={projectId} projectId={projectId} target={target} onClose={() => setOpen(false)} onDenied={onDenied} />}</>
 }

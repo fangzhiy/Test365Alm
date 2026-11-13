@@ -1,3 +1,4 @@
+import { openModule } from './moduleNavigation'
 import { expect, test } from '@playwright/test'
 import { randomUUID } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
@@ -208,7 +209,7 @@ test('real Keycloak UI designated reviewer rejects approves and new revision req
       const access=target.getByRole('region',{name:'租户、项目与成员'})
       await access.getByRole('combobox').first().selectOption(tenantId)
       await access.locator('.access-selects select').nth(1).selectOption(project.id)
-      const panel=target.locator('section.test-cases-panel')
+      await openModule(target,'测试计划');const panel=target.locator('section.test-cases-panel')
       if(open)await panel.locator('.test-case-list .requirement-row').filter({hasText:title}).click()
       return panel
     }
@@ -291,7 +292,7 @@ test('real Keycloak UI simulated signature rejects wrong credentials binds ident
     const select=async(target:Page)=>{
       await target.getByRole('button',{name:'加载访问范围'}).click();const access=target.getByRole('region',{name:'租户、项目与成员'})
       await access.getByRole('combobox').first().selectOption(tenantId);await access.locator('.access-selects select').nth(1).selectOption(project.id)
-      return target.locator('section.test-cases-panel')
+      await openModule(target,'测试计划');return target.locator('section.test-cases-panel')
     }
     const panel=await select(page),title=`Signed immutable revision ${Date.now()}`
     const approveNewCase=async(name:string)=>{
@@ -430,7 +431,9 @@ test('real Keycloak UI project flow shows scoped viewer controls and clears revo
     const viewerId = await diagnostics.step(viewerPage, 'login (viewer)', () => login(viewerPage, viewerUser, viewerPassword, 'R03 Viewer', diagnostics))
     const { tenantId } = seedProjectAccessScope(adminId, viewerId)
     const projectCode = `R03-UI-${Date.now()}`
+    await openModule(page,'项目与成员')
     const accessRegion = page.getByRole('region', { name: '租户、项目与成员' })
+    await openModule(viewerPage,'项目与成员')
     const viewerAccessRegion = viewerPage.getByRole('region', { name: '租户、项目与成员' })
     const projectSelect = accessRegion.locator('.access-selects select').nth(1)
     const viewerProjectSelect = viewerAccessRegion.locator('.access-selects select').nth(1)
@@ -570,7 +573,9 @@ test('real Keycloak UI requirement flow creates edits and keeps viewer read-only
     const projectCode = `R04-E2E-${Date.now()}`
     const requirementTitle = `R04 login requirement ${Date.now()}`
     const updatedRequirementTitle = `${requirementTitle} updated`
+    await openModule(page,'项目与成员')
     const accessRegion = page.getByRole('region', { name: '租户、项目与成员' })
+    await openModule(viewerPage,'项目与成员')
     const viewerAccessRegion = viewerPage.getByRole('region', { name: '租户、项目与成员' })
     const projectSelect = accessRegion.locator('.access-selects select').nth(1)
     const viewerProjectSelect = viewerAccessRegion.locator('.access-selects select').nth(1)
@@ -590,6 +595,7 @@ test('real Keycloak UI requirement flow creates edits and keeps viewer read-only
     const projectId = await projectSelect.locator('option').filter({ hasText: `R04 requirement project（${projectCode}）` }).getAttribute('value')
     expect(projectId).toMatch(/^[0-9a-f-]{36}$/)
 
+    await openModule(page,'需求管理')
     const requirementsPanel = page.locator('section.requirements-panel')
     await diagnostics.step(page, 'requirement create', async () => {
       await expect(requirementsPanel.getByLabel('需求标题')).toBeVisible()
@@ -622,6 +628,7 @@ test('real Keycloak UI requirement flow creates edits and keeps viewer read-only
     })
 
     await diagnostics.step(page, 'requirement authorization', async () => {
+      await openModule(page,'项目与成员')
       const candidate = page.getByLabel('同租户候选主体')
       await candidate.selectOption(viewerId)
       await page.getByLabel('固定角色').selectOption('PROJECT_VIEWER')
@@ -629,6 +636,7 @@ test('real Keycloak UI requirement flow creates edits and keeps viewer read-only
       await expect(page.getByText('成员授权已保存')).toBeVisible()
     })
 
+    await openModule(viewerPage,'需求管理')
     const viewerRequirements = viewerPage.locator('section.requirements-panel')
     await diagnostics.step(viewerPage, 'requirement viewer read', async () => {
       await viewerPage.getByRole('button', { name: '加载访问范围' }).click()
@@ -713,7 +721,9 @@ test('real Keycloak UI manual test case flow creates steps, edits order, and kee
     const viewerId = await diagnostics.step(viewerPage, 'manual test login (viewer)', () => login(viewerPage, viewerUser, viewerPassword, 'R03 Viewer', diagnostics))
     const { tenantId } = seedProjectAccessScope(adminId, viewerId, memberId)
     const projectCode = `R05-E2E-${Date.now()}`
+    await openModule(page,'项目与成员')
     const accessRegion = page.getByRole('region', { name: '租户、项目与成员' })
+    await openModule(viewerPage,'项目与成员')
     const viewerAccessRegion = viewerPage.getByRole('region', { name: '租户、项目与成员' })
     const projectSelect = accessRegion.locator('.access-selects select').nth(1)
     const viewerProjectSelect = viewerAccessRegion.locator('.access-selects select').nth(1)
@@ -746,8 +756,10 @@ test('real Keycloak UI manual test case flow creates steps, edits order, and kee
       await page.getByRole('button', { name: '保存成员' }).click()
       await expect(page.getByText('成员授权已保存')).toBeVisible()
     })
+    await openModule(memberPage,'项目与成员')
     const memberAccessRegion = memberPage.getByRole('region', { name: '租户、项目与成员' })
     const memberProjectSelect = memberAccessRegion.locator('.access-selects select').nth(1)
+    await openModule(memberPage,'测试计划')
     const testCasesPanel = memberPage.locator('section.test-cases-panel')
     const testTitle = `R05 member manual test ${Date.now()}`
 
@@ -798,6 +810,7 @@ test('real Keycloak UI manual test case flow creates steps, edits order, and kee
       await reloadedAccess.getByRole('combobox').first().selectOption(tenantId)
       await expect(reloadedAccess.locator('.access-selects select').nth(1).locator('option').filter({ hasText: `R05 manual test project（${projectCode}）` })).toHaveCount(1)
       await reloadedAccess.locator('.access-selects select').nth(1).selectOption(projectId as string)
+      await openModule(memberPage,'测试计划')
       const reloadedPanel = memberPage.locator('section.test-cases-panel')
       await expect(reloadedPanel.locator('.test-case-list .requirement-row').first()).toContainText(testTitle)
       await reloadedPanel.locator('.test-case-list .requirement-row').first().click()
@@ -844,6 +857,7 @@ test('real Keycloak UI manual test case flow creates steps, edits order, and kee
       await viewerAccessRegion.getByRole('combobox').first().selectOption(tenantId)
       await expect(viewerProjectSelect.locator('option').filter({ hasText: `R05 manual test project（${projectCode}）` })).toHaveCount(1)
       await viewerProjectSelect.selectOption(projectId as string)
+      await openModule(viewerPage,'测试计划')
       const viewerPanel = viewerPage.locator('section.test-cases-panel')
       await expect(viewerPanel.locator('.test-case-list .requirement-row').first()).toContainText(testTitle)
       await viewerPanel.locator('.test-case-list .requirement-row').first().click()

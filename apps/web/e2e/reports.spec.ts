@@ -1,3 +1,4 @@
+import { openModule } from './moduleNavigation'
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 import { createHash, randomUUID } from 'node:crypto'
@@ -33,7 +34,7 @@ test('real Keycloak UI reports preserve historical FAIL after related PASS and p
   let relatedRetestId='',closedDefectId='',closedRevisionId=''
   const content=Buffer.from('合成演示证据第一版\n'),upload=await write(page,`${root}/uploads`,{filename:'清洁检查原始证据.txt',size:content.length,sha256:createHash('sha256').update(content).digest('hex'),contentType:'text/plain'})
   await write(page,`${root}/uploads/${upload.id}/content`,content,'PUT',undefined,'text/plain');const published=await write(page,`${root}/uploads/${upload.id}/complete`,{});await write(page,`${root}/attachments`,{kind:'RUN_STEP',runStepId:old.steps[0].runStepId,assetId:published.assetId,assetRevisionId:published.revisionId})
-  await select(page,tenantId,project.id);const execution=page.locator('section.execution-panel'),bugs=page.getByRole('region',{name:'缺陷工作台'})
+  await select(page,tenantId,project.id);await openModule(page,'测试实验室');const execution=page.locator('section.execution-panel'),bugs=page.getByRole('region',{name:'缺陷工作台'})
   await execution.getByRole('button',{name:set.name,exact:false}).click();await execution.getByRole('button',{name:new RegExp(`运行 ${run.run.id}`)}).click()
   const long='实测发现局部清洁残留，需要记录原始观察并复核。特殊字符 <script>不可执行</script> & 符号安全显示。'.repeat(35)
   await stage('完成原始 FAIL 并从真实步骤创建偏差',async()=>{
@@ -43,7 +44,7 @@ test('real Keycloak UI reports preserve historical FAIL after related PASS and p
   })
   await stage('模拟签署指定 FAIL Attempt，真实关联复测完成 PASS',async()=>{
    await confirmSimulatedSignature(page,'运行完成确认',mu,mp)
-   await bugs.getByRole('button',{name:'刷新缺陷'}).click();await bugs.getByRole('button',{name:/BUG-.*清洁残留偏差/}).click();const detail=bugs.getByRole('region',{name:'缺陷详情'})
+   await openModule(page,'偏差管理');await bugs.getByRole('button',{name:'刷新缺陷'}).click();await bugs.getByRole('button',{name:/BUG-.*清洁残留偏差/}).click();const detail=bugs.getByRole('region',{name:'缺陷详情'})
    await detail.getByLabel('修复/流转说明').fill('重新清洁后复测');await detail.getByRole('button',{name:'转为 RESOLVED'}).click();await expect(detail).toContainText('RESOLVED');await detail.getByRole('button',{name:'开始复测'}).click();const retest=detail.getByRole('region',{name:'缺陷关联尝试'})
    for(const n of [1,2,3]){await retest.getByLabel(`复测步骤 ${n} 实际结果`).fill('重新清洁后符合预期，复测 PASS。');await retest.getByLabel(`复测步骤 ${n} 结论`).selectOption('PASS');await retest.getByRole('button',{name:`保存复测步骤 ${n}`}).click();await expect(retest).toContainText('复测步骤已保存')}
    await retest.getByRole('button',{name:'完成复测'}).click();await expect(retest).toContainText('FINISHED · PASS')
@@ -82,7 +83,7 @@ test('real Keycloak UI reports preserve historical FAIL after related PASS and p
   }
   const v2=Buffer.from('证据新版不应覆盖旧报告'),u2=await write(page,`${root}/uploads`,{filename:'清洁检查新版证据.txt',size:v2.length,sha256:createHash('sha256').update(v2).digest('hex'),contentType:'text/plain',assetId:published.assetId});await write(page,`${root}/uploads/${u2.id}/content`,v2,'PUT',undefined,'text/plain');await write(page,`${root}/uploads/${u2.id}/complete`,{})
   await stage('旧 Attempt 报告、固定附件版本及中文纵向 PDF',async()=>{
-   checkpoint('即将刷新运行详情')
+   await openModule(page,'测试实验室');await execution.getByRole('button',{name:set.name,exact:false}).click();await execution.getByRole('button',{name:new RegExp(`运行 ${run.run.id}`)}).click();checkpoint('即将刷新运行详情')
    steps.push({name:'运行详情入口状态',refreshEnabled:await execution.getByRole('button',{name:'刷新运行详情'}).isEnabled()})
    await execution.getByRole('button',{name:'刷新运行详情'}).click();checkpoint('已点击刷新，即将选择历史失败');await execution.getByRole('button',{name:/^尝试 1 · FAIL$/}).click();checkpoint('已选择历史失败，即将打开报告');await execution.getByRole('button',{name:'查看所选 Attempt 执行报告'}).click();checkpoint('报告入口已点击');const dialog=page.getByRole('dialog',{name:'业务报告'});await expect(dialog.getByRole('heading',{name:'单次运行执行记录报告',exact:true})).toBeVisible();await expect(dialog).toContainText('设备清洁确认');await expect(dialog).toContainText('清洁检查原始证据.txt');await expect(dialog).not.toContainText('清洁检查新版证据.txt');await expect(dialog).toContainText('源自本次执行');await expect(dialog).toContainText('RUN_COMPLETION');expect(await dialog.locator('script').count()).toBe(0)
    const loaded=await page.request.get(`${root}/reports/runs/${run.run.id}/attempts/${old.id}`);expect(loaded.status()).toBe(200);const dto=await loaded.json();expect(dto.facts.attempt.conclusion).toBe('FAIL');expect(dto.attachments[0].revision_no).toBe(1);expect(dto.facts.businessFields.test_purpose.value).toContain('历史修订')
@@ -146,11 +147,11 @@ test('real Keycloak UI reports preserve historical FAIL after related PASS and p
    // Local logout leaves the IdP SSO session intact. Restore via the ordinary
    // application entry instead of requiring a username form that SSO skips.
    await page.goto('/');await page.getByRole('link',{name:'登录 Test365Alm'}).click()
-   await expect(page.getByRole('button',{name:'退出登录'})).toBeVisible();await select(page,tenantId,project.id)
+   await expect(page.getByRole('button',{name:'退出登录'})).toBeVisible();await select(page,tenantId,project.id);await openModule(page,'测试实验室')
    await execution.getByRole('button',{name:set.name,exact:false}).click();await expect(execution.locator('.execution-detail')).toBeVisible()
   })
   await stage('VIEWER 偏差清单入口、真实来源及复测周期和中文 PDF',async()=>{
-   await select(viewer,tenantId,project.id);await viewer.getByRole('button',{name:'偏差清单报告',exact:true}).click();const dialog=viewer.getByRole('dialog',{name:'业务报告'});await expect(dialog.getByRole('heading',{name:'偏差清单报告',exact:true})).toBeVisible();await expect(dialog).toContainText('原始来源及关联');await expect(dialog).toContainText('FAIL');await expect(dialog).toContainText('PASS');await dialog.getByLabel('报告标题关键词').fill('清洁残留');await dialog.getByRole('button',{name:'应用报告筛选'}).click();await expect(dialog.getByRole('heading',{name:/BUG-.*清洁残留偏差/})).toBeVisible();await expect(dialog.getByRole('heading',{name:/BUG-.*重开后历史复测/})).toHaveCount(0);await dialog.getByLabel('报告标题关键词').fill('不存在的标题');await dialog.getByRole('button',{name:'应用报告筛选'}).click();await expect(dialog).toContainText('当前范围无偏差');await dialog.getByLabel('报告标题关键词').fill('');await dialog.getByRole('button',{name:'应用报告筛选'}).click();await expect(dialog.getByRole('heading',{name:/BUG-.*清洁残留偏差/})).toBeVisible();await dialog.screenshot({path:resolve(output,'deviation-report.png')});await viewer.pdf({path:resolve(output,'deviation-report.pdf'),preferCSSPageSize:true,printBackground:true,displayHeaderFooter:true,headerTemplate:'<span></span>',footerTemplate:'<div style="font-size:8px;text-align:center;width:100%">Test365Alm · <span class="pageNumber"></span> / <span class="totalPages"></span></div>'});await dialog.getByRole('button',{name:'返回业务页面'}).click()
+   await select(viewer,tenantId,project.id);await openModule(viewer,'偏差管理');await viewer.getByRole('button',{name:'偏差清单报告',exact:true}).click();const dialog=viewer.getByRole('dialog',{name:'业务报告'});await expect(dialog.getByRole('heading',{name:'偏差清单报告',exact:true})).toBeVisible();await expect(dialog).toContainText('原始来源及关联');await expect(dialog).toContainText('FAIL');await expect(dialog).toContainText('PASS');await dialog.getByLabel('报告标题关键词').fill('清洁残留');await dialog.getByRole('button',{name:'应用报告筛选'}).click();await expect(dialog.getByRole('heading',{name:/BUG-.*清洁残留偏差/})).toBeVisible();await expect(dialog.getByRole('heading',{name:/BUG-.*重开后历史复测/})).toHaveCount(0);await dialog.getByLabel('报告标题关键词').fill('不存在的标题');await dialog.getByRole('button',{name:'应用报告筛选'}).click();await expect(dialog).toContainText('当前范围无偏差');await dialog.getByLabel('报告标题关键词').fill('');await dialog.getByRole('button',{name:'应用报告筛选'}).click();await expect(dialog.getByRole('heading',{name:/BUG-.*清洁残留偏差/})).toBeVisible();await dialog.screenshot({path:resolve(output,'deviation-report.png')});await viewer.pdf({path:resolve(output,'deviation-report.pdf'),preferCSSPageSize:true,printBackground:true,displayHeaderFooter:true,headerTemplate:'<span></span>',footerTemplate:'<div style="font-size:8px;text-align:center;width:100%">Test365Alm · <span class="pageNumber"></span> / <span class="totalPages"></span></div>'});await dialog.getByRole('button',{name:'返回业务页面'}).click()
    await viewer.getByRole('button',{name:'偏差清单报告',exact:true}).click();await expect(dialog).toContainText('数据完整加载')
    await dialog.getByLabel('测试集范围').selectOption(set.id);await dialog.getByRole('button',{name:'应用报告筛选'}).click();await expect(dialog).toContainText(set.name)
    await expect(dialog).toContainText('历史解决周期的复测记录；不证明当前周期通过')
