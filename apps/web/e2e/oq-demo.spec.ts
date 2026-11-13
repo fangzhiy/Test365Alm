@@ -57,9 +57,10 @@ test('real Keycloak UI SYNTHETIC OQ-DEMO-01 fourteen cases complete reviewed sig
  const progress:{name:string;passed:boolean}[]=[]
  const save=()=>writeFileSync(checkpoint,JSON.stringify(saved,null,2))
  const stage=async(name:string,work:()=>Promise<void>)=>test.step(name,async()=>{let passed=false;try{await work();passed=true}finally{progress.push({name,passed});writeFileSync(resolve(dir,'stages.json'),JSON.stringify(progress,null,2));save()}})
- const ac=await browser.newContext(),vc=await browser.newContext(),admin=await ac.newPage(),viewer=await vc.newPage()
+ const ac=await browser.newContext(),vc=await browser.newContext(),admin=await ac.newPage(),identityViewer=await vc.newPage()
  try {
- const aid=await login(admin,env.R03_TEST_USER!,env.R03_TEST_USER_PASSWORD!),mid=await login(page,env.R03_MEMBER_USER!,env.R03_MEMBER_PASSWORD!),vid=await login(viewer,env.R03_VIEWER_USER!,env.R03_VIEWER_PASSWORD!)
+ const aid=await login(admin,env.R03_TEST_USER!,env.R03_TEST_USER_PASSWORD!),mid=await login(page,env.R03_MEMBER_USER!,env.R03_MEMBER_PASSWORD!),vid=await login(identityViewer,env.R03_VIEWER_USER!,env.R03_VIEWER_PASSWORD!)
+ await vc.close()
  const scope=persistent?{tenantId:env.OQ_DEMO_TENANT!,domainId:env.OQ_DEMO_DOMAIN!}:seedProjectAccessScope(aid,vid,mid)
  const projects=await get(admin,`/api/v1/projects?tenantId=${scope.tenantId}`)
  const matching=projects.filter((p:{code:string})=>p.code==='SYNTHETIC-OQ-DEMO-01-V1-1');expect(matching.length).toBeLessThan(2)
@@ -95,7 +96,7 @@ test('real Keycloak UI SYNTHETIC OQ-DEMO-01 fourteen cases complete reviewed sig
   if(location.folderId!==folder.id){expect(location.folderId,'Manual folder placement preserved').toBeNull();await write(page,`${root}/folder-placements/${kind}/${id}`,{folderId:folder.id},'PUT',location.rowVersion)}
  }
  await place('TEST_LAB',state.setId!,state.stages.includes('organized'));state.stages=[...new Set([...state.stages,'organized'])];save()
- await choose(admin,scope.tenantId,project.id);await choose(page,scope.tenantId,project.id);await choose(viewer,scope.tenantId,project.id)
+ await choose(admin,scope.tenantId,project.id);await choose(page,scope.tenantId,project.id)
  for(const scenario of definition.cases){
   await stage(`${scenario.id}：不可变修订、指定人复核、批准模拟签署`,async()=>{
    const found=(await pages(page,root+'/tests')).filter(c=>c.title===scenario.title);expect(found.length).toBeLessThan(2)
@@ -225,6 +226,11 @@ test('real Keycloak UI SYNTHETIC OQ-DEMO-01 fourteen cases complete reviewed sig
   }
  })
  await stage('证据新版本、真实报告入口、VIEWER 只读和完整证据索引',async()=>{
+  // CI deliberately expires idle sessions after one minute. The identity lookup
+  // above is not a session lease for the later, read-only evidence phase.
+  const evidenceContext=await browser.newContext(),viewer=await evidenceContext.newPage()
+  try {
+  expect(await login(viewer,env.R03_VIEWER_USER!,env.R03_VIEWER_PASSWORD!)).toBe(vid)
   if(state.asset&&!state.asset.newVersionId){
    const revisions=await pages(page,`${root}/assets/${state.asset.assetId}/revisions`)
    let newer=revisions.find(r=>r.id!==state.asset!.revisionId)
@@ -263,6 +269,7 @@ test('real Keycloak UI SYNTHETIC OQ-DEMO-01 fourteen cases complete reviewed sig
   await openModule(viewer,'偏差管理');await viewer.getByRole('region',{name:'缺陷工作台'}).getByRole('button',{name:'偏差清单报告',exact:true}).click();const dialog=viewer.getByRole('dialog',{name:'业务报告'});await expect(dialog).toContainText('历史解决周期的复测记录');await print('deviation-list')
   state.stages=[...new Set([...state.stages,'fourteen-reviewed-signed-executed','closed-and-reopened-defects','reports-viewer-evidence'])];save()
   writeFileSync(resolve(dir,'evidence-index.json'),JSON.stringify({scenario:definition.scenario,version:definition.version,classification:'SYNTHETIC',notice:definition.notice,projectId:state.projectId,setId:state.setId,roles:{author:mid,executor:mid,reviewer:aid,viewer:vid},cases:index,summary,defects,defectHistory,samples:output},null,2))
+  }finally{await evidenceContext.close()}
  })
  if(!persistent)await oqFixRegressions(page,admin,scope,mid,rootDir,get,write,pages,choose)
  })
