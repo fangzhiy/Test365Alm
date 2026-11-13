@@ -82,7 +82,7 @@ function App() {
     window.addEventListener('hashchange', changed)
     return () => window.removeEventListener('hashchange', changed)
   }, [])
-  const navigate = (id: string) => { window.location.hash = id; setModule(id) }
+  const navigate = (id: string) => { window.history.pushState(null, '', `#${id}`); setModule(id) }
 
   const [version, setVersion] = useState<VersionResponse | null>(null)
   const [versionState, setVersionState] = useState<CheckState>('loading')

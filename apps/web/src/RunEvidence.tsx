@@ -6,6 +6,9 @@ import { row, text, label, time } from './reportFormat'
 type Props={projectId:string;runId:string;attemptId:string;onDenied:()=>void}
 // Read only the selected, finished Attempt. Never infer signing from a PASS.
 export default function RunEvidence(props:Props) {
+  return <EvidenceSession key={JSON.stringify([props.projectId,props.runId,props.attemptId])} {...props}/>
+}
+function EvidenceSession(props:Props) {
   const [report,setReport]=useState<Report|null>(null),[error,setError]=useState(''),[load,setLoad]=useState(false)
   const denied=useRef(props.onDenied)
   useEffect(()=>{denied.current=props.onDenied},[props.onDenied])
@@ -25,7 +28,7 @@ export default function RunEvidence(props:Props) {
     {!load && <button type="button" onClick={()=>setLoad(true)}>核验关联事实</button>}
     {load && !report && !error && <p role="status">正在读取关联事实…</p>}{error && <p role="alert">{error}</p>}
     {report && <>
-      <p>原修订复核：{report.reviews.length?label(report.reviews.at(-1)?.action):'未记录'}</p>
+      <p>原修订复核：{report.reviews.length?label([...report.reviews].sort((a,b)=>String(a.occurred_at).localeCompare(String(b.occurred_at))).at(-1)?.action):'未记录'}</p>
       <p>{report.signatures.some(s=>s.kind==='RUN_COMPLETION')?'本次 Attempt 已模拟签署':'本次 Attempt 未签署'}</p>
       <p>{report.signatures.some(s=>s.kind==='TEST_APPROVAL')?'原用例修订已有批准模拟签署':'原用例修订无批准模拟签署'}</p>
       {!report.items.length && <p>无关联偏差</p>}

@@ -112,3 +112,10 @@
   .module-content .execution-step textarea:disabled { background:#fafbfd; }
   .module-content .execution-step>label { display:flex; flex-direction:column; gap:8px; font-size:12px; color:#718096; }
 }
+@media screen {
+  .app-topbar { position:sticky; top:0; z-index:20; }
+  .module-content .execution-attempt { scroll-margin-top:86px; }
+  @media(min-width:1201px) {
+    .module-content .execution-attempt { width:calc(100% + 230px); margin-left:-230px; margin-top:24px; }
+  }
+}

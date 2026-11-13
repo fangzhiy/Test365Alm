@@ -14,7 +14,7 @@ function OverviewSession({projectId,access,onDenied,onNavigate}:Props) {
   const [data,setData]=useState<OverviewData|null>(null),[error,setError]=useState(''),[loading,setLoading]=useState(true),[revision,setRevision]=useState(0)
   const denied=useRef(onDenied); useEffect(()=>{denied.current=onDenied},[onDenied])
   useEffect(()=>{
-    if(!projectId || !access)return
+    if(!projectId || !access || access.projectId!==projectId)return
     let current=true
     const c=new AbortController()
     const timeout=window.setTimeout(()=>{if(current){current=false;c.abort();setData(null);setLoading(false);setError('概览读取超时，请重试')}},15000)
@@ -26,7 +26,7 @@ function OverviewSession({projectId,access,onDenied,onNavigate}:Props) {
     }).finally(()=>{if(current){setLoading(false);window.clearTimeout(timeout)}})
     return ()=>{current=false;c.abort();window.clearTimeout(timeout)}
   },[projectId,access,revision])
-  if(!projectId || !access)return <Card><Empty description="请先加载访问范围并选择项目" /></Card>
+  if(!projectId || !access || access.projectId!==projectId)return <Card><Empty description="请先加载访问范围并选择项目" /></Card>
   const done=data?data.counts.PASS+data.counts.FAIL+data.counts.BLOCKED:0
   const passed=done&&data?Math.round(data.counts.PASS/done*1000)/10:null
   const attempts=data?.history.flatMap(h=>h.attempts)
