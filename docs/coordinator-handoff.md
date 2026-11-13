@@ -16,7 +16,7 @@
 | 工作区 | 分支 | 用途 |
 |---|---|---|
 | D:/code/ProOrca/Wetest365ALM/Test365Alm | dev | 主目录，仅集成 |
-| C:/Users/22538/orca/workspaces/Test365Alm/codex-main | codex-main | 唯一Codex开发工作区，从dev@d6a9479创建 |
+| D:/code/ProOrca/workspaces/Test365Alm/codex-main | codex-main | 唯一Codex开发工作区，从dev@d6a9479创建 |
 
 GitHub：[fangzhiy/Test365Alm](https://github.com/fangzhiy/Test365Alm)。main为默认主分支，dev为集成分支；本次整理前main/dev为d6a9479。旧分支全部保留，旧chore/r01-status-001不再是默认分支。新功能在codex-main开发，不再新建feat分支或Orca任务。
 

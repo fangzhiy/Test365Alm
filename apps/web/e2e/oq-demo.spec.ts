@@ -1,3 +1,4 @@
+import { openModule } from './moduleNavigation'
 import { expect, test, type Page } from '@playwright/test'
 import { execFileSync } from 'node:child_process'
 import { createHash, randomUUID } from 'node:crypto'
@@ -56,9 +57,10 @@ test('real Keycloak UI SYNTHETIC OQ-DEMO-01 fourteen cases complete reviewed sig
  const progress:{name:string;passed:boolean}[]=[]
  const save=()=>writeFileSync(checkpoint,JSON.stringify(saved,null,2))
  const stage=async(name:string,work:()=>Promise<void>)=>test.step(name,async()=>{let passed=false;try{await work();passed=true}finally{progress.push({name,passed});writeFileSync(resolve(dir,'stages.json'),JSON.stringify(progress,null,2));save()}})
- const ac=await browser.newContext(),vc=await browser.newContext(),admin=await ac.newPage(),viewer=await vc.newPage()
+ const ac=await browser.newContext(),vc=await browser.newContext(),admin=await ac.newPage(),identityViewer=await vc.newPage()
  try {
- const aid=await login(admin,env.R03_TEST_USER!,env.R03_TEST_USER_PASSWORD!),mid=await login(page,env.R03_MEMBER_USER!,env.R03_MEMBER_PASSWORD!),vid=await login(viewer,env.R03_VIEWER_USER!,env.R03_VIEWER_PASSWORD!)
+ const aid=await login(admin,env.R03_TEST_USER!,env.R03_TEST_USER_PASSWORD!),mid=await login(page,env.R03_MEMBER_USER!,env.R03_MEMBER_PASSWORD!),vid=await login(identityViewer,env.R03_VIEWER_USER!,env.R03_VIEWER_PASSWORD!)
+ await vc.close()
  const scope=persistent?{tenantId:env.OQ_DEMO_TENANT!,domainId:env.OQ_DEMO_DOMAIN!}:seedProjectAccessScope(aid,vid,mid)
  const projects=await get(admin,`/api/v1/projects?tenantId=${scope.tenantId}`)
  const matching=projects.filter((p:{code:string})=>p.code==='SYNTHETIC-OQ-DEMO-01-V1-1');expect(matching.length).toBeLessThan(2)
@@ -94,7 +96,7 @@ test('real Keycloak UI SYNTHETIC OQ-DEMO-01 fourteen cases complete reviewed sig
   if(location.folderId!==folder.id){expect(location.folderId,'Manual folder placement preserved').toBeNull();await write(page,`${root}/folder-placements/${kind}/${id}`,{folderId:folder.id},'PUT',location.rowVersion)}
  }
  await place('TEST_LAB',state.setId!,state.stages.includes('organized'));state.stages=[...new Set([...state.stages,'organized'])];save()
- await choose(admin,scope.tenantId,project.id);await choose(page,scope.tenantId,project.id);await choose(viewer,scope.tenantId,project.id)
+ await choose(admin,scope.tenantId,project.id);await choose(page,scope.tenantId,project.id)
  for(const scenario of definition.cases){
   await stage(`${scenario.id}：不可变修订、指定人复核、批准模拟签署`,async()=>{
    const found=(await pages(page,root+'/tests')).filter(c=>c.title===scenario.title);expect(found.length).toBeLessThan(2)
@@ -125,7 +127,7 @@ test('real Keycloak UI SYNTHETIC OQ-DEMO-01 fourteen cases complete reviewed sig
    expect(review.state).toBe('APPROVED')
    const signature=await get(admin,`${root}/signatures/TEST_APPROVAL/${c.id}/${item.revisionId}`)
    if(!signature.signature){
-    const panel=admin.locator('section.test-cases-panel');await panel.getByRole('button',{name:'刷新用例',exact:true}).click()
+    await openModule(admin,'测试计划');const panel=admin.locator('section.test-cases-panel');await panel.getByRole('button',{name:'刷新用例',exact:true}).click()
     await panel.locator('.test-case-list .requirement-row').filter({hasText:scenario.title}).click()
     await confirmSimulatedSignature(admin,'用例批准确认',env.R03_TEST_USER!,env.R03_TEST_USER_PASSWORD!)
    }
@@ -143,10 +145,10 @@ test('real Keycloak UI SYNTHETIC OQ-DEMO-01 fourteen cases complete reviewed sig
  }
  // Reload the workbench after API fixture writes; directory selection is a real user operation.
  await page.goto('/');await expect(page.getByRole('button',{name:'退出登录'})).toBeVisible();await choose(page,scope.tenantId,project.id)
- const execution=page.locator('section.execution-panel')
+ await openModule(page,'测试实验室');const execution=page.locator('section.execution-panel')
  await execution.getByRole('button',{name:'SYNTHETIC OQ-DEMO-01 v1.1',exact:true}).click()
  await execution.getByRole('button',{name:/^SYNTHETIC OQ-DEMO-01 v1.1/}).filter({has:page.locator('small')}).click()
- async function openRun(runId:string){await execution.getByRole('button',{name:'刷新测试集',exact:true}).click();await execution.getByRole('button',{name:'SYNTHETIC OQ-DEMO-01 v1.1',exact:true}).click();await execution.getByRole('button',{name:/^SYNTHETIC OQ-DEMO-01 v1.1/}).filter({has:page.locator('small')}).click();const ready=page.waitForResponse(r=>new URL(r.url()).pathname===`${root}/runs/${runId}`&&r.request().method()==='GET');await execution.getByRole('button',{name:new RegExp(`^运行 ${runId} `)}).click();expect((await ready).status()).toBe(200);await expect(execution.getByRole('button',{name:'刷新运行详情'})).toBeEnabled()}
+ async function openRun(runId:string){await openModule(page,'测试实验室');await execution.getByRole('button',{name:'刷新测试集',exact:true}).click();await execution.getByRole('button',{name:'SYNTHETIC OQ-DEMO-01 v1.1',exact:true}).click();await execution.getByRole('button',{name:/^SYNTHETIC OQ-DEMO-01 v1.1/}).filter({has:page.locator('small')}).click();const ready=page.waitForResponse(r=>new URL(r.url()).pathname===`${root}/runs/${runId}`&&r.request().method()==='GET');await execution.getByRole('button',{name:new RegExp(`^运行 ${runId} `)}).click();expect((await ready).status()).toBe(200);await expect(execution.getByRole('button',{name:'刷新运行详情'})).toBeEnabled()}
  for(const scenario of definition.cases){await stage(`${scenario.id}：指定负责人执行，步骤实际结果独立保存`,async()=>{
   const item=state.cases[scenario.id],runs=(await pages(page,`${root}/runs/page?testSetId=${state.setId}`)).filter(r=>r.testInstanceId===item.instanceId)
   if(!item.runId){expect(runs.length).toBeLessThan(2);const r=runs[0]?await get(page,`${root}/runs/${runs[0].id}`):await write(page,root+'/runs',{testInstanceId:item.instanceId});item.runId=r.run.id;item.originalAttemptId=r.currentAttempt.id;save()}
@@ -218,12 +220,17 @@ test('real Keycloak UI SYNTHETIC OQ-DEMO-01 fourteen cases complete reviewed sig
    }
    if(identity==='OQD-12'){
     expect(d.currentRevision.status).toBe('CLOSED');const s=await get(page,`${root}/signatures/DEVIATION_CLOSURE/${d.id}/${d.currentRevision.id}`)
-    if(!s.signature){const bugs=page.getByRole('region',{name:'缺陷工作台'});await bugs.getByRole('button',{name:'刷新缺陷',exact:true}).click();await bugs.getByRole('button',{name:new RegExp(title)}).click();await confirmSimulatedSignature(page,'偏差关闭确认',env.R03_MEMBER_USER!,env.R03_MEMBER_PASSWORD!)}
+    if(!s.signature){await openModule(page,'偏差管理');const bugs=page.getByRole('region',{name:'缺陷工作台'});await bugs.getByRole('button',{name:'刷新缺陷',exact:true}).click();await bugs.getByRole('button',{name:new RegExp(title)}).click();await confirmSimulatedSignature(page,'偏差关闭确认',env.R03_MEMBER_USER!,env.R03_MEMBER_PASSWORD!)}
    }else expect(d.currentRevision.status).toBe('REOPENED')
    item.defectCompletion=checkDefectCompletion(await proof(d.id),identity==='OQD-12'?'CLOSED':'REOPENED',item.defectCompletion,true);save()
   }
  })
  await stage('证据新版本、真实报告入口、VIEWER 只读和完整证据索引',async()=>{
+  // CI deliberately expires idle sessions after one minute. The identity lookup
+  // above is not a session lease for the later, read-only evidence phase.
+  const evidenceContext=await browser.newContext(),viewer=await evidenceContext.newPage()
+  try {
+  expect(await login(viewer,env.R03_VIEWER_USER!,env.R03_VIEWER_PASSWORD!)).toBe(vid)
   if(state.asset&&!state.asset.newVersionId){
    const revisions=await pages(page,`${root}/assets/${state.asset.assetId}/revisions`)
    let newer=revisions.find(r=>r.id!==state.asset!.revisionId)
@@ -251,7 +258,7 @@ test('real Keycloak UI SYNTHETIC OQ-DEMO-01 fourteen cases complete reviewed sig
   expect(defects.retests.some((r:{defect_id:string;conclusion:string})=>r.defect_id===state.cases['OQD-13'].defectId&&r.conclusion==='PASS')).toBe(true)
   const csrf=await get(viewer,'/api/v1/csrf'),denied=await viewer.request.post(root+'/test-sets',{headers:{[csrf.headerName]:csrf.token,'Idempotency-Key':randomUUID()},data:{name:'viewer must not create',description:''}});expect(denied.status()).toBe(403)
   await viewer.goto('/');await expect(viewer.getByRole('button',{name:'退出登录'})).toBeVisible();await choose(viewer,scope.tenantId,project.id)
-  const panel=viewer.locator('section.execution-panel');await panel.getByRole('button',{name:'SYNTHETIC OQ-DEMO-01 v1.1',exact:true}).click();await panel.getByRole('button',{name:/^SYNTHETIC OQ-DEMO-01 v1.1/}).filter({has:viewer.locator('small')}).click()
+  await openModule(viewer,'测试实验室');const panel=viewer.locator('section.execution-panel');await panel.getByRole('button',{name:'SYNTHETIC OQ-DEMO-01 v1.1',exact:true}).click();await panel.getByRole('button',{name:/^SYNTHETIC OQ-DEMO-01 v1.1/}).filter({has:viewer.locator('small')}).click()
   await panel.getByRole('button',{name:`查看绑定修订 ${definition.cases[0].title}`,exact:true}).click();await expect(panel.getByRole('region',{name:'实例修订与闭环导航'})).toContainText('修订 2');await expect(panel.getByRole('region',{name:'实例修订与闭环导航'}).getByRole('region',{name:'审计历史',exact:true})).toContainText('拒绝用例修订');await panel.getByRole('button',{name:'关闭实例导航'}).click()
   async function print(name:string){const dialog=viewer.getByRole('dialog',{name:'业务报告'});await expect(dialog).toContainText('数据完整加载');await viewer.evaluate(()=>document.fonts.ready);await dialog.screenshot({path:resolve(output,name+'.png')});await viewer.pdf({path:resolve(output,name+'.pdf'),preferCSSPageSize:true,printBackground:true});await dialog.getByRole('button',{name:'返回业务页面'}).click()}
   for(const [identity,name]of[['OQD-01','ordinary-run'],['OQD-12','original-fail']]){
@@ -259,9 +266,10 @@ test('real Keycloak UI SYNTHETIC OQ-DEMO-01 fourteen cases complete reviewed sig
    if(identity==='OQD-12'){await panel.getByRole('button',{name:/^尝试 2 · PASS$/}).click();await panel.getByRole('button',{name:'查看所选 Attempt 执行报告'}).click();await print('retest-pass')}
   }
   await panel.getByRole('button',{name:'测试集汇总报告',exact:true}).click();await print('test-set-summary')
-  await viewer.getByRole('region',{name:'缺陷工作台'}).getByRole('button',{name:'偏差清单报告',exact:true}).click();const dialog=viewer.getByRole('dialog',{name:'业务报告'});await expect(dialog).toContainText('历史解决周期的复测记录');await print('deviation-list')
+  await openModule(viewer,'偏差管理');await viewer.getByRole('region',{name:'缺陷工作台'}).getByRole('button',{name:'偏差清单报告',exact:true}).click();const dialog=viewer.getByRole('dialog',{name:'业务报告'});await expect(dialog).toContainText('历史解决周期的复测记录');await print('deviation-list')
   state.stages=[...new Set([...state.stages,'fourteen-reviewed-signed-executed','closed-and-reopened-defects','reports-viewer-evidence'])];save()
   writeFileSync(resolve(dir,'evidence-index.json'),JSON.stringify({scenario:definition.scenario,version:definition.version,classification:'SYNTHETIC',notice:definition.notice,projectId:state.projectId,setId:state.setId,roles:{author:mid,executor:mid,reviewer:aid,viewer:vid},cases:index,summary,defects,defectHistory,samples:output},null,2))
+  }finally{await evidenceContext.close()}
  })
  if(!persistent)await oqFixRegressions(page,admin,scope,mid,rootDir,get,write,pages,choose)
  })

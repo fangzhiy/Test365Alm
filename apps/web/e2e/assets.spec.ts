@@ -1,3 +1,4 @@
+import { openModule } from './moduleNavigation'
 import {expect,test} from '@playwright/test'
 import type {Locator,Page} from '@playwright/test'
 import {createHash,randomUUID} from 'node:crypto'
@@ -35,7 +36,7 @@ test('real Keycloak UI member uploads scans attaches and preserves old asset rev
   for(const [principal,role]of[[memberId,'PROJECT_MEMBER'],[viewerId,'PROJECT_VIEWER']])expect((await write(page,`${root}/members/${principal}`,{roles:[role],authorizationVersion:0},'PUT')).status()).toBe(200)
   await select(member,tenantId,project);const permissions=await member.request.get(`/api/v1/me/permissions?projectId=${project}`,{timeout:10_000});expect(permissions.status()).toBe(200);expect((await permissions.json()).roles).toEqual(['PROJECT_MEMBER'])
   const title=`R11 requirement ${randomUUID()}`,original='R11 harmless controlled original text\n',updated='R11 harmless controlled revised text\n',filename='r11-original.txt'
-  const req=member.locator('section.requirements-panel'),attachments=req.getByRole('region',{name:'附件与资产'})
+  await openModule(member,'需求管理');const req=member.locator('section.requirements-panel'),attachments=req.getByRole('region',{name:'附件与资产'})
   let requirementId='',uploadId='',assetId='',revisionId='',attachmentId=''
   await step('Ordinary MEMBER creates requirement and uploads benign bytes through actual attachment DOM',async()=>{
    await req.getByLabel('需求标题').fill(title);const createdRequirement=member.waitForResponse(r=>new URL(r.url()).pathname===`${root}/requirements`&&r.request().method()==='POST');await req.getByRole('button',{name:'创建需求'}).click();const response=await createdRequirement;expect(response.status()).toBe(201);requirementId=(await response.json()).id;await expect(req).toContainText('需求已创建')
@@ -60,7 +61,7 @@ test('real Keycloak UI member uploads scans attaches and preserves old asset rev
    const links=await member.request.get(`${root}/attachments?kind=REQUIREMENT&requirementId=${requirementId}`,{timeout:10_000});expect(links.status()).toBe(200);expect((await links.json()).items.find((l:{id:string})=>l.id===attachmentId)).toMatchObject({assetRevisionId:revisionId,revision:{revisionNumber:1,sha256:createHash('sha256').update(original).digest('hex')}})
   })
   await step('Independent VIEWER reads and downloads frozen version but valid-CSRF mutations are forbidden',async()=>{
-   await select(viewer,tenantId,project);const vreq=viewer.locator('section.requirements-panel');await vreq.getByRole('button',{name:new RegExp(title)}).click();const panel=vreq.getByRole('region',{name:'附件与资产'});await expect(panel.getByRole('list',{name:'已关联附件'})).toContainText('冻结修订 1');await expect(panel.getByLabel('选择附件文件')).toHaveCount(0);expect(await downloaded(viewer,panel.getByRole('button',{name:`下载冻结附件 ${filename} 修订 1`}))).toBe(original)
+   await select(viewer,tenantId,project);await openModule(viewer,'需求管理');const vreq=viewer.locator('section.requirements-panel');await vreq.getByRole('button',{name:new RegExp(title)}).click();const panel=vreq.getByRole('region',{name:'附件与资产'});await expect(panel.getByRole('list',{name:'已关联附件'})).toContainText('冻结修订 1');await expect(panel.getByLabel('选择附件文件')).toHaveCount(0);expect(await downloaded(viewer,panel.getByRole('button',{name:`下载冻结附件 ${filename} 修订 1`}))).toBe(original)
    await panel.getByRole('button',{name:`查看资产 ${filename}`}).click();await expect(panel).toContainText('当前资产修订 2');await expect(panel.getByLabel('选择新版本文件')).toHaveCount(0);await expect(panel.getByRole('button',{name:'关联所选冻结版本'})).toHaveCount(0)
    for(const [path,data]of[[`${root}/uploads`,{filename:'forbidden.txt',size:Buffer.byteLength(original),sha256:createHash('sha256').update(original).digest('hex'),contentType:'text/plain'}],[`${root}/uploads/${uploadId}/complete`,{}],[`${root}/attachments`,{kind:'REQUIREMENT',requirementId,assetId,assetRevisionId:revisionId}]] as const){const denied=await write(viewer,path,data);expect(denied.status()).toBe(403);expect(await denied.json()).toMatchObject({code:'FORBIDDEN'})}
   })

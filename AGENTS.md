@@ -3,7 +3,7 @@
 ## 当前开发方式（2026-11-11 用户决定，取代旧总管/worker/独立审查流程）
 
 - 只保留主代码目录和一个从dev创建的 `codex-main` 开发worktree。由当前Codex直接开发，不派worker，不另派审查者，也不为每个功能创建新worktree。
-- 主目录 `D:/code/ProOrca/Wetest365ALM/Test365Alm` 固定dev，负责集成；开发目录 `C:/Users/22538/orca/workspaces/Test365Alm/codex-main` 使用codex-main分支。main是GitHub默认主分支，保存验收后的成果。
+- 主目录 `D:/code/ProOrca/Wetest365ALM/Test365Alm` 固定dev，负责集成；开发目录 `D:/code/ProOrca/workspaces/Test365Alm/codex-main` 使用codex-main分支。main是GitHub默认主分支，保存验收后的成果。
 - 一个功能完成后，运行后端单元测试、Linux容器中的完整集成测试、前端lint/test/build，再运行trail check。全部通过就合入dev；验收后的成果推进main并推送。不得把未运行写成通过。
 - 不再人工逐条核对测试名，不再为每轮申请独占资源窗口或编写资源清理的独立核验报告。既有自动化测试和门禁继续运行，不删测试、不增加retry，不弱化权限、RLS、不可变历史、审计/Outbox同事务等约束。
 - 每个功能只在 `docs/reviews/` 留一份简短记录：做了什么、实际测试结果、已知限制。值得留下的原因、取舍和排错结论用trail note记录；旧learning不直接改写。

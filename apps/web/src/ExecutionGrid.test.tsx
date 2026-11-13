@@ -9,7 +9,7 @@ const instance:TestInstance={id:'i',projectId:'p',setId:'s',testCaseId:'c',testR
 const props=()=>({projectId:'p',instances:[instance],writable:true,disabled:false,nextCursor:'opaque',filters:{},onFilter:vi.fn(),onMore:vi.fn(),onRefresh:vi.fn(),onOpen:vi.fn(),onStart:vi.fn(),onAssigned:vi.fn(),onLock:vi.fn(),onDenied:vi.fn()})
 it('renders a real instance grid and opens its exact run or follows the next cursor',()=>{
  const p=props();render(<ExecutionGrid {...p}/>);expect(screen.getByRole('table',{name:'实例执行网格'})).toBeVisible()
- expect(screen.getByText('Operator')).toBeVisible();expect(screen.getByText(instance.executionDate!)).toHaveAttribute('datetime',instance.executionDate)
+ expect(screen.getByText('Operator')).toBeVisible();expect(screen.getByText('2026-01-01 10:00 UTC')).toHaveAttribute('datetime',instance.executionDate)
  fireEvent.click(screen.getByRole('button',{name:'进入运行 OQ case'}));expect(p.onOpen).toHaveBeenCalledWith(instance)
  fireEvent.click(screen.getByRole('button',{name:'加载更多实例'}));expect(p.onMore).toHaveBeenCalledOnce()
  fireEvent.change(screen.getByLabelText('执行状态筛选'),{target:{value:'PAUSED'}});fireEvent.click(screen.getByRole('button',{name:'筛选实例'}));expect(p.onFilter).toHaveBeenCalledWith({status:'PAUSED'})

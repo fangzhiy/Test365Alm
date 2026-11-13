@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import './App.css'
+import { ConfigProvider, Breadcrumb, Tag } from 'antd'
+import zhCN from 'antd/locale/zh_CN'
+import { AppstoreOutlined, ExperimentOutlined, ReadOutlined, SafetyCertificateOutlined, SettingOutlined } from '@ant-design/icons'
+import ProjectOverview from './ProjectOverview'
+import './Workspace.css'
 import AuthPanel from './AuthPanel'
 import ProjectAccessPanel from './ProjectAccessPanel'
 import RequirementsPanel from './RequirementsPanel'
@@ -57,7 +62,28 @@ function HealthCard({ label, state, detail }: HealthCardProps) {
   return <article className="status-card"><div className="status-card-header"><span>{label}</span><span className={`status-dot status-${state}`} aria-hidden="true" /></div><strong>{stateLabel}</strong>{detail && <p>{detail}</p>}</article>
 }
 
+const modules = [
+  { group: '工作台', id: 'overview', label: '项目概览', icon: <AppstoreOutlined /> },
+  { group: '测试管理', id: 'plan', label: '测试计划', icon: <ReadOutlined /> },
+  { group: '测试管理', id: 'lab', label: '测试实验室', icon: <ExperimentOutlined /> },
+  { group: '质量与合规', id: 'defects', label: '偏差管理', icon: <SafetyCertificateOutlined /> },
+  { group: '质量与合规', id: 'requirements', label: '需求管理', icon: <ReadOutlined /> },
+  { group: '质量与合规', id: 'releases', label: '发布与质量快照', icon: <SafetyCertificateOutlined /> },
+  { group: '管理', id: 'fields', label: '业务字段', icon: <SettingOutlined /> },
+  { group: '管理', id: 'settings', label: '项目与成员', icon: <SettingOutlined /> },
+  { group: '管理', id: 'system', label: '系统状态', icon: <SettingOutlined /> },
+]
+const readModule = () => modules.find(m => m.id === window.location.hash.slice(1))?.id ?? 'overview'
+
 function App() {
+  const [module, setModule] = useState(readModule)
+  useEffect(() => {
+    const changed = () => setModule(readModule())
+    window.addEventListener('hashchange', changed)
+    return () => window.removeEventListener('hashchange', changed)
+  }, [])
+  const navigate = (id: string) => { window.history.pushState(null, '', `#${id}`); setModule(id) }
+
   const [version, setVersion] = useState<VersionResponse | null>(null)
   const [versionState, setVersionState] = useState<CheckState>('loading')
   const [liveState, setLiveState] = useState<CheckState>('loading')
@@ -69,9 +95,11 @@ function App() {
   const controllerRef = useRef<AbortController | null>(null)
   const timeoutRef = useRef<number | null>(null)
   const [sessionGeneration, setSessionGeneration] = useState(0)
+  const [projectName, setProjectName] = useState('')
   const [selectedProjectId, setSelectedProjectId] = useState('')
   const [selectedProjectAccess, setSelectedProjectAccess] = useState<ProjectAccess | null>(null)
-  const handleProjectSelection = useCallback(({ projectId, access }: { projectId: string; access: ProjectAccess | null }) => {
+  const handleProjectSelection = useCallback(({ projectId, access, projectName }: { projectId: string; access: ProjectAccess | null; projectName?: string }) => {
+    setProjectName(projectName ?? '')
     setSelectedProjectId(projectId)
     setSelectedProjectAccess(access)
   }, [])
@@ -135,19 +163,40 @@ function App() {
     }
   }, [refresh])
 
-  return <main className="workbench">
-    <header className="hero-header"><div><p className="eyebrow">TEST365ALM · ENGINEERING FOUNDATION</p><h1>{version?.productName ?? 'Test365Alm'} 工作台</h1><p className="lede">查看当前应用构建信息与运行状态，数据来自真实后端接口。</p></div><button className="refresh-button" type="button" onClick={() => void refresh()}>刷新状态</button></header>
-    <AuthPanel onLogout={() => setSessionGeneration((generation) => generation + 1)} />
-    <ProjectAccessPanel resetSignal={sessionGeneration} onSelectionChange={handleProjectSelection} />
-    <FieldMetadataPanel projectId={selectedProjectId} access={selectedProjectAccess} resetSignal={sessionGeneration} />
-    <RequirementsPanel projectId={selectedProjectId} access={selectedProjectAccess} resetSignal={sessionGeneration} />
-    <TestCasesPanel projectId={selectedProjectId} access={selectedProjectAccess} resetSignal={sessionGeneration} />
-    <TestExecutionPanel projectId={selectedProjectId} access={selectedProjectAccess} resetSignal={sessionGeneration} />
-    <DefectsPanel projectId={selectedProjectId} access={selectedProjectAccess} resetSignal={sessionGeneration} />
-    <ReleasesPanel projectId={selectedProjectId} access={selectedProjectAccess} resetSignal={sessionGeneration} />
-    <section className="version-panel" aria-label="构建信息"><div><span className="panel-label">应用版本</span><strong>{version?.version ?? (versionState === 'loading' ? '读取中…' : '不可用')}</strong></div><div><span className="panel-label">构建提交</span><code>{version?.commit ?? (versionState === 'loading' ? '读取中…' : 'unknown')}</code></div></section>
-    <section className="status-grid" aria-label="服务状态"><HealthCard label="应用存活" state={liveState} detail="不依赖数据库连接" /><HealthCard label="应用就绪" state={readyState} detail={readyDetail || '数据库与迁移检查'} /><HealthCard label="版本接口" state={versionState} detail="GET /api/v1/version" /></section>
-    <footer className="workbench-footer"><span>{lastChecked ? `最近检查：${lastChecked}` : '正在检查服务…'}</span><span>开发环境 · localhost</span></footer>
-  </main>
+  const scope = { projectId: selectedProjectId, access: selectedProjectAccess, resetSignal: sessionGeneration }
+  const current = modules.find(m => m.id === module)!
+  return <ConfigProvider locale={zhCN} theme={{token:{colorPrimary:'#1677ff',borderRadius:8,fontFamily:'"Segoe UI", "Microsoft YaHei", sans-serif'}}}>
+    <div className="app-shell">
+      <a className="skip-link" href="#module-content">跳到主要内容</a>
+      <aside className="app-sidebar">
+        <div className="app-brand"><span className="brand-mark">T</span><div>Test365<span>质量管理工作台</span></div></div>
+        <nav aria-label="功能导航">{['工作台','测试管理','质量与合规','管理'].map(group => <div className="nav-group" key={group}>
+          <p>{group}</p>{modules.filter(m=>m.group===group).map(m=><button key={m.id} type="button" aria-current={module===m.id?'page':undefined} onClick={()=>navigate(m.id)}><span aria-hidden="true">{m.icon}</span><span>{m.label}</span></button>)}
+        </div>)}</nav>
+        <div className="sidebar-foot">不可变历史 · 可追溯执行</div>
+      </aside>
+      <div className="app-main">
+        <header className="app-topbar"><Breadcrumb items={[{title:'工作空间'},{title:current.label}]} /><AuthPanel onLogout={() => setSessionGeneration(g=>g+1)} /></header>
+        <div className="project-switcher"><ProjectAccessPanel compact={module!=='settings'} resetSignal={sessionGeneration} onSelectionChange={handleProjectSelection} /></div>
+        <main id="module-content" className="module-content" tabIndex={-1}>
+          <div className="module-heading"><div><p>{current.group}</p><h1>{current.label}</h1></div><Tag color="blue">{projectName.includes('SYNTHETIC') ? 'SYNTHETIC · 合成演示' : 'Test365Alm'}</Tag></div>
+          {module==='overview' && <ProjectOverview key={`${selectedProjectId}:${sessionGeneration}:${JSON.stringify(selectedProjectAccess)}`} {...scope} onDenied={()=>setSessionGeneration(g=>g+1)} onNavigate={navigate} />}
+          {module==='fields' && <FieldMetadataPanel {...scope} />}
+          {module==='requirements' && <RequirementsPanel {...scope} />}
+          {module==='plan' && <TestCasesPanel {...scope} />}
+          {module==='lab' && <TestExecutionPanel {...scope} />}
+          {module==='defects' && <DefectsPanel {...scope} />}
+          {module==='releases' && <ReleasesPanel {...scope} />}
+          {module==='settings' && <p className="scope-note">项目配置与成员权限位于上方。对象审计从用例、运行、偏差的“历史”入口查看；报告从执行与偏差页面进入。</p>}
+          {module==='system' && <>
+            <button className="refresh-button" type="button" onClick={()=>void refresh()}>刷新状态</button>
+            <section className="version-panel" aria-label="构建信息"><div><span className="panel-label">应用版本</span><strong>{version?.version ?? (versionState === 'loading' ? '读取中…' : '不可用')}</strong></div><div><span className="panel-label">构建提交</span><code>{version?.commit ?? (versionState === 'loading' ? '读取中…' : 'unknown')}</code></div></section>
+            <section className="status-grid" aria-label="服务状态"><HealthCard label="应用存活" state={liveState} detail="不依赖数据库连接" /><HealthCard label="应用就绪" state={readyState} detail={readyDetail || '数据库与迁移检查'} /><HealthCard label="版本接口" state={versionState} detail="GET /api/v1/version" /></section>
+            <footer className="workbench-footer">{lastChecked ? `最近检查：${lastChecked}` : '正在检查服务…'}</footer>
+          </>}
+        </main>
+      </div>
+    </div>
+  </ConfigProvider>
 }
 export default App

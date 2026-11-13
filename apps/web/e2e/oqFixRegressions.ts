@@ -1,3 +1,4 @@
+import { openModule } from './moduleNavigation'
 import { expect, type Page, test } from '@playwright/test'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
@@ -154,7 +155,7 @@ export async function oqFixRegressions(page:Page, admin:Page, scope:{tenantId:st
  })
  await test.step('FIX01：导航保持打开，刷新后的进行中与完成 Attempt 使用确切报告目标',async()=>{
   await page.goto('/');await expect(page.getByRole('button',{name:'退出登录'})).toBeVisible();await choose(page,scope.tenantId,project.id)
-  const panel=page.locator('section.execution-panel')
+  await openModule(page,'测试实验室');const panel=page.locator('section.execution-panel')
   await panel.getByRole('button',{name:/^SYNTHETIC FIX01 回归测试集/}).filter({has:page.locator('small')}).click()
   await panel.getByRole('button',{name:'查看绑定修订 SYNTHETIC FIX01 导航与恢复'}).click()
   const nav=panel.getByRole('region',{name:'实例修订与闭环导航'})
